@@ -15,6 +15,7 @@ import psutil
 
 from . import config, logs
 from .control import PHASE_FAILED, PHASE_LIVE, unit_last_error
+from .logs import is_benign_line
 
 _prev_net: tuple[int, float] | None = None
 
@@ -135,6 +136,32 @@ def _track_restart_rate(restart_count: int) -> int:
 
 # ---------------------------------------------------------------- Failed-state diagnostics
 
+_PROGRESS_LINE_RE = re.compile(r"frame=\s*\d+.*speed=")
+_ERRORISH_RE = re.compile(r"error|fail|refused|denied|not found|invalid|unable|cannot", re.I)
+
+
+def last_ffmpeg_log_error() -> str | None:
+    """Last line of ffmpeg.log that looks like a real error - skipping
+    progress lines and the benign set above. ffmpeg's own diagnostics
+    land here, not in the journal (stream.sh redirects them), which is
+    why journalctl alone found nothing to show for a failed encoder."""
+    if not config.FFMPEG_LOG.exists():
+        return None
+    try:
+        size = config.FFMPEG_LOG.stat().st_size
+        with open(config.FFMPEG_LOG, "r", errors="replace") as f:
+            f.seek(max(0, size - 16000))
+            tail = f.read()
+    except OSError:
+        return None
+    for line in reversed(re.split(r"[\r\n]+", tail)):
+        line = line.strip()
+        if not line or _PROGRESS_LINE_RE.search(line) or is_benign_line(line):
+            continue
+        if _ERRORISH_RE.search(line):
+            return line[:400]
+    return None
+
 # Best-effort, ordered (first match wins) - matched against the last
 # redacted journal error line for the unit. These patterns are inferred
 # from the incident this was built to catch and from FFmpeg/RTMP's
@@ -157,7 +184,7 @@ _LOW_SPEED_CAUSE_THRESHOLD = 0.85
 
 
 def _classify_cause(error_line: str | None) -> str | None:
-    if error_line:
+    if error_line and not is_benign_line(error_line):
         for pattern, cause in _CAUSE_PATTERNS:
             if pattern.search(error_line):
                 return cause
@@ -183,6 +210,12 @@ def stream_state(show: dict) -> dict:
     if show["phase"] == PHASE_FAILED:
         redact = logs.build_redactor()
         raw_error = unit_last_error("ffmpeg-stream")
+        if raw_error and is_benign_line(raw_error):
+            raw_error = None
+        # The journal only has what stream.sh printed before exec'ing
+        # ffmpeg; ffmpeg's own error text is in ffmpeg.log.
+        if not raw_error:
+            raw_error = last_ffmpeg_log_error()
         result["last_error"] = redact(raw_error) if raw_error else None
         result["cause"] = _classify_cause(raw_error)
     return result

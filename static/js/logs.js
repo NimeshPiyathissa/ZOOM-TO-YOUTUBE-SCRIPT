@@ -7,7 +7,16 @@ let lineNo = 0;
 const view = document.getElementById("log-view");
 const search = document.getElementById("log-search");
 
+// Expected, non-error lines that the generic heuristic below would
+// otherwise paint red. Mirrors app/logs.py's BENIGN_LINE_PATTERNS - keep
+// the two in sync.
+const BENIGN_LINE_PATTERNS = [
+  /\[flv @ [^\]]+\] Failed to update header with correct (duration|filesize)/,
+  /Exiting normally, received signal 15/,
+];
+
 function classify(line) {
+  if (BENIGN_LINE_PATTERNS.some((re) => re.test(line))) return "";
   const l = line.toLowerCase();
   if (l.includes(" error") || l.includes("err") || l.includes("fail")) return "err";
   if (l.includes("warn")) return "warn";

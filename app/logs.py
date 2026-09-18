@@ -22,6 +22,22 @@ _REDACT_PATTERNS = [
     re.compile(r"(rtmps?://[^/\s]+/live2/)[^\s\"']+", re.IGNORECASE),
 ]
 
+# Lines that look alarming but are expected, and must never be shown as
+# "the error" or counted as one - anywhere: the Overview's Failed
+# diagnostics, the "Recent errors" panel, and the live log highlighter
+# (static/js/logs.js keeps a matching list). ffmpeg always prints the two
+# flv header lines when tearing down a network output (it can't seek back
+# to patch duration/filesize into a live stream), and the signal-15 line
+# is a clean, requested stop.
+BENIGN_LINE_PATTERNS = [
+    re.compile(r"\[flv @ [^\]]+\] Failed to update header with correct (duration|filesize)"),
+    re.compile(r"Exiting normally, received signal 15"),
+]
+
+
+def is_benign_line(line: str) -> bool:
+    return any(p.search(line) for p in BENIGN_LINE_PATTERNS)
+
 
 def build_redactor() -> callable:
     """Snapshot current secret values once per call and mask any literal
@@ -92,6 +108,14 @@ def recent_errors() -> list[dict]:
     out = []
     for unit in config.VISIBLE_UNITS:
         line = unit_last_error(unit)
+        if line and is_benign_line(line):
+            line = None
+        if not line and unit == "ffmpeg-stream":
+            # ffmpeg's own errors go to ffmpeg.log, not the journal - this
+            # is what let the Overview say ERROR while this panel said
+            # "No recent errors" for the same failure.
+            from . import stats  # local import: stats imports this module
+            line = stats.last_ffmpeg_log_error()
         if line:
             out.append({"unit": unit, "message": redact(line)})
     return out

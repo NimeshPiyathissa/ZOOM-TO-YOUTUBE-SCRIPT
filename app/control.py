@@ -20,8 +20,16 @@ CAT = "/usr/bin/cat"
 
 SHOW_PROPERTIES = (
     "ActiveState,SubState,Result,NRestarts,"
-    "ActiveEnterTimestamp,ExecMainStartTimestamp,ExecMainStatus,MainPID"
+    "ActiveEnterTimestamp,ExecMainStartTimestamp,ExecMainStatus,MainPID,ExecMainCode"
 )
+
+# ffmpeg exits 255 only when it caught a stop signal and shut down cleanly
+# (see systemd/ffmpeg-stream.service in the zoom-stream repo, which also
+# tells systemd this via SuccessExitStatus=255). Kept here too so the
+# dashboard classifies the historical state correctly even before that
+# unit change is loaded, and so this can never drift from the unit file
+# into showing a deliberate stop as a failure.
+_FFMPEG_CLEAN_STOP_EXIT_STATUS = "255"
 
 VERBS = {"start", "stop", "restart", "reset-failed"}
 
@@ -40,8 +48,15 @@ PHASE_RECONNECTING = "RECONNECTING"
 PHASE_FAILED = "FAILED"
 
 
-def _derive_phase(active: str, sub: str, main_pid: int) -> str:
+def _derive_phase(active: str, sub: str, main_pid: int, unit: str = "",
+                  exec_main_code: str = "", exec_main_status: str = "") -> str:
     if active == "failed":
+        # A deliberate stop that ffmpeg acknowledged (exited, not killed,
+        # with its signal-exit code) is Stopped, not Failed - this was the
+        # "ERROR badge but the logs page says no recent errors" bug.
+        if (unit == "ffmpeg-stream" and exec_main_code == "1"
+                and exec_main_status == _FFMPEG_CLEAN_STOP_EXIT_STATUS):
+            return PHASE_STOPPED
         return PHASE_FAILED
     if active == "active" and sub == "running":
         # "active" alone isn't proof of life - insist on a real PID too.
@@ -127,6 +142,8 @@ def unit_show(unit: str) -> dict:
     sub = props.get("SubState", "unknown")
     ts = props.get("ActiveEnterTimestamp", "")
     main_pid = int(props.get("MainPID", "0") or 0)
+    exec_main_code = props.get("ExecMainCode", "")
+    exec_main_status = props.get("ExecMainStatus", "")
     uptime_seconds = None
     if active == "active" and ts and ts not in ("0", ""):
         import datetime
@@ -145,10 +162,11 @@ def unit_show(unit: str) -> dict:
         "sub_state": sub,
         "result": props.get("Result", ""),
         "restart_count": int(props.get("NRestarts", 0) or 0),
-        "exec_main_status": props.get("ExecMainStatus", ""),
+        "exec_main_status": exec_main_status,
+        "exec_main_code": exec_main_code,
         "uptime_seconds": uptime_seconds,
         "main_pid": main_pid,
-        "phase": _derive_phase(active, sub, main_pid),
+        "phase": _derive_phase(active, sub, main_pid, unit, exec_main_code, exec_main_status),
     }
 
 
