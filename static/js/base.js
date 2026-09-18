@@ -6,18 +6,28 @@
   const stopBtns = [document.getElementById("topbar-stop"), document.getElementById("mobile-stop")];
   let lastState = null;
 
+  // Bug fixed here: this used to read `stream.state` (the old 3-value
+  // LIVE/ERROR/STOPPED field). Part 1's dashboard-honesty fix replaced
+  // that with `stream.phase` (5 values) everywhere else, but this file
+  // was missed - since then this badge has shown "badge-inactive" /
+  // "undefined" regardless of actual state on every page. This was
+  // literally "the top badge" from the original incident report.
+  const PHASE_LABEL = {
+    STOPPED: "Stopped", STARTING: "Starting…", LIVE: "Live",
+    RECONNECTING: "Reconnecting…", FAILED: "Failed",
+  };
+
   function paint(stream) {
     if (!stream) return;
-    const map = { LIVE: ["badge-active", "Live"], ERROR: ["badge-failed", "Error"], STOPPED: ["badge-inactive", "Stopped"] };
-    const [cls, label] = map[stream.state] || ["badge-inactive", stream.state];
-    badge.className = "badge " + cls;
-    badge.innerHTML = `<span class="dot"></span>${label}`;
-    uptimeEl.textContent = stream.state === "LIVE" ? fmtUptime(stream.uptime_seconds) : "";
-    const live = stream.state === "LIVE";
-    goLiveBtns.forEach((b) => { if (b) b.hidden = live; });
-    stopBtns.forEach((b) => { if (b) b.hidden = !live; });
-    if (lastState && lastState !== stream.state) announce(`Stream is now ${stream.state.toLowerCase()}`);
-    lastState = stream.state;
+    const phase = stream.phase;
+    badge.className = "badge " + phaseBadgeClass(phase);
+    badge.innerHTML = `<span class="dot"></span>${PHASE_LABEL[phase] || phase}`;
+    uptimeEl.textContent = phase === "LIVE" ? fmtUptime(stream.uptime_seconds) : "";
+    const canStop = phase === "LIVE" || phase === "RECONNECTING";
+    goLiveBtns.forEach((b) => { if (b) b.hidden = canStop; });
+    stopBtns.forEach((b) => { if (b) b.hidden = !canStop; });
+    if (lastState && lastState !== phase) announce(`Stream is now ${(PHASE_LABEL[phase] || phase).toLowerCase()}`);
+    lastState = phase;
   }
 
   async function quickAction(action, confirmMsg) {
