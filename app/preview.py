@@ -7,6 +7,7 @@ zoombot, since it's a pure read of the framebuffer, not a control action."""
 from __future__ import annotations
 
 import asyncio
+import re
 import time
 
 from . import config
@@ -14,6 +15,32 @@ from . import config
 INTERVAL_SECONDS = 3
 PREVIEW_PATH = config.DATA_DIR / "preview.jpg"
 STALE_AFTER_SECONDS = 15
+
+# Bug this fixes: the capture below used to hardcode -video_size
+# 1920x1080, but Xvfb :99 actually runs at whatever RESOLUTION is
+# currently configured (e.g. 1280x720) - x11grab refuses to grab an area
+# larger than the real screen ("Capture area 1920x1080 ... outside the
+# screen size 1280x720") and exits 1 immediately, every time, which is
+# why the preview never worked. Query the real size instead of assuming
+# one. Re-checked on each capture loop start (cheap, and correct even if
+# RESOLUTION changes without a dashboard restart) rather than cached
+# forever.
+_XDPYINFO_DIMENSIONS_RE = re.compile(rb"dimensions:\s+(\d+)x(\d+) pixels")
+
+
+async def _display_size() -> str:
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "/usr/bin/xdpyinfo", "-display", config.DISPLAY_NUM,
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
+        )
+        out, _ = await asyncio.wait_for(proc.communicate(), timeout=5)
+        m = _XDPYINFO_DIMENSIONS_RE.search(out)
+        if m:
+            return f"{int(m.group(1))}x{int(m.group(2))}"
+    except (asyncio.TimeoutError, FileNotFoundError):
+        pass
+    return "1280x720"  # last-resort fallback, matches the documented default
 
 
 class PreviewManager:
@@ -42,11 +69,12 @@ class PreviewManager:
 
     async def _capture_once(self) -> None:
         tmp_path = PREVIEW_PATH.with_suffix(".tmp.jpg")
+        video_size = await _display_size()
         argv = [
             "/usr/bin/nice", "-n", "19",
             "/usr/bin/ionice", "-c", "3",
             "/usr/bin/ffmpeg", "-hide_banner", "-loglevel", "error",
-            "-f", "x11grab", "-video_size", "1920x1080", "-draw_mouse", "0",
+            "-f", "x11grab", "-video_size", video_size, "-draw_mouse", "0",
             "-i", config.DISPLAY_NUM,
             "-vframes", "1", "-vf", "scale=640:-1",
             "-q:v", "6", "-y", str(tmp_path),

@@ -1,5 +1,11 @@
 """System resource stats (pure /proc reads via psutil, no privilege
-needed) and FFmpeg progress parsed from its log tail."""
+needed) and FFmpeg progress parsed from its log tail.
+
+Everything here that reports on ffmpeg-stream takes the *same* already-
+fetched control.unit_show() snapshot the caller used for the unit list,
+rather than making its own separate `systemctl show` call - see
+control.py's module note on why (the hero-card-vs-badge disagreement
+incident)."""
 from __future__ import annotations
 
 import re
@@ -7,8 +13,8 @@ import time
 
 import psutil
 
-from . import config
-from .control import unit_show
+from . import config, logs
+from .control import PHASE_FAILED, PHASE_LIVE, unit_last_error
 
 _prev_net: tuple[int, float] | None = None
 
@@ -17,6 +23,13 @@ FRAME_RE = re.compile(
 )
 DUP_RE = re.compile(r"dup=(\d+)")
 DROP_RE = re.compile(r"drop=(\d+)")
+
+# How old the last write to ffmpeg.log is allowed to be before we refuse
+# to call it "current" - this is the fix for the stale-cache incident
+# (Stream health showed a 30-hour-old frame/fps/speed/bitrate snapshot as
+# if it were live, because nothing ever checked the file's age or the
+# unit's actual state before serving its last-known content).
+FFMPEG_LOG_STALE_AFTER_SECONDS = 8
 
 
 def system_stats() -> dict:
@@ -48,13 +61,30 @@ def system_stats() -> dict:
     }
 
 
-def ffmpeg_progress() -> dict | None:
+# Small rolling record of recent live speed readings, used only as a
+# weak signal for the "CPU cannot sustain encode" Failed-state cause
+# guess below - not shown anywhere as its own metric.
+_SPEED_HISTORY_MAX = 10
+_recent_speeds: list[float] = []
+
+
+def ffmpeg_progress(show: dict) -> dict | None:
+    """Returns live FFmpeg progress, or None if there's no reason to
+    trust the log file as current: the unit must actually be LIVE (real
+    PID, not just "the process object exists"), and the log's last write
+    must be recent - a dead run's last-ever progress line must never be
+    served as if it were happening now."""
+    if show.get("phase") != PHASE_LIVE:
+        return None
     if not config.FFMPEG_LOG.exists():
         return None
     try:
-        size = config.FFMPEG_LOG.stat().st_size
+        st = config.FFMPEG_LOG.stat()
+        age = time.time() - st.st_mtime
+        if age > FFMPEG_LOG_STALE_AFTER_SECONDS:
+            return None
         with open(config.FFMPEG_LOG, "r", errors="replace") as f:
-            f.seek(max(0, size - 4000))
+            f.seek(max(0, st.st_size - 4000))
             tail = f.read()
     except OSError:
         return None
@@ -66,6 +96,8 @@ def ffmpeg_progress() -> dict | None:
             dup = DUP_RE.search(line)
             drop = DROP_RE.search(line)
             speed = float(m.group(4))
+            _recent_speeds.append(speed)
+            del _recent_speeds[:-_SPEED_HISTORY_MAX]
             return {
                 "frame": int(m.group(1)),
                 "fps": float(m.group(2)),
@@ -74,24 +106,86 @@ def ffmpeg_progress() -> dict | None:
                 "dup": int(dup.group(1)) if dup else 0,
                 "drop": int(drop.group(1)) if drop else 0,
                 "warning": speed < 1.0,
+                "age_seconds": round(age, 1),
             }
     return None
 
 
-def stream_state() -> dict:
-    show = unit_show("ffmpeg-stream")
-    active = show["active_state"]
-    if active == "active":
-        state = "LIVE"
-    elif active == "failed" or show.get("result") not in ("", "success"):
-        state = "ERROR"
-    else:
-        state = "STOPPED"
-    return {
-        "state": state,
+# ---------------------------------------------------------------- restart-rate tracking
+
+# In-memory only (resets if dashboard.service restarts) - this is a
+# recent-trend indicator for the UI, not a permanent record. The
+# permanent record is the audit log's watchdog_alert entries.
+_RESTART_HISTORY_WINDOW_SECONDS = 300
+_restart_samples: list[tuple[float, int]] = []
+
+
+def _track_restart_rate(restart_count: int) -> int:
+    """Records a sample and returns how many restarts happened in the
+    last 5 minutes, from the delta of the monotonically-increasing
+    NRestarts counter across the window - immune to the counter simply
+    never resetting between polls."""
+    now = time.time()
+    _restart_samples.append((now, restart_count))
+    cutoff = now - _RESTART_HISTORY_WINDOW_SECONDS
+    while len(_restart_samples) > 1 and _restart_samples[0][0] < cutoff:
+        _restart_samples.pop(0)
+    return max(0, restart_count - _restart_samples[0][1])
+
+
+# ---------------------------------------------------------------- Failed-state diagnostics
+
+# Best-effort, ordered (first match wins) - matched against the last
+# redacted journal error line for the unit. These patterns are inferred
+# from the incident this was built to catch and from FFmpeg/RTMP's
+# documented error shapes; the "YouTube rejected the stream key" and
+# "CPU cannot sustain encode" cases specifically have NOT been observed
+# firsthand in this project (reproducing them safely would mean actually
+# breaking the live stream key or starving the encoder), so treat them as
+# reasonable guesses, not verified signatures - if you see one fire
+# incorrectly, tighten the pattern.
+_CAUSE_PATTERNS: list[tuple[re.Pattern, str]] = [
+    (re.compile(r"command not found", re.I), "Script aborted before ffmpeg started"),
+    (re.compile(r"\.env[^\n]*(No such file|line \d+:)", re.I), "Script aborted before ffmpeg started"),
+    (re.compile(r"no such (sink|source)|zoom_out|Connection refused.*pulse|pa_context_connect", re.I),
+     "Audio monitor missing"),
+    (re.compile(r"forbidden|unauthorized|403|Server error|authentication.*fail", re.I),
+     "YouTube rejected the stream key"),
+]
+
+_LOW_SPEED_CAUSE_THRESHOLD = 0.85
+
+
+def _classify_cause(error_line: str | None) -> str | None:
+    if error_line:
+        for pattern, cause in _CAUSE_PATTERNS:
+            if pattern.search(error_line):
+                return cause
+    if len(_recent_speeds) >= 3 and (sum(_recent_speeds) / len(_recent_speeds)) < _LOW_SPEED_CAUSE_THRESHOLD:
+        return "CPU cannot sustain encode"
+    return None
+
+
+def stream_state(show: dict) -> dict:
+    """The dashboard's one summary of ffmpeg-stream's state - `show` is
+    the caller's single control.unit_show("ffmpeg-stream") snapshot,
+    reused as-is so this can never disagree with the same unit's row in
+    the units list."""
+    result = {
+        "phase": show["phase"],
+        "active_state": show["active_state"],
+        "sub_state": show["sub_state"],
         "uptime_seconds": show.get("uptime_seconds"),
         "restart_count": show.get("restart_count", 0),
+        "main_pid": show.get("main_pid", 0),
+        "restarts_last_5min": _track_restart_rate(show.get("restart_count", 0)),
     }
+    if show["phase"] == PHASE_FAILED:
+        redact = logs.build_redactor()
+        raw_error = unit_last_error("ffmpeg-stream")
+        result["last_error"] = redact(raw_error) if raw_error else None
+        result["cause"] = _classify_cause(raw_error)
+    return result
 
 
 # How fresh a page-load marker has to be to still count as "loaded" - the

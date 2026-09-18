@@ -20,10 +20,44 @@ CAT = "/usr/bin/cat"
 
 SHOW_PROPERTIES = (
     "ActiveState,SubState,Result,NRestarts,"
-    "ActiveEnterTimestamp,ExecMainStartTimestamp,ExecMainStatus"
+    "ActiveEnterTimestamp,ExecMainStartTimestamp,ExecMainStatus,MainPID"
 )
 
 VERBS = {"start", "stop", "restart", "reset-failed"}
+
+# The dashboard's single source of truth for "is it actually live" - every
+# place that shows unit status (hero card, top badge, service card) must
+# derive from this, never compute its own guess from raw active_state.
+# Incident note: before this existed, the hero card and the ffmpeg-stream
+# service card each made their own separate `systemctl show` call a few
+# milliseconds apart, which could - and during the crash loop, did -
+# disagree mid-flap. unit_show() below now makes exactly one call and
+# both call sites read the same dict.
+PHASE_STOPPED = "STOPPED"
+PHASE_STARTING = "STARTING"
+PHASE_LIVE = "LIVE"
+PHASE_RECONNECTING = "RECONNECTING"
+PHASE_FAILED = "FAILED"
+
+
+def _derive_phase(active: str, sub: str, main_pid: int) -> str:
+    if active == "failed":
+        return PHASE_FAILED
+    if active == "active" and sub == "running":
+        # "active" alone isn't proof of life - insist on a real PID too.
+        return PHASE_LIVE if main_pid > 0 else PHASE_STARTING
+    if active == "active" and sub == "exited":
+        # Type=oneshot + RemainAfterExit=yes (e.g. audio-setup): this is
+        # its normal successful steady-state, not a transitional one -
+        # there's no MainPID by design once the oneshot has exited.
+        return PHASE_LIVE
+    if active == "activating" and sub == "auto-restart":
+        # Restart=on-failure is waiting out RestartSec before trying
+        # again - this is a crash loop in progress, not "starting".
+        return PHASE_RECONNECTING
+    if active == "activating":
+        return PHASE_STARTING
+    return PHASE_STOPPED
 
 
 class ControlError(Exception):
@@ -91,6 +125,7 @@ def unit_show(unit: str) -> dict:
     active = props.get("ActiveState", "unknown")
     sub = props.get("SubState", "unknown")
     ts = props.get("ActiveEnterTimestamp", "")
+    main_pid = int(props.get("MainPID", "0") or 0)
     uptime_seconds = None
     if active == "active" and ts and ts not in ("0", ""):
         import datetime
@@ -111,6 +146,8 @@ def unit_show(unit: str) -> dict:
         "restart_count": int(props.get("NRestarts", 0) or 0),
         "exec_main_status": props.get("ExecMainStatus", ""),
         "uptime_seconds": uptime_seconds,
+        "main_pid": main_pid,
+        "phase": _derive_phase(active, sub, main_pid),
     }
 
 

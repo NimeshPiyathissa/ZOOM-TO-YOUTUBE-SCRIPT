@@ -13,6 +13,10 @@
           <div class="state-text skeleton" id="hero-text">Loading</div>
           <div class="hint" id="hero-sub">Checking stream status&hellip;</div>
         </div>
+        <span class="badge badge-inactive restart-rate-badge" id="restart-rate-badge" hidden
+              aria-label="Restarts in the last 5 minutes">
+          {{ icon("rotate-cw", "icon-sm") }}<span id="restart-rate-text"></span>
+        </span>
       </div>
       <div class="hero-3d-source" id="hero-source" hidden>
         <span id="hero-source-icon"></span>
@@ -38,11 +42,18 @@
 
   <div id="error-banner" hidden class="banner banner-error section mt-0 mb-0 grid-col-full">
     {{ icon("alert-triangle") }}
-    <div>The encoder has failed. <a href="/logs">Check the logs</a> for details.</div>
+    <div>
+      <div id="error-banner-headline">The encoder has failed.</div>
+      <div class="hint mt-1 mono" id="error-banner-detail"></div>
+      <div class="hint mt-1"><a href="/logs">Check the logs</a> for the full history.</div>
+    </div>
   </div>
 
   <div class="card-3d dash-health">
-    <div class="health-card-head"><h3>Stream health</h3></div>
+    <div class="health-card-head">
+      <h3>Stream health</h3>
+      <span class="hint tnum" id="ffmpeg-updated" hidden></span>
+    </div>
     <div id="ffmpeg-stats">
       <div class="empty-state" id="ffmpeg-empty">
         {{ icon("activity") }}

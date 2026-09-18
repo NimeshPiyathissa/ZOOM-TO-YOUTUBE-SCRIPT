@@ -86,9 +86,21 @@ main.page {
 .state-LIVE .state-text { color: var(--live); }
 .state-STOPPED .state-text { color: var(--text-dim); }
 .state-ERROR .state-text { color: var(--live); }
+.state-STARTING .state-text { color: var(--warning); }
+.state-RECONNECTING .state-text { color: var(--warning); }
 .dot-LIVE { background: var(--live); animation: pulse-ring 1.8s var(--ease-out) infinite; }
 .dot-STOPPED { background: var(--text-faint); }
 .dot-ERROR { background: var(--live); }
+.dot-STARTING { background: var(--warning); animation: pulse 1.4s var(--ease-out) infinite; }
+/* Not pulse-ring here: that keyframe's ring color is hardcoded to
+   --live-tint (red), which would look wrong against an amber dot - the
+   plain opacity pulse (same as badge-activating elsewhere) stays
+   correctly amber. */
+.dot-RECONNECTING { background: var(--warning); animation: pulse 1.4s var(--ease-out) infinite; }
+
+.restart-rate-badge { margin-left: auto; }
+.restart-rate-badge.is-alarm .dot { animation: pulse 1s var(--ease-out) infinite; }
+.is-stale { opacity: 0.45; transition: opacity 0.3s var(--ease-out); }
 
 /* ---------------------------------------------------------------- responsive */
 

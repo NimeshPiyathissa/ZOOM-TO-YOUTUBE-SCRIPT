@@ -300,6 +300,24 @@ function badgeHtml(activeState, text) {
   return `<span class="badge ${badgeClass(activeState)}"><span class="dot"></span>${text}</span>`;
 }
 
+// Single mapping from the backend's derived `phase` (STOPPED/STARTING/
+// LIVE/RECONNECTING/FAILED - see control.py's _derive_phase) to a badge
+// class, used everywhere a unit's status is shown so two places can
+// never render it differently.
+function phaseBadgeClass(phase) {
+  if (phase === "LIVE") return "badge-active";
+  if (phase === "FAILED") return "badge-failed";
+  if (phase === "STARTING" || phase === "RECONNECTING") return "badge-activating";
+  return "badge-inactive";
+}
+
+function fmtAgo(seconds) {
+  if (seconds == null) return "";
+  if (seconds < 1) return "just now";
+  if (seconds < 60) return `${Math.floor(seconds)}s ago`;
+  return `${Math.floor(seconds / 60)}m ago`;
+}
+
 // ---------------------------------------------------------------- live region announcer
 
 function announce(message) {

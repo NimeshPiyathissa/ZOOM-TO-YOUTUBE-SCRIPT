@@ -240,12 +240,21 @@ def _truncate_url(url: str, head: int = 40, tail: int = 12) -> str:
 async def api_state(request: Request):
     deps.require_session_api(request)
     units = []
+    stream_show = None
     for unit in config.VISIBLE_UNITS:
         try:
             show = control.unit_show(unit)
         except control.ControlError as exc:
-            show = {"unit": unit, "active_state": "unknown", "sub_state": "", "error": str(exc)}
+            show = {
+                "unit": unit, "active_state": "unknown", "sub_state": "",
+                "phase": control.PHASE_STOPPED, "main_pid": 0, "error": str(exc),
+            }
         units.append(show)
+        # Fetched exactly once, reused for both the hero/top-badge summary
+        # below and this same unit's row in `units` - see control.py's
+        # module note on the disagreement bug this fixes.
+        if unit == "ffmpeg-stream":
+            stream_show = show
 
     active_source = sources_mod.get_active_source()
     active_source_view = None
@@ -259,8 +268,8 @@ async def api_state(request: Request):
             source_health = stats.webpage_health()
 
     return {
-        "stream": stats.stream_state(),
-        "ffmpeg": stats.ffmpeg_progress(),
+        "stream": stats.stream_state(stream_show),
+        "ffmpeg": stats.ffmpeg_progress(stream_show),
         "system": stats.system_stats(),
         "units": units,
         "active_source": active_source_view,

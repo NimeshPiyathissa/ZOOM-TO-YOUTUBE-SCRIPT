@@ -49,29 +49,81 @@ document.getElementById("hero-source-copy").addEventListener("click", async () =
 
 // ---------------------------------------------------------------- render
 
+// CSS still keys off a small closed set of state-* / dot-* class names
+// (state-LIVE, state-ERROR, ...) - FAILED reuses the existing ERROR
+// visuals (same meaning, renamed), the others (STOPPED/STARTING/
+// RECONNECTING) each have their own rule in layout.css / cards-3d.css.
+function _cssStateFor(phase) {
+  return phase === "FAILED" ? "ERROR" : phase;
+}
+
+const STATE_LABEL = {
+  STOPPED: "Stopped", STARTING: "Starting…", LIVE: "Live",
+  RECONNECTING: "Reconnecting…", FAILED: "Failed",
+};
+
 function renderState(stream) {
   const dot = document.getElementById("hero-dot");
   const text = document.getElementById("hero-text");
   const sub = document.getElementById("hero-sub");
   const heroState = document.getElementById("hero-state");
   const heroCard = document.getElementById("hero-card");
+  const cssState = _cssStateFor(stream.phase);
   dot.classList.remove("skeleton");
   text.classList.remove("skeleton");
-  heroState.className = "hero-state state-" + stream.state;
+  heroState.className = "hero-state state-" + cssState;
   // classList.remove/add (not a className overwrite) so a mid-hover
   // is-hovered/is-tracking class from initCard3DTilt() isn't wiped out
   // by every 3s poll - that would snap the tilt/glow off while the
   // pointer is still sitting on the card.
   Array.from(heroCard.classList).filter((c) => c.startsWith("state-")).forEach((c) => heroCard.classList.remove(c));
-  heroCard.classList.add("state-" + stream.state);
-  dot.className = "dot-lg dot-" + stream.state;
-  text.textContent = stream.state.charAt(0) + stream.state.slice(1).toLowerCase();
-  sub.textContent = stream.state === "LIVE"
-    ? `Uptime ${fmtUptime(stream.uptime_seconds)} · restarts ${stream.restart_count}`
-    : (stream.state === "ERROR" ? "The encoder has failed." : "Not streaming.");
-  document.getElementById("btn-go-live").hidden = stream.state === "LIVE";
-  document.getElementById("btn-stop-stream").hidden = stream.state !== "LIVE";
-  document.getElementById("error-banner").hidden = stream.state !== "ERROR";
+  heroCard.classList.add("state-" + cssState);
+  dot.className = "dot-lg dot-" + cssState;
+  text.textContent = STATE_LABEL[stream.phase] || stream.phase;
+
+  if (stream.phase === "LIVE") {
+    sub.textContent = `Uptime ${fmtUptime(stream.uptime_seconds)} · restarts ${stream.restart_count}`;
+  } else if (stream.phase === "RECONNECTING") {
+    sub.textContent = `The encoder keeps crash-looping (restart ${stream.restart_count}) — not live right now.`;
+  } else if (stream.phase === "STARTING") {
+    sub.textContent = "Starting the encoder…";
+  } else if (stream.phase === "FAILED") {
+    sub.textContent = `Gave up after ${stream.restart_count} restarts.`;
+  } else {
+    sub.textContent = "Not streaming.";
+  }
+
+  document.getElementById("btn-go-live").hidden = stream.phase === "LIVE" || stream.phase === "RECONNECTING";
+  document.getElementById("btn-stop-stream").hidden = stream.phase !== "LIVE" && stream.phase !== "RECONNECTING";
+
+  const banner = document.getElementById("error-banner");
+  banner.hidden = stream.phase !== "FAILED";
+  if (stream.phase === "FAILED") {
+    document.getElementById("error-banner-headline").textContent =
+      `The encoder has failed after ${stream.restart_count} restarts.` +
+      (stream.cause ? ` Likely cause: ${stream.cause}.` : "");
+    document.getElementById("error-banner-detail").textContent =
+      stream.last_error ? stream.last_error : "";
+  }
+
+  renderRestartRate(stream.restarts_last_5min);
+}
+
+// Persistent, always-visible restart/crash-rate indicator (not just when
+// alarming) - the whole point is that a climbing count can't be missed
+// the way ~22,000 silent restarts were during the incident this exists
+// to catch. Alarms (red, pulsing) above 3 restarts in 5 minutes.
+const RESTART_RATE_ALARM_THRESHOLD = 3;
+
+function renderRestartRate(count) {
+  const el = document.getElementById("restart-rate-badge");
+  const label = document.getElementById("restart-rate-text");
+  if (count == null) { el.hidden = true; return; }
+  el.hidden = false;
+  const alarming = count > RESTART_RATE_ALARM_THRESHOLD;
+  el.className = "badge restart-rate-badge " + (alarming ? "badge-failed is-alarm" : "badge-inactive");
+  label.textContent = `${count} restart${count === 1 ? "" : "s"} / 5 min`;
+  el.setAttribute("aria-label", `${count} restarts in the last 5 minutes` + (alarming ? " - crash looping" : ""));
 }
 
 function renderActiveSource(source) {
@@ -91,18 +143,34 @@ function renderUnits(units) {
     if (!badge) continue;
     badge.classList.remove("skeleton");
     const label = u.active_state + (u.sub_state ? ` (${u.sub_state})` : "");
-    badge.className = "badge " + badgeClass(u.active_state);
+    // Colored by the same derived `phase` the hero uses (falls back to
+    // raw-active_state coloring only if a unit somehow has no phase,
+    // e.g. the unit_show() error-fallback shape) - never a second,
+    // independently-computed guess.
+    badge.className = "badge " + (u.phase ? phaseBadgeClass(u.phase) : badgeClass(u.active_state));
     badge.innerHTML = `<span class="dot"></span>${label}`;
     document.getElementById(`unit-${u.unit}-uptime`).textContent = fmtUptime(u.uptime_seconds);
     document.getElementById(`unit-${u.unit}-restarts`).textContent = u.restart_count ?? "-";
   }
 }
 
-function renderFfmpeg(ff, sourceType, sourceHealth) {
-  document.getElementById("ffmpeg-empty").hidden = !!ff;
-  document.getElementById("ffmpeg-grid").hidden = !ff;
-  document.getElementById("ffmpeg-detail").hidden = !ff;
+const FFMPEG_EMPTY_TEXT = {
+  STOPPED: "No data yet — the stream isn't running.",
+  STARTING: "Starting the encoder…",
+  RECONNECTING: "Crash-looping — not live right now.",
+  FAILED: "The encoder has failed. See above for details.",
+};
+
+function renderFfmpeg(ff, phase, sourceType, sourceHealth) {
+  const hasData = !!ff;
+  document.getElementById("ffmpeg-empty").hidden = hasData;
+  document.getElementById("ffmpeg-empty").querySelector(".empty-sub").textContent =
+    FFMPEG_EMPTY_TEXT[phase] || FFMPEG_EMPTY_TEXT.STOPPED;
+  document.getElementById("ffmpeg-grid").hidden = !hasData;
+  document.getElementById("ffmpeg-detail").hidden = !hasData;
   document.getElementById("ffmpeg-warning").hidden = !(ff && ff.warning);
+  const updated = document.getElementById("ffmpeg-updated");
+
   const webpageHealth = document.getElementById("webpage-health");
   if (sourceType === "webpage" && sourceHealth) {
     webpageHealth.hidden = false;
@@ -112,7 +180,18 @@ function renderFfmpeg(ff, sourceType, sourceHealth) {
   } else {
     webpageHealth.hidden = true;
   }
-  if (!ff) return;
+
+  if (!hasData) {
+    // Explicitly reset to "-" rather than leaving whatever was last
+    // rendered on screen - the whole bug this fixes was stale numbers
+    // staying visible after the run that produced them had died.
+    document.getElementById("stat-fps").textContent = "-";
+    document.getElementById("stat-speed").textContent = "-";
+    document.getElementById("stat-bitrate").textContent = "-";
+    updated.hidden = true;
+    return;
+  }
+
   document.getElementById("stat-fps").textContent = ff.fps;
   document.getElementById("stat-speed").textContent = ff.speed + "x";
   document.getElementById("stat-bitrate").textContent = Math.round(ff.bitrate_kbps) + "k";
@@ -120,6 +199,13 @@ function renderFfmpeg(ff, sourceType, sourceHealth) {
   renderSparkline(document.getElementById("spark-fps"), pushSparkline("fps", ff.fps));
   renderSparkline(document.getElementById("spark-speed"), pushSparkline("speed", ff.speed));
   renderSparkline(document.getElementById("spark-bitrate"), pushSparkline("bitrate", ff.bitrate_kbps));
+
+  updated.hidden = false;
+  updated.textContent = "updated " + fmtAgo(ff.age_seconds);
+  // Grey out (rather than just showing the text) once data is a few
+  // seconds old, so a viewer doesn't have to read fine print to notice
+  // the numbers stopped moving.
+  document.getElementById("ffmpeg-grid").classList.toggle("is-stale", ff.age_seconds > 5);
 }
 
 function renderSystem(sys) {
@@ -149,7 +235,7 @@ async function pollState() {
     renderState(data.stream);
     renderActiveSource(data.active_source);
     renderUnits(data.units);
-    renderFfmpeg(data.ffmpeg, data.active_source && data.active_source.type, data.source_health);
+    renderFfmpeg(data.ffmpeg, data.stream.phase, data.active_source && data.active_source.type, data.source_health);
     renderSystem(data.system);
   } catch (err) { /* transient errors are fine on a poll loop */ }
 }

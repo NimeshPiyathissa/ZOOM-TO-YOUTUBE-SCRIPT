@@ -82,8 +82,14 @@
 .hero-3d.state-ERROR {
   box-shadow: var(--shadow-lg), 0 0 0 1px var(--live), 0 0 48px -8px var(--live-tint);
 }
+.hero-3d.state-STARTING, .hero-3d.state-RECONNECTING {
+  box-shadow: var(--shadow-lg), 0 0 0 1px var(--warning), 0 0 48px -8px var(--warning-tint);
+}
 .hero-3d.state-LIVE.is-hovered { box-shadow: var(--shadow-lg), 0 0 0 1px var(--accent-ring), 0 0 64px -6px var(--accent-tint); }
 .hero-3d.state-ERROR.is-hovered { box-shadow: var(--shadow-lg), 0 0 0 1px var(--live), 0 0 64px -6px var(--live-tint); }
+.hero-3d.state-STARTING.is-hovered, .hero-3d.state-RECONNECTING.is-hovered {
+  box-shadow: var(--shadow-lg), 0 0 0 1px var(--warning), 0 0 64px -6px var(--warning-tint);
+}
 
 .hero-3d-main { min-width: 0; }
 .hero-3d-source {
