@@ -47,7 +47,17 @@
       </div>
     </div>
 
+    <div class="field max-w-sm" id="src-account-field">
+      <label class="label" for="src-account">Google account (Chrome profile) to play / join as</label>
+      <select id="src-account" class="input">
+        <option value="">Shared profile (no account)</option>
+        {% for a in accounts %}<option value="{{ a.id }}">{{ a.label }}{% if a.identity_masked %} - {{ a.identity_masked }}{% endif %} ({{ a.state }})</option>{% endfor %}
+      </select>
+      <div class="hint mt-1">Web pages play in that account's browser profile; Zoom's "Sign in with Google" opens in it too. Manage accounts on the <a href="/accounts">Accounts</a> page.</div>
+    </div>
+
     <div id="src-fields-zoom" class="source-type-fields" hidden>
+      <div class="banner banner-info mb-3" id="src-zoom-kind" hidden><span id="src-zoom-kind-text"></span></div>
       <div class="form-grid">
         <div class="field"><label class="label">Passcode (fallback, only used if the link has no pwd=)</label><input class="input" id="src-zoom-passcode"></div>
         <div class="field"><label class="label">Bot display name</label><input class="input" id="src-zoom-botname" value="Stream Bot" maxlength="64"></div>

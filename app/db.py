@@ -119,6 +119,8 @@ CREATE TABLE IF NOT EXISTS youtube_links (
 _MIGRATIONS: list[tuple[str, str, str]] = [
     # (table, column, "ALTER TABLE ... " to run if the column is missing)
     ("schedules", "source_id", "ALTER TABLE schedules ADD COLUMN source_id INTEGER"),
+    # Part 3: which Google account (Chrome profile) a source plays/joins as.
+    ("sources", "account_id", "ALTER TABLE sources ADD COLUMN account_id INTEGER"),
 ]
 
 

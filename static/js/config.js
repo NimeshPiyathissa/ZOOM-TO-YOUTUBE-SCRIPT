@@ -31,9 +31,27 @@ if (srcUrl) {
         const res = await apiFetch("/api/sources/detect-type", { method: "POST", body: JSON.stringify({ url }) });
         srcDetect.textContent = `Detected: ${res.type} (change the type above if that's wrong)`;
         setSourceType(res.type, { fromDetect: true });
+        if (res.type === "zoom") await explainZoomLink(url);
       } catch (err) { srcDetect.textContent = ""; }
     }, 400);
   });
+}
+
+// Zoom links come in three very different kinds - see app/zoomlink.py.
+// Explain which one was pasted before the admin saves it.
+const ZOOM_KIND_TEXT = {
+  meeting: "Ordinary join link - the bot can join this directly.",
+  personal: "Personal join link (has a tk= registrant token) - the bot can join directly. Note: tk= tokens are per-registrant and can expire.",
+  registration: "This is a webinar REGISTRATION page, not a join link. Save it anyway: on the Remote page you'll open the form on the remote desktop, register by hand, then paste the personal join link Zoom gives you.",
+  unknown: "Not recognised as a Zoom join or registration link.",
+};
+async function explainZoomLink(url) {
+  const box = document.getElementById("src-zoom-kind");
+  try {
+    const info = await apiFetch("/api/zoom/classify", { method: "POST", body: JSON.stringify({ url }) });
+    document.getElementById("src-zoom-kind-text").textContent = ZOOM_KIND_TEXT[info.kind] || ZOOM_KIND_TEXT.unknown;
+    box.hidden = false;
+  } catch (err) { box.hidden = true; }
 }
 
 initSegmented(document.getElementById("src-zoom-signin-group"));
@@ -90,19 +108,29 @@ document.getElementById("add-source").onclick = async (e) => {
       reconnect: document.getElementById("src-direct-reconnect").checked,
     };
   }
+  const account_id = document.getElementById("src-account").value || null;
   await withLoading(e.currentTarget, async () => {
     try {
-      await apiFetch("/api/sources", { method: "POST", body: JSON.stringify({ name, type: currentType, url, options }) });
+      await apiFetch("/api/sources", { method: "POST", body: JSON.stringify({ name, type: currentType, url, options, account_id }) });
       toast("Source added"); location.reload();
     } catch (err) { toast(err.message, "err"); }
   });
 };
 
 document.querySelectorAll(".switch-source").forEach(btn => btn.addEventListener("click", async () => {
-  if (!(await confirmDialog("Switch to this source? The encoder restarts briefly."))) return;
+  let preview = {};
+  try { preview = await apiFetch(`/api/sources/${btn.dataset.id}/switch-preview`); } catch (err) { /* generic confirm below */ }
+  const msg = preview.rtmp_would_drop
+    ? "Switch to this source? This kind of switch restarts the encoder (a few seconds of buffering for viewers)."
+    : preview.ffmpeg_up ? "Switch to this source while live? The stream stays connected; viewers see a brief slate."
+    : "Switch to this source and go live with it?";
+  if (!(await confirmDialog(msg, { danger: !!preview.rtmp_would_drop }))) return;
   await withLoading(btn, async () => {
-    try { await apiFetch(`/api/sources/${btn.dataset.id}/switch`, { method: "POST" }); toast("Switched"); location.reload(); }
-    catch (err) { toast(err.message, "err"); }
+    try {
+      const r = await apiFetch(`/api/sources/${btn.dataset.id}/switch`, { method: "POST" });
+      toast(r.hot_swapped ? "Switched in place" : r.rtmp_dropped ? "Switched - encoder restarted" : "Switched - stream stayed connected");
+      location.reload();
+    } catch (err) { toast(err.message, "err"); }
   });
 }));
 document.querySelectorAll(".delete-source").forEach(btn => btn.addEventListener("click", async () => {

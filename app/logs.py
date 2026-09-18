@@ -19,6 +19,8 @@ FILE_BACKED_UNITS = {
 
 _REDACT_PATTERNS = [
     re.compile(r"(pwd=)[^&\s]+", re.IGNORECASE),
+    # Per-registrant webinar token - lets anyone join as that registrant.
+    re.compile(r"(tk=)[^&\s]+", re.IGNORECASE),
     re.compile(r"(rtmps?://[^/\s]+/live2/)[^\s\"']+", re.IGNORECASE),
 ]
 

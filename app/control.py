@@ -6,6 +6,7 @@ privileged operations."""
 from __future__ import annotations
 
 import functools
+import json
 import pwd
 import re
 import subprocess
@@ -221,7 +222,21 @@ SOURCE_ENV_KEYS = (
     "SOURCE_TYPE",
     "WEBPAGE_URL", "WEBPAGE_ZOOM", "WEBPAGE_RELOAD_SECONDS", "WEBPAGE_CLICK_TO_START",
     "DIRECT_URL", "DIRECT_MODE", "DIRECT_LOOP", "DIRECT_RECONNECT",
+    # Part 3: Chrome profile of the bound Google account (see
+    # app/accounts.py); read by browser-source.sh and
+    # open-url-with-account.sh. Empty = shared stream profile.
+    "ACCOUNT_PROFILE_ID",
 )
+
+
+def _account_profile_id(source: dict) -> str:
+    account_id = source.get("account_id")
+    if not account_id:
+        return ""
+    from . import db  # local: avoid a module-level cycle through accounts
+    with db.get_conn() as conn:
+        row = conn.execute("SELECT profile_id FROM accounts WHERE id=?", (account_id,)).fetchone()
+    return row["profile_id"] if row else ""
 
 
 def _unquote_env_value(raw: str) -> str:
@@ -264,6 +279,7 @@ def _source_env_lines(source: dict) -> dict[str, str]:
     options = source.get("options") or {}
     values = {k: "" for k in SOURCE_ENV_KEYS}
     values["SOURCE_TYPE"] = type_
+    values["ACCOUNT_PROFILE_ID"] = _account_profile_id(source)
     if type_ == "webpage":
         url = url_security.validate_url(source["url"], "webpage")
         values["WEBPAGE_URL"] = url
@@ -308,10 +324,16 @@ def apply_source_config(source: dict) -> None:
         raise ControlError(f"unknown source type: {type_}")
 
     if type_ == "zoom":
-        from . import env_store  # local import: env_store imports from this module
+        from . import env_store, sources as sources_mod  # local: both import from this module
         options = source.get("options") or {}
+        join_url = sources_mod.effective_zoom_join_url(source)
+        if not join_url:
+            raise ControlError(
+                "This Zoom source is a registration page with no personal join link saved yet - "
+                "open the registration, complete it, then save the join link Zoom gives you."
+            )
         env_store.write_updates({
-            "ZOOM_LINK": source["url"],
+            "ZOOM_LINK": join_url,
             "ZOOM_PASSCODE": options.get("passcode", ""),
             "BOT_NAME": options.get("bot_name", "Stream Bot"),
             "ZOOM_SIGNIN_MODE": options.get("signin_mode", "guest"),
@@ -320,15 +342,61 @@ def apply_source_config(source: dict) -> None:
     write_current_source(source)
 
 
-def start_source(source: dict) -> list[dict]:
-    """Switch to `source` and go live with it: quick-reconnect style (stop
-    the encoder, swap the producer, start the encoder again) - the same
-    few seconds of YouTube-side buffering as today's "Restart encoder"
-    button, not a hot swap."""
-    type_ = source["type"]
-    apply_source_config(source)
+def _ffmpeg_is_up() -> bool:
+    try:
+        return unit_show("ffmpeg-stream")["phase"] in (PHASE_LIVE, PHASE_STARTING, PHASE_RECONNECTING)
+    except ControlError:
+        return False
 
-    results = [unit_action("ffmpeg-stream", "stop")]
+
+def _set_slate() -> dict:
+    proc = run_as_zoombot([SUDO, "-u", config.ZOOMBOT_USER, XSETROOT_BIN, "-solid", SLATE_COLOR], timeout=10)
+    return {"ok": proc.returncode == 0, "action": "slate"}
+
+
+def start_source(source: dict) -> dict:
+    """Switch to `source`, keeping the RTMP connection up whenever that's
+    physically possible:
+
+    - webpage -> webpage while the kiosk Chrome is running: navigate the
+      existing tab over DevTools (app/cdp.py). Nothing restarts.
+    - zoom <-> webpage: ffmpeg captures :99 + zoom_out.monitor regardless
+      of which app is drawing, so the encoder keeps running; only the
+      producer (zoom / browser-source) is swapped, behind a plain slate.
+      Previously this path stopped and restarted ffmpeg too - that was a
+      choice, not a requirement, and it dropped RTMP every time.
+    - anything involving a direct-media source: ffmpeg's input graph is
+      different, so the encoder must restart. The caller is told via
+      rtmp_dropped=True (the UI confirms first while live) and a slate is
+      shown for the gap.
+    Returns {"results": [...], "rtmp_dropped": bool, "hot_swapped": bool}."""
+    type_ = source["type"]
+    old_type = read_current_source().get("SOURCE_TYPE", "")
+    ffmpeg_up = _ffmpeg_is_up()
+    results: list[dict] = []
+
+    # Fastest path: same producer, just a new URL.
+    if type_ == "webpage" and old_type == "webpage" and ffmpeg_up:
+        try:
+            if unit_show("browser-source")["phase"] == PHASE_LIVE:
+                import asyncio
+                from . import cdp, url_security
+                url = url_security.validate_url(source["url"], "webpage")
+                asyncio.run(cdp.navigate(url))
+                apply_source_config(source)  # so a later restart lands on the same page
+                return {"results": [{"ok": True, "action": "cdp-navigate"}], "rtmp_dropped": False, "hot_swapped": True}
+        except Exception as exc:  # CDPError (no debug port yet), URLSecurityError, ControlError
+            results.append({"ok": False, "action": "cdp-navigate", "stderr": str(exc)[:200]})
+            # fall through to a producer restart, which still keeps RTMP up
+
+    apply_source_config(source)
+    needs_ffmpeg_restart = type_ == "direct" or old_type == "direct"
+    rtmp_dropped = needs_ffmpeg_restart and ffmpeg_up
+
+    if ffmpeg_up:
+        results.append(_set_slate())
+    if needs_ffmpeg_restart:
+        results.append(unit_action("ffmpeg-stream", "stop"))
     for other_type, other_unit in config.PRODUCER_UNITS.items():
         if other_type != type_:
             results.append(unit_action(other_unit, "stop"))
@@ -337,11 +405,12 @@ def start_source(source: dict) -> list[dict]:
         results.append(unit_action("xvfb", "start")); time.sleep(0.5)
         results.append(unit_action("openbox", "start")); time.sleep(0.5)
         results.append(unit_action("audio-setup", "start")); time.sleep(0.5)
-        results.append(unit_action(config.PRODUCER_UNITS[type_], "start")); time.sleep(1)
+        results.append(unit_action(config.PRODUCER_UNITS[type_], "restart")); time.sleep(1)
         results.append(unit_action("x11vnc", "start"))
 
-    results.append(unit_action("ffmpeg-stream", "start"))
-    return results
+    if needs_ffmpeg_restart or not ffmpeg_up:
+        results.append(unit_action("ffmpeg-stream", "start"))
+    return {"results": results, "rtmp_dropped": rtmp_dropped, "hot_swapped": False}
 
 
 def rotate_vnc_password(new_password: str) -> dict:
@@ -499,6 +568,82 @@ def zoom_mic_state_heuristic() -> dict:
         if "mute" in label:
             return {"available": True, "authoritative": False, "muted": False, "raw_label": label}
     return {"available": False, "reason": out or "no output from check"}
+
+
+ZOOM_SHORTCUT_SCRIPT = config.STREAM_SCRIPTS_DIR / "zoom-shortcut.sh"
+ZOOM_ATSPI_SCRIPT = config.STREAM_SCRIPTS_DIR / "zoom-atspi.py"
+ZOOM_STATUS_SCRIPT = config.STREAM_SCRIPTS_DIR / "zoom-status.py"
+ZOOM_SHORTCUT_ACTIONS = {"mic", "camera", "view-speaker", "view-gallery"}
+
+
+def _zoom_atspi(query: str) -> dict:
+    """Best-effort AT-SPI read (mic/camera button labels). Same honesty
+    contract as zoom_mic_state_heuristic(): available=False until
+    zoom.service runs with QT_LINUX_ACCESSIBILITY_ALWAYS_ON=1, and even
+    then Zoom's label wording is unverified."""
+    argv = [SUDO, "-u", config.ZOOMBOT_USER, PYTHON3_BIN, str(ZOOM_ATSPI_SCRIPT), query]
+    try:
+        proc = run_as_zoombot(argv, timeout=10)
+    except ControlError:
+        return {"available": False, "reason": "check did not run"}
+    out = proc.stdout.decode(errors="replace").strip()
+    if out.startswith("label:"):
+        label = out[len("label:"):].lower()
+        if query == "mic":
+            on = not ("unmute" in label)
+        else:  # camera: "start video" means it's currently off
+            on = not ("start" in label)
+        return {"available": True, "authoritative": False, "on": on, "raw_label": label}
+    return {"available": False, "reason": out or "no output"}
+
+
+def zoom_shortcut(action: str) -> dict:
+    """Sends one of Zoom's own keyboard shortcuts to the meeting window
+    (Alt+A mic, Alt+V camera, Alt+F1/F2 view), then reads back what can
+    be read back. `verify.available` says whether that readback means
+    anything right now."""
+    if action not in ZOOM_SHORTCUT_ACTIONS:
+        raise ControlError(f"invalid zoom action: {action}")
+    argv = [SUDO, "-u", config.ZOOMBOT_USER, str(ZOOM_SHORTCUT_SCRIPT), action]
+    proc = run_as_zoombot(argv, timeout=10)
+    if proc.returncode != 0:
+        raise ControlError(proc.stderr.decode(errors="replace").strip() or "zoom shortcut failed")
+    time.sleep(0.4)
+    verify = _zoom_atspi("mic") if action == "mic" else (_zoom_atspi("camera") if action == "camera" else {"available": False, "reason": "view mode has no readable state"})
+    return {"sent": True, "action": action, "verify": verify}
+
+
+def zoom_meeting_status() -> dict:
+    """Window-title + (when available) AT-SPI text heuristics for:
+    not_joined / connecting / waiting_room / in_meeting / ended /
+    passcode_required / registration_required / removed / unknown.
+    Explicitly non-authoritative - see scripts/zoom-status.py."""
+    argv = [SUDO, "-u", config.ZOOMBOT_USER, PYTHON3_BIN, str(ZOOM_STATUS_SCRIPT)]
+    try:
+        proc = run_as_zoombot(argv, timeout=15)
+        data = json.loads(proc.stdout.decode(errors="replace").strip().splitlines()[-1])
+    except (ControlError, json.JSONDecodeError, IndexError):
+        data = {"status": "unknown", "detail": "status check did not run"}
+    data.setdefault("authoritative", False)
+    try:
+        data["service"] = unit_show("zoom")["phase"]
+    except ControlError:
+        data["service"] = "unknown"
+    data["mic"] = _zoom_atspi("mic")
+    data["camera"] = _zoom_atspi("camera")
+    return data
+
+
+def open_url_in_account_profile(profile_id: str, url: str) -> None:
+    """Opens `url` in an ordinary (no DevTools) Chrome window on :99 using
+    the given account profile - the registration-form flow. URL must
+    already have passed url_security.validate_url()."""
+    if not _PROFILE_ID_RE.match(profile_id):
+        raise ControlError("invalid profile id")
+    argv = [SUDO, "-u", config.ZOOMBOT_USER, str(ACCOUNT_SCRIPT), "open", profile_id, url]
+    proc = run_as_zoombot(argv, timeout=20)
+    if proc.returncode != 0:
+        raise ControlError(proc.stderr.decode(errors="replace").strip() or "could not open the page")
 
 
 def zoom_mic_toggle() -> dict:

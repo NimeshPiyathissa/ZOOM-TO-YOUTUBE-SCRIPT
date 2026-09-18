@@ -12,7 +12,9 @@ from .control import SUDO, run_as_zoombot, ControlError  # reuse the same sudo p
 
 CAT = "/usr/bin/cat"
 
-ZOOM_LINK_RE = re.compile(r"^https://([a-z0-9.-]*\.)?zoom\.us/j/(\d{9,11})(\?.*)?$", re.IGNORECASE)
+# /j/ = ordinary meeting/webinar join link; /w/ = the per-registrant
+# webinar link (carries tk=) - see app/zoomlink.py for the distinction.
+ZOOM_LINK_RE = re.compile(r"^https://([a-z0-9.-]*\.)?zoom\.us/[jw]/(\d{9,11})(\?.*)?$", re.IGNORECASE)
 PWD_PARAM_RE = re.compile(r"[?&]pwd=([^&]+)")
 
 

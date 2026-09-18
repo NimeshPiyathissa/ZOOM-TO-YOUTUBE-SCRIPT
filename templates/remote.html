@@ -15,6 +15,145 @@
     </div>
   </section>
 
+  <section class="card" aria-labelledby="remote-sources-h">
+    <h2 id="remote-sources-h" class="remote-section-title">{{ icon("shuffle", "icon-sm") }}Sources</h2>
+    <div class="source-tiles" id="source-tiles" role="list" aria-label="Saved sources">
+      {% for s in sources %}
+      <button type="button" class="source-tile {{ 'is-active' if s.id == active_source_id }}" role="listitem"
+              data-source-id="{{ s.id }}" data-type="{{ s.type }}" aria-pressed="{{ 'true' if s.id == active_source_id else 'false' }}">
+        {{ icon("video" if s.type == "zoom" else ("globe" if s.type == "webpage" else "cast")) }}
+        <span class="source-tile-name">{{ s.name }}</span>
+        <span class="source-tile-type">{{ s.type }}{% if s.type == "zoom" and s.link_kind == "registration" and not s.join_ready %} · needs registration{% endif %}</span>
+      </button>
+      {% else %}
+      <div class="empty-state">{{ icon("link") }}<div class="empty-sub">No saved sources - add some on the Configuration page.</div></div>
+      {% endfor %}
+    </div>
+    <p class="hint mt-2" id="source-switch-hint">Switching between Zoom and web sources keeps the stream connected; only direct-media switches restart the encoder (you'll be asked first).</p>
+  </section>
+
+  <!-- Context panel: swaps to the active source's controls -->
+  <section class="card" id="ctx-webpage" hidden aria-labelledby="ctx-webpage-h">
+    <h2 id="ctx-webpage-h" class="remote-section-title">{{ icon("globe", "icon-sm") }}YouTube / web page <span class="hint m-0" id="ctx-webpage-name"></span></h2>
+
+    <div class="field">
+      <label class="label" for="ctx-account">Play as</label>
+      <select id="ctx-account" class="input">
+        <option value="">Shared profile (no account)</option>
+        {% for a in accounts %}<option value="{{ a.id }}">{{ a.label }}{% if a.identity_masked %} - {{ a.identity_masked }}{% endif %} ({{ a.state }})</option>{% endfor %}
+      </select>
+      <div class="hint mt-1">Takes effect the next time this source is switched to or the browser restarts.</div>
+    </div>
+
+    <div class="banner banner-warning mb-3" id="yt-diagnosis" hidden>
+      {{ icon("alert-triangle") }}
+      <div>
+        <div id="yt-diagnosis-msg"></div>
+        <div class="hint mt-1" id="yt-diagnosis-fix"></div>
+        <div class="btn-row mt-2"><a href="/accounts" class="btn btn-secondary btn-sm" id="yt-diagnosis-link">{{ icon("log-in", "icon-sm") }}Open Accounts</a></div>
+      </div>
+    </div>
+
+    <div class="yt-now" id="yt-now">
+      <span class="hint" id="yt-title">No player detected on the browser source yet.</span>
+      <span class="badge badge-inactive tnum" id="yt-quality">quality —</span>
+    </div>
+    <div class="yt-seek-row">
+      <span class="tnum yt-time" id="yt-cur">0:00</span>
+      <input type="range" id="yt-seek" class="slider" min="0" max="100" value="0" step="1" aria-label="Seek">
+      <span class="tnum yt-time" id="yt-dur">0:00</span>
+    </div>
+    <div class="remote-yt-transport">
+      <button id="r-yt-prev" class="btn btn-secondary btn-touch btn-icon" aria-label="Previous saved link">{{ icon("skip-back") }}</button>
+      <button id="r-yt-play" class="btn btn-primary btn-touch btn-icon" aria-label="Play">{{ icon("play") }}</button>
+      <button id="r-yt-pause" class="btn btn-secondary btn-touch btn-icon" aria-label="Pause">{{ icon("pause") }}</button>
+      <button id="r-yt-next" class="btn btn-secondary btn-touch btn-icon" aria-label="Next saved link">{{ icon("skip-forward") }}</button>
+      <button id="r-yt-mute" class="btn btn-secondary btn-touch btn-icon" aria-label="Mute player" aria-pressed="false">{{ icon("volume-2") }}</button>
+      <button id="r-yt-theater" class="btn btn-secondary btn-touch btn-icon" aria-label="Toggle theater mode">{{ icon("monitor") }}</button>
+    </div>
+    <div class="remote-volume-row">
+      {{ icon("volume-2", "icon-sm") }}
+      <input type="range" id="r-yt-volume" class="slider" min="0" max="100" value="100" aria-label="YouTube player volume">
+    </div>
+
+    <h3 class="remote-section-title mt-4">Library</h3>
+    <div class="yt-library" id="r-yt-list" role="list" aria-label="Saved YouTube links">
+      {% for link in youtube_links %}
+      <div class="yt-card" role="listitem" data-link-id="{{ link.id }}" data-url="{{ link.url }}">
+        <button type="button" class="yt-card-play" aria-label="Play {{ link.name }}">
+          {% if link.thumbnail_url %}<img src="{{ link.thumbnail_url }}" alt="" loading="lazy" class="yt-thumb">{% else %}<div class="yt-thumb yt-thumb-empty">{{ icon("cast") }}</div>{% endif %}
+          <span class="yt-card-name">{{ link.name }}</span>
+        </button>
+        <button type="button" class="btn btn-ghost btn-icon btn-sm r-yt-delete" data-link-id="{{ link.id }}" aria-label="Delete {{ link.name }}">{{ icon("trash-2", "icon-sm") }}</button>
+      </div>
+      {% else %}
+      <div class="empty-state" id="r-yt-empty">{{ icon("cast") }}<div class="empty-sub">No saved links yet</div></div>
+      {% endfor %}
+    </div>
+    <div class="field mt-3">
+      <label class="label" for="r-yt-name">Paste a link</label>
+      <input type="text" id="r-yt-name" class="input mb-2" placeholder="Name (e.g. Lo-fi loop)" maxlength="120">
+      <input type="url" id="r-yt-url" class="input" placeholder="https://www.youtube.com/watch?v=… or a playlist">
+    </div>
+    <div class="btn-row">
+      <button id="r-yt-save" class="btn btn-secondary btn-touch">{{ icon("plus") }}Save &amp; play</button>
+      <button id="r-yt-playonce" class="btn btn-ghost btn-touch">{{ icon("play") }}Play without saving</button>
+    </div>
+  </section>
+
+  <section class="card" id="ctx-zoom" hidden aria-labelledby="ctx-zoom-h">
+    <h2 id="ctx-zoom-h" class="remote-section-title">{{ icon("video", "icon-sm") }}Zoom <span class="hint m-0" id="ctx-zoom-name"></span></h2>
+
+    <div class="zoom-status" id="zoom-status" aria-live="polite">
+      <span class="badge badge-inactive" id="zoom-status-badge"><span class="dot"></span><span id="zoom-status-text">checking…</span></span>
+      <span class="hint" id="zoom-status-detail"></span>
+    </div>
+    <div class="banner banner-warning mt-2" id="zoom-status-action" hidden>{{ icon("info") }}<div id="zoom-status-action-text"></div></div>
+    <div class="hint mt-1" id="zoom-status-note">Status is inferred from window titles/accessibility text - not confirmed by Zoom.</div>
+
+    <div class="banner banner-info mt-3" id="zoom-registration" hidden>
+      {{ icon("info") }}
+      <div>
+        <div><strong>This source is a webinar registration page, not a join link.</strong> Zoom needs a personal join link (with a <span class="mono">tk=</span> token) that it issues to you after registering.</div>
+        <div class="hint mt-1">Open the form on the remote desktop and fill it in yourself. The link appears on the confirmation page and is usually emailed too - paste it below. It is single-registrant and may expire.</div>
+        <div class="btn-row mt-2">
+          <button id="zoom-reg-open" class="btn btn-secondary btn-touch">{{ icon("external-link", "icon-sm") }}Open registration</button>
+          <a href="/vnc" class="btn btn-ghost btn-touch" target="_blank" rel="noopener">{{ icon("monitor", "icon-sm") }}Remote desktop</a>
+        </div>
+        <div class="field mt-3">
+          <label class="label" for="zoom-join-url">Personal join link</label>
+          <input type="url" id="zoom-join-url" class="input" placeholder="https://us06web.zoom.us/w/8…?tk=…">
+        </div>
+        <button id="zoom-join-url-save" class="btn btn-primary btn-touch">{{ icon("check") }}Save join link</button>
+      </div>
+    </div>
+
+    <div class="remote-action-row mt-3">
+      <button id="z-join" class="btn btn-primary btn-touch">{{ icon("play") }}Join</button>
+      <button id="z-rejoin" class="btn btn-secondary btn-touch">{{ icon("rotate-cw") }}Rejoin</button>
+      <button id="z-leave-slate" class="btn btn-secondary btn-touch">{{ icon("door-open") }}Leave → Slate</button>
+      <button id="z-leave-stop" class="btn btn-danger btn-touch">{{ icon("door-open") }}Leave → Stop</button>
+    </div>
+    <div class="remote-action-row mt-3">
+      <button id="z-mic" class="btn btn-secondary btn-touch" aria-pressed="false">{{ icon("mic") }}<span>Mic</span></button>
+      <button id="z-camera" class="btn btn-secondary btn-touch" aria-pressed="false">{{ icon("video") }}<span>Camera</span></button>
+      <button id="z-view-speaker" class="btn btn-secondary btn-touch">{{ icon("user") }}Speaker view</button>
+      <button id="z-view-gallery" class="btn btn-secondary btn-touch">{{ icon("layout-dashboard") }}Gallery view</button>
+    </div>
+    <div class="hint mt-2" id="zoom-readback"></div>
+  </section>
+
+  <section class="card" id="ctx-direct" hidden aria-labelledby="ctx-direct-h">
+    <h2 id="ctx-direct-h" class="remote-section-title">{{ icon("cast", "icon-sm") }}Direct media <span class="hint m-0" id="ctx-direct-name"></span></h2>
+    <div class="mono text-dim" id="direct-url"></div>
+    <div class="hint mt-1" id="direct-options"></div>
+    <div class="btn-row mt-3">
+      <button id="direct-probe" class="btn btn-secondary btn-touch">{{ icon("search") }}Probe stream</button>
+      <span class="hint m-0" id="direct-probe-result"></span>
+    </div>
+    <p class="hint mt-2">Encoding, loop and reconnect options are edited on the Configuration page; switching to a direct source restarts the encoder.</p>
+  </section>
+
   <section aria-labelledby="remote-audio-h">
     <h2 id="remote-audio-h" class="remote-section-title">{{ icon("volume-2", "icon-sm") }}Audio</h2>
     <div class="card audio-card audio-stream">
@@ -22,67 +161,14 @@
         <span class="audio-card-title">Stream audio</span>
         <span class="audio-card-hint">What viewers hear &mdash; RTMP stays connected either way</span>
       </div>
-      <button id="r-stream-audio" class="btn btn-secondary btn-touch btn-icon"
-              aria-pressed="false" aria-label="Mute stream audio">
-        {{ icon("volume-2") }}
-      </button>
+      <button id="r-stream-audio" class="btn btn-secondary btn-touch btn-icon" aria-pressed="false" aria-label="Mute stream audio">{{ icon("volume-2") }}</button>
     </div>
     <div class="card audio-card audio-zoom-mic mt-3">
       <div class="audio-card-label">
         <span class="audio-card-title">Zoom mic</span>
         <span class="audio-card-hint" id="r-zoom-mic-hint">The bot's own mic status in the meeting</span>
       </div>
-      <button id="r-zoom-mic" class="btn btn-secondary btn-touch btn-icon"
-              aria-pressed="false" aria-label="Toggle Zoom microphone">
-        {{ icon("mic") }}
-      </button>
-    </div>
-  </section>
-
-  <section class="card" aria-labelledby="remote-zoom-h">
-    <h2 id="remote-zoom-h" class="remote-section-title">{{ icon("video", "icon-sm") }}Zoom</h2>
-    <p class="hint mb-3">Leaving keeps the stream config as-is: choose whether the encoder shows a plain slate or stops entirely.</p>
-    <div class="remote-action-row">
-      <button id="r-leave-slate" class="btn btn-secondary btn-touch">{{ icon("door-open") }}Leave &rarr; Slate</button>
-      <button id="r-leave-stop" class="btn btn-danger btn-touch">{{ icon("door-open") }}Leave &rarr; Stop</button>
-      <button id="r-rejoin" class="btn btn-secondary btn-touch">{{ icon("rotate-cw") }}Rejoin</button>
-    </div>
-  </section>
-
-  <section class="card" aria-labelledby="remote-yt-h">
-    <h2 id="remote-yt-h" class="remote-section-title">{{ icon("cast", "icon-sm") }}YouTube switcher</h2>
-    <p class="hint mb-3">Only takes effect while the active source is a webpage source with the browser open.</p>
-
-    <div class="remote-yt-list" id="r-yt-list" role="list" aria-label="Saved YouTube links">
-      {% for link in youtube_links %}
-      <button type="button" class="remote-yt-item" role="listitem" data-link-id="{{ link.id }}" data-url="{{ link.url }}">
-        {{ icon("play", "icon-sm") }}<span class="remote-yt-item-name">{{ link.name }}</span>
-        <button type="button" class="btn btn-ghost btn-icon btn-sm r-yt-delete" data-link-id="{{ link.id }}" aria-label="Delete {{ link.name }}">{{ icon("trash-2", "icon-sm") }}</button>
-      </button>
-      {% else %}
-      <div class="empty-state" id="r-yt-empty">{{ icon("cast") }}<div class="empty-sub">No saved links yet</div></div>
-      {% endfor %}
-    </div>
-
-    <div class="field mt-4">
-      <label class="label" for="r-yt-name">Save a new link</label>
-      <input type="text" id="r-yt-name" class="input mb-2" placeholder="Name (e.g. Lo-fi loop)" maxlength="120">
-      <input type="url" id="r-yt-url" class="input" placeholder="https://www.youtube.com/watch?v=&hellip;">
-    </div>
-    <div class="btn-row">
-      <button id="r-yt-save" class="btn btn-secondary btn-touch">{{ icon("plus") }}Save &amp; play</button>
-    </div>
-
-    <div class="remote-yt-transport">
-      <button id="r-yt-prev" class="btn btn-secondary btn-touch btn-icon" aria-label="Previous saved link">{{ icon("skip-back") }}</button>
-      <button id="r-yt-play" class="btn btn-primary btn-touch btn-icon" aria-label="Play">{{ icon("play") }}</button>
-      <button id="r-yt-pause" class="btn btn-secondary btn-touch btn-icon" aria-label="Pause">{{ icon("pause") }}</button>
-      <button id="r-yt-next" class="btn btn-secondary btn-touch btn-icon" aria-label="Next saved link">{{ icon("skip-forward") }}</button>
-    </div>
-    <div class="remote-volume-row">
-      {{ icon("volume-2", "icon-sm") }}
-      <input type="range" id="r-yt-volume" class="slider" min="0" max="100" value="100"
-             aria-label="YouTube player volume">
+      <button id="r-zoom-mic" class="btn btn-secondary btn-touch btn-icon" aria-pressed="false" aria-label="Toggle Zoom microphone">{{ icon("mic") }}</button>
     </div>
   </section>
 
@@ -90,5 +176,7 @@
 
 {% endblock %}
 {% block scripts %}
+<script type="application/json" id="sources-data">{{ sources | tojson }}</script>
+<script type="application/json" id="active-source-id">{{ active_source_id | tojson }}</script>
 <script src="/static/js/remote.js"></script>
 {% endblock %}

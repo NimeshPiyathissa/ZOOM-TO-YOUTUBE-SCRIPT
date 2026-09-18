@@ -57,3 +57,31 @@ def to_embed_url(raw_url: str) -> str:
     else:
         raise YouTubeURLError("Could not find a video or playlist ID in that URL")
     return base + "?" + "&".join(params)
+
+
+def video_id_from_url(raw_url: str) -> str | None:
+    """Best-effort ID extraction for thumbnails - no validation side
+    effects, no network."""
+    try:
+        parsed = urlparse((raw_url or "").strip())
+    except ValueError:
+        return None
+    host = parsed.netloc.lower()
+    if host not in _YT_HOSTS:
+        return None
+    qs = parse_qs(parsed.query)
+    if host == "youtu.be":
+        return _valid_id(parsed.path.lstrip("/"))
+    if parsed.path.startswith("/watch"):
+        return _valid_id((qs.get("v") or [None])[0])
+    for prefix in ("/embed/", "/shorts/"):
+        if parsed.path.startswith(prefix):
+            return _valid_id(parsed.path[len(prefix):].split("/")[0])
+    return None
+
+
+def thumbnail_url(raw_url: str) -> str | None:
+    """YouTube's public thumbnail CDN - no API key. Playlists have no
+    single thumbnail; the UI shows a generic tile for those."""
+    vid = video_id_from_url(raw_url)
+    return f"https://i.ytimg.com/vi/{vid}/hqdefault.jpg" if vid else None

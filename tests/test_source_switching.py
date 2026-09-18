@@ -67,7 +67,7 @@ def test_source_env_lines_revalidates_url_at_write_time(monkeypatch):
         control._source_env_lines(source)
 
 
-# ---------------------------------------------------------------- start_source sequencing
+# ---------------------------------------------------------------- start_source sequencing (Part 3: RTMP-preserving)
 
 class _Recorder:
     def __init__(self):
@@ -80,54 +80,143 @@ class _Recorder:
 
 @pytest.fixture
 def recorder(monkeypatch):
+    """No real subprocess/sudo/systemd: unit actions are recorded, the
+    slate is a no-op, and the two state reads (what's the current source
+    type, is the encoder up) are pinned per test via `pin`."""
     rec = _Recorder()
     monkeypatch.setattr(control, "unit_action", rec.unit_action)
     monkeypatch.setattr(control, "write_current_source", lambda source: None)
+    monkeypatch.setattr(control, "_set_slate", lambda: {"ok": True, "action": "slate"})
     monkeypatch.setattr(control.time, "sleep", lambda *_: None)
+    monkeypatch.setattr("app.env_store.write_updates", lambda updates: [])
+
+    def pin(current_type="", ffmpeg_up=False):
+        monkeypatch.setattr(control, "read_current_source", lambda: {"SOURCE_TYPE": current_type} if current_type else {})
+        monkeypatch.setattr(control, "_ffmpeg_is_up", lambda: ffmpeg_up)
+    rec.pin = pin
+    pin()
     return rec
 
 
-def test_start_source_zoom_stops_browser_source_and_starts_zoom_chain(recorder, monkeypatch):
-    monkeypatch.setattr("app.env_store.write_updates", lambda updates: [])
-    source = {"type": "zoom", "url": "https://zoom.us/j/123", "options": {"bot_name": "Bot", "signin_mode": "guest"}}
-    control.start_source(source)
+ZOOM = {"type": "zoom", "url": "https://zoom.us/j/1234567890", "options": {"bot_name": "Bot", "signin_mode": "guest"}}
+WEB = {"type": "webpage", "url": "https://meet.google.com/abc", "options": {}}
+DIRECT = {"type": "direct", "url": "https://example.com/stream.m3u8", "options": {}}
 
-    assert ("ffmpeg-stream", "stop") == recorder.calls[0]
+
+def test_zoom_from_cold_starts_chain_then_encoder(recorder):
+    recorder.pin(current_type="", ffmpeg_up=False)
+    out = control.start_source(ZOOM)
     assert ("browser-source", "stop") in recorder.calls
-    assert ("zoom", "stop") not in recorder.calls  # zoom is the wanted producer, never stopped
-    assert ("xvfb", "start") in recorder.calls
-    assert ("openbox", "start") in recorder.calls
-    assert ("audio-setup", "start") in recorder.calls
-    assert ("zoom", "start") in recorder.calls
-    assert ("x11vnc", "start") in recorder.calls
-    assert recorder.calls[-1] == ("ffmpeg-stream", "start")
-    # producer must be started before the encoder
-    assert recorder.calls.index(("zoom", "start")) < recorder.calls.index(("ffmpeg-stream", "start"))
+    assert ("zoom", "stop") not in recorder.calls            # zoom is the wanted producer
+    for u in ("xvfb", "openbox", "audio-setup", "x11vnc"):
+        assert (u, "start") in recorder.calls
+    assert ("zoom", "restart") in recorder.calls              # restart, so a same-type switch actually rejoins
+    assert recorder.calls[-1] == ("ffmpeg-stream", "start")   # encoder was down: switching = going live
+    assert ("ffmpeg-stream", "stop") not in recorder.calls
+    assert out["rtmp_dropped"] is False and out["hot_swapped"] is False
 
 
-def test_start_source_webpage_stops_zoom_and_starts_browser_source(recorder, monkeypatch):
-    source = {"type": "webpage", "url": "https://meet.google.com/abc", "options": {}}
-    control.start_source(source)
-
+def test_zoom_to_webpage_while_live_keeps_encoder_running(recorder):
+    recorder.pin(current_type="zoom", ffmpeg_up=True)
+    out = control.start_source(WEB)
     assert ("zoom", "stop") in recorder.calls
-    assert ("browser-source", "stop") not in recorder.calls
-    assert ("browser-source", "start") in recorder.calls
-    assert recorder.calls.index(("browser-source", "start")) < recorder.calls.index(("ffmpeg-stream", "start"))
+    assert ("browser-source", "restart") in recorder.calls
+    # The whole point: ffmpeg is neither stopped nor (re)started.
+    assert not [c for c in recorder.calls if c[0] == "ffmpeg-stream"]
+    assert out["rtmp_dropped"] is False and out["hot_swapped"] is False
 
 
-def test_start_source_direct_stops_both_producers_and_skips_display_infra(recorder, monkeypatch):
-    source = {"type": "direct", "url": "https://example.com/stream.m3u8", "options": {}}
-    control.start_source(source)
-
-    assert ("zoom", "stop") in recorder.calls
+def test_webpage_to_zoom_while_live_keeps_encoder_running(recorder):
+    recorder.pin(current_type="webpage", ffmpeg_up=True)
+    out = control.start_source(ZOOM)
     assert ("browser-source", "stop") in recorder.calls
-    # a direct source needs no Xvfb/audio/producer/VNC infra at all
-    started_units = {u for u, v in recorder.calls if v == "start"}
-    assert started_units == {"ffmpeg-stream"}
-    assert recorder.calls[0] == ("ffmpeg-stream", "stop")
+    assert ("zoom", "restart") in recorder.calls
+    assert not [c for c in recorder.calls if c[0] == "ffmpeg-stream"]
+    assert out["rtmp_dropped"] is False
+
+
+def test_direct_while_live_restarts_encoder_and_reports_drop(recorder):
+    recorder.pin(current_type="zoom", ffmpeg_up=True)
+    out = control.start_source(DIRECT)
+    assert ("ffmpeg-stream", "stop") in recorder.calls
+    assert ("zoom", "stop") in recorder.calls and ("browser-source", "stop") in recorder.calls
+    started = {u for u, v in recorder.calls if v in ("start", "restart")}
+    assert started == {"ffmpeg-stream"}                       # no display infra for a direct source
     assert recorder.calls[-1] == ("ffmpeg-stream", "start")
+    assert out["rtmp_dropped"] is True
+
+
+def test_leaving_direct_while_live_also_restarts_encoder(recorder):
+    recorder.pin(current_type="direct", ffmpeg_up=True)
+    out = control.start_source(WEB)
+    assert ("ffmpeg-stream", "stop") in recorder.calls
+    assert recorder.calls.index(("browser-source", "restart")) < recorder.calls.index(("ffmpeg-stream", "start"))
+    assert out["rtmp_dropped"] is True
+
+
+def test_direct_from_cold_does_not_report_drop(recorder):
+    recorder.pin(current_type="", ffmpeg_up=False)
+    out = control.start_source(DIRECT)
+    assert recorder.calls[0] == ("ffmpeg-stream", "stop")     # harmless when already down
+    assert recorder.calls[-1] == ("ffmpeg-stream", "start")
+    assert out["rtmp_dropped"] is False
+
+
+def test_webpage_to_webpage_while_live_navigates_in_place(recorder, monkeypatch):
+    recorder.pin(current_type="webpage", ffmpeg_up=True)
+    _mock_public_dns(monkeypatch)
+    monkeypatch.setattr(control, "unit_show", lambda unit: {"phase": control.PHASE_LIVE})
+    navigated = []
+
+    async def fake_navigate(url):
+        navigated.append(url)
+    monkeypatch.setattr("app.cdp.navigate", fake_navigate)
+
+    out = control.start_source(WEB)
+    assert navigated == [WEB["url"]]
+    assert recorder.calls == []                               # nothing restarted at all
+    assert out["hot_swapped"] is True and out["rtmp_dropped"] is False
+
+
+def test_webpage_to_webpage_falls_back_to_producer_restart_when_cdp_unavailable(recorder, monkeypatch):
+    recorder.pin(current_type="webpage", ffmpeg_up=True)
+    _mock_public_dns(monkeypatch)
+    monkeypatch.setattr(control, "unit_show", lambda unit: {"phase": control.PHASE_LIVE})
+
+    async def no_port(url):
+        from app.cdp import CDPError
+        raise CDPError("no debug port")
+    monkeypatch.setattr("app.cdp.navigate", no_port)
+
+    out = control.start_source(WEB)
+    assert ("browser-source", "restart") in recorder.calls
+    assert not [c for c in recorder.calls if c[0] == "ffmpeg-stream"]  # still no RTMP drop
+    assert out["hot_swapped"] is False and out["rtmp_dropped"] is False
+    assert out["results"][0]["action"] == "cdp-navigate" and out["results"][0]["ok"] is False
+
+
+def test_zoom_registration_page_without_join_link_is_refused(recorder):
+    recorder.pin()
+    reg = {"type": "zoom", "url": "https://us06web.zoom.us/webinar/register/WN_abcdefgh", "options": {}}
+    with pytest.raises(control.ControlError):
+        control.start_source(reg)
+    assert recorder.calls == []
 
 
 def test_start_source_rejects_unknown_type(recorder):
     with pytest.raises(control.ControlError):
         control.start_source({"type": "carrier-pigeon", "url": "x", "options": {}})
+
+
+# ---------------------------------------------------------------- zoom link classification
+
+def test_zoomlink_classification():
+    from app import zoomlink
+    assert zoomlink.classify("https://zoom.us/j/1234567890?pwd=abc")["kind"] == "meeting"
+    p = zoomlink.classify("https://us06web.zoom.us/w/8123456789?tk=abcdef1234567890&pwd=xyz")
+    assert p["kind"] == "personal" and p["has_tk"] and p["meeting_id"] == "8123456789"
+    r = zoomlink.classify("https://us06web.zoom.us/webinar/register/WN_abcdEFGH1234")
+    assert r["kind"] == "registration" and r["registration_id"] == "WN_abcdEFGH1234"
+    assert zoomlink.classify("https://example.com/j/1234567890")["kind"] == "unknown"
+    with pytest.raises(zoomlink.ZoomLinkError):
+        zoomlink.validate_joinable("https://us06web.zoom.us/webinar/register/WN_x1234567")

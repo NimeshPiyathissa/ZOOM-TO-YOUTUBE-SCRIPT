@@ -81,7 +81,9 @@ async def security_headers(request: Request, call_next):
         # blob: is required for the Overview preview thumbnail (overview.js
         # fetches a JPEG and shows it via URL.createObjectURL), a JS-created
         # same-origin object URL, not attacker-controllable remote content.
-        "img-src 'self' data: blob:; "
+        # i.ytimg.com: YouTube's public thumbnail CDN for the saved-links
+        # library (app/youtube.py thumbnail_url) - images only.
+        "img-src 'self' data: blob: https://i.ytimg.com; "
         "connect-src 'self' ws: wss:; "
         "frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
     )
@@ -177,10 +179,14 @@ async def remote_page(request: Request):
     if isinstance(session, RedirectResponse):
         return session
     with db.get_conn() as conn:
-        links = [dict(r) for r in conn.execute("SELECT * FROM youtube_links ORDER BY sort_order, id").fetchall()]
+        links = [dict(r, thumbnail_url=youtube.thumbnail_url(r["url"]))
+                 for r in conn.execute("SELECT * FROM youtube_links ORDER BY sort_order, id").fetchall()]
+    active = sources_mod.get_active_source()
     return templates.TemplateResponse("remote.html", {
         "request": request, "csrf_token": session["csrf_token"], "username": session["username"],
-        "youtube_links": links,
+        "youtube_links": links, "sources": sources_mod.list_sources(),
+        "active_source_id": active["id"] if active else None,
+        "accounts": accounts_mod.list_accounts(),
     })
 
 
@@ -215,6 +221,7 @@ async def config_page(request: Request):
         "zoom_account": zoom_account,
         "signin_modes": sorted(config.ZOOM_SIGNIN_MODES),
         "direct_modes": sorted(config.DIRECT_MODES),
+        "accounts": accounts_mod.list_accounts(),
     })
 
 
@@ -584,7 +591,7 @@ async def api_sources_create(request: Request):
     try:
         sid = sources_mod.create_source(
             body.get("name", ""), body.get("type", ""),
-            body.get("url", ""), body.get("options", {}),
+            body.get("url", ""), body.get("options", {}), body.get("account_id"),
         )
     except (env_store.ValidationError, URLSecurityError) as exc:
         return _api_error(exc)
@@ -600,12 +607,85 @@ async def api_sources_update(source_id: int, request: Request):
     try:
         sources_mod.update_source(
             source_id, body.get("name", ""), body.get("type", ""),
-            body.get("url", ""), body.get("options", {}),
+            body.get("url", ""), body.get("options", {}), body.get("account_id"),
         )
     except (env_store.ValidationError, URLSecurityError) as exc:
         return _api_error(exc)
     db.audit(session["username"], "source_update", str(source_id), deps.client_ip(request))
     return {"ok": True}
+
+
+@app.post("/api/sources/{source_id}/account")
+async def api_sources_set_account(source_id: int, request: Request):
+    """Bind/unbind the Google account (Chrome profile) this source plays
+    or joins as. Takes effect on the next switch to the source."""
+    session = deps.require_session_api(request)
+    deps.require_csrf(request, session)
+    body = await request.json()
+    if not sources_mod.get_source(source_id):
+        raise HTTPException(status_code=404, detail="source not found")
+    try:
+        sources_mod.set_account(source_id, body.get("account_id"))
+    except env_store.ValidationError as exc:
+        return _api_error(exc)
+    db.audit(session["username"], "source_bind_account", f"{source_id}:{body.get('account_id')}", deps.client_ip(request))
+    return {"ok": True}
+
+
+@app.post("/api/zoom/classify")
+async def api_zoom_classify(request: Request):
+    deps.require_session_api(request)
+    body = await request.json()
+    from . import zoomlink
+    return zoomlink.classify(str(body.get("url", "")))
+
+
+@app.post("/api/sources/{source_id}/registration/open")
+async def api_sources_registration_open(source_id: int, request: Request):
+    """Opens the source's Zoom registration page in an ordinary Chrome
+    window on :99 (bound account's profile, or the 'default' one) for
+    the admin to complete over noVNC. Nothing is filled in for them."""
+    session = deps.require_session_api(request)
+    deps.require_csrf(request, session)
+    deps.require_rate_limit(session, "registration_open", max_calls=4, window_seconds=60)
+    s = sources_mod.get_source(source_id)
+    if not s or s["type"] != "zoom":
+        raise HTTPException(status_code=404, detail="zoom source not found")
+    from . import zoomlink
+    try:
+        zoomlink.validate_registration(s["url"])
+        url = await run_in_threadpool(url_security.validate_url, s["url"], "webpage")
+    except (zoomlink.ZoomLinkError, URLSecurityError) as exc:
+        return _api_error(exc)
+    profile_id = control._account_profile_id(s) or "default"
+    try:
+        if profile_id == "default":
+            await run_in_threadpool(control.account_profile_action, "create", "default")
+        await run_in_threadpool(control.open_url_in_account_profile, profile_id, url)
+    except control.ControlError as exc:
+        return _api_error(exc)
+    db.audit(session["username"], "zoom_registration_open", str(source_id), deps.client_ip(request))
+    return {"ok": True, "profile_id": profile_id}
+
+
+@app.post("/api/sources/{source_id}/join-url")
+async def api_sources_join_url(source_id: int, request: Request):
+    """Save the personal (tk=) join link Zoom issued after registering."""
+    session = deps.require_session_api(request)
+    deps.require_csrf(request, session)
+    body = await request.json()
+    try:
+        s = sources_mod.set_zoom_join_url(source_id, str(body.get("join_url", "")))
+        # Close the registration window if it's still open; the profile
+        # used was whichever registration/open picked.
+        profile_id = control._account_profile_id(s) or "default"
+        await run_in_threadpool(control.account_profile_action, "close", profile_id)
+    except env_store.ValidationError as exc:
+        return _api_error(exc)
+    except control.ControlError:
+        pass
+    db.audit(session["username"], "zoom_join_url_saved", str(source_id), deps.client_ip(request))
+    return {"ok": True, "link_kind": s["link_kind"], "join_ready": s["join_ready"]}
 
 
 @app.delete("/api/sources/{source_id}")
@@ -619,21 +699,38 @@ async def api_sources_delete(source_id: int, request: Request):
 
 @app.post("/api/sources/{source_id}/switch")
 async def api_sources_switch(source_id: int, request: Request):
-    """Switch-while-live = quick reconnect (see the plan this was built
-    from): stop the encoder, swap the producer, start the encoder again.
-    A few seconds of YouTube-side buffering, same as "Restart encoder"."""
+    """Keeps RTMP up whenever possible - see control.start_source() for
+    exactly when it can and can't. Response carries rtmp_dropped /
+    hot_swapped so the UI can say what actually happened."""
     session = deps.require_session_api(request)
     deps.require_csrf(request, session)
+    deps.require_rate_limit(session, "source_switch", max_calls=6, window_seconds=30)
     s = sources_mod.get_source(source_id)
     if not s:
         raise HTTPException(status_code=404, detail="source not found")
     try:
-        results = await run_in_threadpool(control.start_source, s)
+        outcome = await run_in_threadpool(control.start_source, s)
     except control.ControlError as exc:
         return _api_error(exc)
     sources_mod.set_active_source_id(source_id)
-    db.audit(session["username"], "source_switch", s["name"], deps.client_ip(request))
-    return {"results": results}
+    db.audit(session["username"], "source_switch",
+             f"{s['name']} hot={outcome['hot_swapped']} dropped={outcome['rtmp_dropped']}", deps.client_ip(request))
+    return outcome
+
+
+@app.get("/api/sources/{source_id}/switch-preview")
+async def api_sources_switch_preview(source_id: int, request: Request):
+    """What a switch to this source would do to the stream, so the UI can
+    confirm honestly ("will restart the encoder") before doing it."""
+    deps.require_session_api(request)
+    s = sources_mod.get_source(source_id)
+    if not s:
+        raise HTTPException(status_code=404, detail="source not found")
+    old_type = control.read_current_source().get("SOURCE_TYPE", "")
+    ffmpeg_up = await run_in_threadpool(control._ffmpeg_is_up)
+    needs_restart = s["type"] == "direct" or old_type == "direct"
+    return {"ffmpeg_up": ffmpeg_up, "rtmp_would_drop": needs_restart and ffmpeg_up,
+            "join_ready": s.get("join_ready", True)}
 
 
 # ---------------------------------------------------------------- api: Zoom Google sign-in (Change 2)
@@ -870,7 +967,23 @@ async def api_youtube_links_list(request: Request):
     deps.require_session_api(request)
     with db.get_conn() as conn:
         rows = conn.execute("SELECT * FROM youtube_links ORDER BY sort_order, id").fetchall()
-        return [dict(r) for r in rows]
+        return [dict(r, thumbnail_url=youtube.thumbnail_url(r["url"])) for r in rows]
+
+
+@app.get("/api/youtube/state")
+async def api_youtube_state(request: Request):
+    """Live player state read off the kiosk tab (never cached), plus the
+    spec's playback diagnosis (sign-in / age-restricted / error) with
+    the concrete fix for each."""
+    deps.require_session_api(request)
+    try:
+        res = await cdp.evaluate(cdp.JS_STATE)
+    except cdp.CDPError as exc:
+        return {"available": False, "reason": str(exc)}
+    state = res.get("value") or {}
+    state["available"] = True
+    state["diagnosis"] = cdp.diagnose(state)
+    return state
 
 
 @app.post("/api/youtube-links")
@@ -958,12 +1071,45 @@ async def api_youtube_control(request: Request):
         elif action == "volume":
             level = int(body.get("level", 100))
             await cdp.evaluate(cdp.js_set_volume(level))
+        elif action == "mute":
+            await cdp.evaluate(cdp.JS_MUTE)
+        elif action == "unmute":
+            await cdp.evaluate(cdp.JS_UNMUTE)
+        elif action == "seek":
+            await cdp.evaluate(cdp.js_seek(float(body.get("seconds", 0))))
+        elif action == "theater":
+            await cdp.evaluate(cdp.JS_THEATER)
         else:
             raise HTTPException(status_code=400, detail="invalid action")
-    except cdp.CDPError as exc:
+    except (cdp.CDPError, ValueError) as exc:
         return _api_error(exc)
     db.audit(session["username"], "youtube_control_" + action, ip=deps.client_ip(request))
     return {"ok": True}
+
+
+@app.get("/api/zoom/status")
+async def api_zoom_status(request: Request):
+    """Meeting status + mic/camera readback. Every field is a best-effort
+    heuristic (authoritative=False) - see control.zoom_meeting_status."""
+    deps.require_session_api(request)
+    return await run_in_threadpool(control.zoom_meeting_status)
+
+
+@app.post("/api/zoom/control")
+async def api_zoom_control(request: Request):
+    session = deps.require_session_api(request)
+    deps.require_csrf(request, session)
+    deps.require_rate_limit(session, "zoom_control", max_calls=10, window_seconds=10)
+    body = await request.json()
+    action = str(body.get("action", ""))
+    if action not in control.ZOOM_SHORTCUT_ACTIONS:
+        raise HTTPException(status_code=400, detail="invalid action")
+    try:
+        result = await run_in_threadpool(control.zoom_shortcut, action)
+    except control.ControlError as exc:
+        return _api_error(exc)
+    db.audit(session["username"], "zoom_control_" + action, ip=deps.client_ip(request))
+    return result
 
 
 # ---------------------------------------------------------------- api: schedules
