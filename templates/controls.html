@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon %}
+{% block title %}Controls - Zoom Stream Dashboard{% endblock %}
+{% block content %}
+
+<div class="section mt-0">
+  <div class="section-head"><h2>Active source</h2></div>
+  <div class="card">
+    <div class="source-active-row">
+      <span class="badge" id="active-source-badge">{{ icon("loader-circle", "icon-sm spin") }}loading&hellip;</span>
+      <span class="mono text-dim" id="active-source-url"></span>
+    </div>
+    {% if sources %}
+    <div class="field max-w-sm">
+      <label class="label" for="quick-source">Switch source</label>
+      <select id="quick-source" class="input">
+        <option value="">Select a saved source&hellip;</option>
+        {% for s in sources %}<option value="{{ s.id }}" {{ "selected" if s.id == active_source_id }}>{{ s.name }} ({{ s.type }})</option>{% endfor %}
+      </select>
+    </div>
+    <button id="btn-switch-source" class="btn btn-primary">{{ icon("shuffle", "icon-sm") }}Switch source</button>
+    <p class="hint mt-2">Switching stops the encoder briefly (a few seconds of YouTube-side buffering, same as "Restart encoder" below), swaps the producer, then starts it again - there's no instant hot swap.</p>
+    {% else %}
+    <div class="empty-state">{{ icon("link") }}<div class="empty-sub">No saved sources yet. Add one on the Configuration page.</div></div>
+    {% endif %}
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-head"><h2>Zoom producer</h2><span class="hint m-0">only relevant while the active source is a Zoom meeting</span></div>
+  <div class="card">
+    <div class="btn-row">
+      <button id="btn-join" class="btn btn-primary">{{ icon("play", "icon-sm") }}Join meeting</button>
+      <button id="btn-leave" class="btn btn-danger">{{ icon("square", "icon-sm") }}Leave meeting</button>
+      <button id="btn-rejoin" class="btn btn-secondary">{{ icon("rotate-cw", "icon-sm") }}Rejoin (restart Zoom)</button>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-head"><h2>Pipeline</h2></div>
+  <div class="card">
+    <div class="btn-row mb-4">
+      <button id="btn-pipeline-restart" class="btn btn-secondary">{{ icon("rotate-cw", "icon-sm") }}Restart whole pipeline</button>
+    </div>
+    <div class="service-list" id="unit-list"></div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-head"><h2>Test recording</h2></div>
+  <div class="card">
+    <p class="hint mb-3">Records 60 seconds of display :99 + audio locally, without touching YouTube.</p>
+    <div class="btn-row">
+      <button id="btn-test-recording" class="btn btn-secondary">{{ icon("video", "icon-sm") }}Run 60s test recording</button>
+      <a class="btn btn-ghost" href="/api/test-recording/download">{{ icon("download", "icon-sm") }}Download latest</a>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-head"><h2>Danger zone</h2></div>
+  <div class="card card-danger">
+    <p class="hint mb-3">Immediately reboots the VPS, ending any live stream and dropping the meeting.</p>
+    <div class="btn-row">
+      <button id="btn-reboot" class="btn btn-danger">{{ icon("power", "icon-sm") }}Reboot VPS</button>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script type="application/json" id="units-data">{{ units | tojson }}</script>
+<script src="/static/js/controls.js"></script>
+{% endblock %}

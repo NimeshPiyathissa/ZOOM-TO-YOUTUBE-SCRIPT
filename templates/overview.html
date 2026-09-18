@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon %}
+{% block title %}Overview - Zoom Stream Dashboard{% endblock %}
+{% block content %}
+
+<div class="dash-grid">
+
+  <div class="card-3d hero-3d state-STOPPED" id="hero-card">
+    <div class="hero-3d-main">
+      <div class="hero-state" id="hero-state">
+        <span class="dot-lg dot-STOPPED skeleton" id="hero-dot"></span>
+        <div>
+          <div class="state-text skeleton" id="hero-text">Loading</div>
+          <div class="hint" id="hero-sub">Checking stream status&hellip;</div>
+        </div>
+      </div>
+      <div class="hero-3d-source" id="hero-source" hidden>
+        <span id="hero-source-icon"></span>
+        <span id="hero-source-name" class="mono"></span>
+        <span class="src-url mono text-dim" id="hero-source-url"></span>
+        <button type="button" class="btn btn-ghost btn-icon btn-sm copy-url-btn" id="hero-source-copy" aria-label="Copy source URL" data-tooltip="Copy URL">{{ icon("link", "icon-sm") }}</button>
+      </div>
+      <div class="btn-row mt-4">
+        <button id="btn-go-live" class="btn btn-primary btn-lg">{{ icon("play", "icon-sm") }}Go Live</button>
+        <button id="btn-stop-stream" class="btn btn-danger btn-lg">{{ icon("square", "icon-sm") }}Stop</button>
+        <button id="btn-restart-stream" class="btn btn-secondary btn-lg" data-tooltip="Restart the encoder">{{ icon("rotate-cw", "icon-sm") }}Restart</button>
+        <a href="/controls" class="btn btn-ghost btn-lg">{{ icon("shuffle", "icon-sm") }}Switch source</a>
+      </div>
+    </div>
+    <div class="hero-3d-preview">
+      <img id="preview-img" alt="Live preview of display :99" hidden>
+      <div class="empty-state p-0" id="preview-placeholder">
+        {{ icon("video") }}
+        <div class="empty-sub">No preview yet</div>
+      </div>
+    </div>
+  </div>
+
+  <div id="error-banner" hidden class="banner banner-error section mt-0 mb-0 grid-col-full">
+    {{ icon("alert-triangle") }}
+    <div>The encoder has failed. <a href="/logs">Check the logs</a> for details.</div>
+  </div>
+
+  <div class="card-3d dash-health">
+    <div class="health-card-head"><h3>Stream health</h3></div>
+    <div id="ffmpeg-stats">
+      <div class="empty-state" id="ffmpeg-empty">
+        {{ icon("activity") }}
+        <div class="empty-sub">No data yet &mdash; the stream isn't running.</div>
+      </div>
+      <div class="grid grid-cols-3" id="ffmpeg-grid" hidden>
+        <div class="stat-tile">
+          <span class="eyebrow">FPS</span>
+          <span class="stat-value tnum" id="stat-fps">-</span>
+          <svg class="sparkline" id="spark-fps"></svg>
+        </div>
+        <div class="stat-tile">
+          <span class="eyebrow">Speed</span>
+          <span class="stat-value tnum" id="stat-speed">-</span>
+          <svg class="sparkline" id="spark-speed"></svg>
+        </div>
+        <div class="stat-tile">
+          <span class="eyebrow">Bitrate</span>
+          <span class="stat-value tnum" id="stat-bitrate">-</span>
+          <svg class="sparkline" id="spark-bitrate"></svg>
+        </div>
+      </div>
+      <div class="hint" id="ffmpeg-detail" hidden></div>
+      <div class="banner banner-warning mt-3" id="ffmpeg-warning" hidden>
+        {{ icon("alert-triangle") }}<div>Speed below 1.0x &mdash; the encoder may be dropping frames.</div>
+      </div>
+      <div class="hint mt-3" id="webpage-health" hidden></div>
+    </div>
+  </div>
+
+  <div class="card-3d dash-health">
+    <div class="health-card-head"><h3>System</h3></div>
+    <div class="grid">
+      <div class="stat-tile">
+        <span class="eyebrow">CPU avg</span>
+        <span class="stat-value tnum" id="cpu-avg">-<span class="stat-unit">%</span></span>
+        <svg class="cpu-cores" id="cpu-cores"></svg>
+      </div>
+      <div class="stat-tile">
+        <span class="eyebrow">Memory</span>
+        <span class="stat-value tnum" id="mem-big">-</span>
+        <span class="stat-sub tnum" id="mem-sub">-</span>
+        <svg class="sparkline" id="spark-mem"></svg>
+      </div>
+      <div class="stat-tile">
+        <span class="eyebrow">Disk</span>
+        <span class="stat-value tnum" id="disk-big">-</span>
+        <span class="stat-sub tnum" id="disk-sub">-</span>
+      </div>
+      <div class="stat-tile">
+        <span class="eyebrow">Network / load</span>
+        <span class="stat-value tnum" id="net-big">-</span>
+        <span class="stat-sub tnum" id="load-sub">-</span>
+        <svg class="sparkline" id="spark-net"></svg>
+      </div>
+    </div>
+  </div>
+
+  <div class="card-3d dash-health">
+    <div class="health-card-head"><h3>Account</h3></div>
+    <div class="secret-row mb-2">
+      {{ icon("at-sign") }}
+      <span class="hint m-0" id="account-status">loading&hellip;</span>
+    </div>
+    <a href="/config#zoom-account" class="btn btn-secondary btn-sm">{{ icon("log-in", "icon-sm") }}Manage sign-in</a>
+  </div>
+
+  <div class="dash-services-wrap">
+    <div class="section-head"><h2>Services</h2></div>
+    <div class="service-grid" id="unit-list"></div>
+  </div>
+
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script type="application/json" id="units-data">{{ units | tojson }}</script>
+<script src="/static/js/overview.js"></script>
+{% endblock %}

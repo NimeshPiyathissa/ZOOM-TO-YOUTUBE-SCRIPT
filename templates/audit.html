@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon %}
+{% block title %}Audit - Zoom Stream Dashboard{% endblock %}
+{% block content %}
+
+<div class="section mt-0">
+  <div class="section-head">
+    <h2>Audit log</h2>
+    <span class="hint m-0">Most recent 200 events</span>
+  </div>
+  <div class="card">
+    <div id="audit-empty" class="empty-state" hidden>
+      {{ icon("list-checks") }}
+      <div class="empty-title">No audit entries yet</div>
+      <div class="empty-sub">Actions taken from this dashboard (logins, config changes, service control) will show up here.</div>
+    </div>
+    <div class="table-wrap" id="audit-table-wrap" hidden>
+      <table id="audit-table">
+        <thead><tr><th>Time</th><th>User</th><th>Action</th><th>Detail</th><th>IP</th></tr></thead>
+        <tbody id="audit-body"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script type="application/json" id="audit-rows-data">{{ rows | tojson }}</script>
+<script src="/static/js/audit.js"></script>
+{% endblock %}

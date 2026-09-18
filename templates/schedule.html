@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon %}
+{% block title %}Schedule - Zoom Stream Dashboard{% endblock %}
+{% block content %}
+
+<div class="section mt-0">
+  <div class="section-head">
+    <h2>Scheduled start/stop</h2>
+    <span class="hint m-0">Asia/Colombo</span>
+  </div>
+  <div class="card">
+    {% if schedules %}
+    <div class="table-wrap">
+      <table id="schedules-table">
+        <thead><tr><th>Action</th><th>Time</th><th>Days</th><th>Source</th><th></th></tr></thead>
+        <tbody>
+        {% for s in schedules %}
+          <tr data-id="{{ s.id }}">
+            <td>{{ s.action }}</td>
+            <td class="mono">{{ "%02d:%02d"|format(s.hour, s.minute) }}</td>
+            <td>{{ s.days_of_week }}</td>
+            <td>{{ (sources | selectattr("id", "equalto", s.source_id) | map(attribute="name") | first) or "-" }}</td>
+            <td class="actions-cell"><button class="btn btn-ghost btn-icon btn-sm delete-schedule" data-id="{{ s.id }}" aria-label="Delete schedule" data-tooltip="Delete">{{ icon("trash-2", "icon-sm") }}</button></td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+      {{ icon("calendar-clock") }}
+      <div class="empty-title">No schedules yet</div>
+      <div class="empty-sub">Add one below to automatically go live or stop at a set time.</div>
+    </div>
+    {% endif %}
+
+    <h3 class="mt-4 mb-3">Add schedule</h3>
+    <div class="form-grid">
+      <div class="field"><label class="label">Action</label>
+        <select id="sch-action" class="input"><option value="go_live">Go live (join + stream)</option><option value="stop">Stop</option></select>
+      </div>
+      <div class="field"><label class="label">Time (24h)</label><input id="sch-time" class="input" type="time" value="09:00"></div>
+      <div class="field"><label class="label">Days</label><input id="sch-days" class="input" value="mon,tue,wed,thu,fri"></div>
+      <div class="field"><label class="label">Source (optional)</label>
+        <select id="sch-source" class="input"><option value="">none - just go live/stop with whatever's active</option>{% for s in sources %}<option value="{{ s.id }}">{{ s.name }} ({{ s.type }})</option>{% endfor %}</select>
+      </div>
+    </div>
+    <button id="add-schedule" class="btn btn-primary">{{ icon("plus", "icon-sm") }}Add schedule</button>
+  </div>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script src="/static/js/schedule.js"></script>
+{% endblock %}

@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon %}
+{% block title %}Remote GUI - Zoom Stream Dashboard{% endblock %}
+{% block content %}
+<div class="section mt-0">
+  <div class="section-head"><h2>Remote GUI</h2><span class="hint m-0">display :99</span></div>
+  <p class="hint mb-3">
+    Full view + control, proxied through this dashboard's own login &mdash; nothing extra is exposed.
+    You'll be asked for the separate VNC password (Configuration page) once per connection.
+  </p>
+  <div id="vnc-screen" class="vnc-frame-box"></div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script type="module" src="/static/js/vnc.js"></script>
+{% endblock %}

@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon %}
+{% block title %}Logs - Zoom Stream Dashboard{% endblock %}
+{% block content %}
+
+<div class="section mt-0">
+  <div class="section-head"><h2>Recent errors across all services</h2></div>
+  <div class="card" id="errors-panel">
+    {% if errors %}
+      <div class="table-wrap">
+        <table><thead><tr><th>Service</th><th>Message</th></tr></thead><tbody>
+        {% for e in errors %}<tr><td>{{ e.unit }}</td><td class="mono">{{ e.message }}</td></tr>{% endfor %}
+        </tbody></table>
+      </div>
+    {% else %}
+      <div class="empty-state">{{ icon("check-circle-2") }}<div class="empty-sub">No recent errors.</div></div>
+    {% endif %}
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-head"><h2>Live logs</h2></div>
+  <div class="tabs" id="log-tabs" role="tablist">
+    {% for u in units %}<button class="tab-btn" role="tab" data-unit="{{ u }}">{{ u }}</button>{% endfor %}
+  </div>
+  <div class="log-toolbar">
+    <input id="log-search" class="input" placeholder="Filter logs&hellip;">
+    <button id="log-pause" class="btn btn-secondary btn-sm">{{ icon("pause", "icon-sm") }}Pause</button>
+    <label class="switch-row">
+      <span class="switch"><input type="checkbox" id="log-autoscroll" checked><span class="track"></span></span>
+      <span class="switch-label text-xs">Auto-scroll</span>
+    </label>
+    <a class="btn btn-ghost btn-sm" id="log-download" href="#">{{ icon("download", "icon-sm") }}Download</a>
+  </div>
+  <div class="log-viewer" id="log-view"></div>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script type="application/json" id="units-data">{{ units | tojson }}</script>
+<script src="/static/js/logs.js"></script>
+{% endblock %}
