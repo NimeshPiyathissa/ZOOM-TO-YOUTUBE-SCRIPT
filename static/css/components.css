@@ -449,3 +449,10 @@ td.actions-cell { text-align: right; white-space: nowrap; }
 .login-card h1 { font-size: var(--text-lg); margin-bottom: var(--space-6); text-align: center; }
 .login-brand { display: flex; align-items: center; justify-content: center; gap: var(--space-2); margin-bottom: var(--space-4); color: var(--accent); }
 .error-box { background: var(--live-tint); color: var(--live); padding: var(--space-2) var(--space-3); border-radius: var(--radius-sm); font-size: var(--text-sm); margin-bottom: var(--space-4); }
+
+/* 56px minimum touch target (Part 3/4 touch UI) - a one-line extension
+   of the --btn-h button system rather than a fork of it. Global, since
+   the sticky program bar and the remote-desktop overlay use it on every
+   page. */
+.btn-touch { --btn-h: 56px; padding: 0 var(--space-6); font-size: var(--text-base); font-weight: var(--weight-semibold); }
+.btn-touch.btn-icon { width: var(--btn-h); padding: 0; }

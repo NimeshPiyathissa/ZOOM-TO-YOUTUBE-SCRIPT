@@ -53,6 +53,7 @@
       <div class="topbar-actions">
         <button id="topbar-go-live" class="btn btn-primary btn-sm">{{ icon("play", "icon-sm") | safe }}Go Live</button>
         <button id="topbar-stop" class="btn btn-danger btn-sm" hidden>{{ icon("square", "icon-sm") | safe }}Stop</button>
+        <button id="topbar-desktop" class="btn btn-ghost btn-icon" aria-label="Open remote desktop" data-tooltip="Remote desktop">{{ icon("monitor") | safe }}</button>
         <button id="theme-toggle" class="btn btn-ghost btn-icon" aria-label="Toggle theme" data-tooltip="Toggle theme"></button>
         <div class="menu-wrap">
           <button class="btn btn-ghost btn-icon menu-trigger" aria-label="Account menu" data-tooltip="Account">{{ icon("user") | safe }}</button>
@@ -70,11 +71,23 @@
       {% block content %}{% endblock %}
     </main>
 {% if username %}
-    <div class="mobile-bar">
+    <div class="mobile-bar" role="toolbar" aria-label="Program controls">
       <button id="mobile-go-live" class="btn btn-primary">{{ icon("play", "icon-sm") | safe }}Go Live</button>
       <button id="mobile-stop" class="btn btn-danger" hidden>{{ icon("square", "icon-sm") | safe }}Stop</button>
+      <button id="mobile-restart" class="btn btn-secondary btn-icon" aria-label="Restart encoder">{{ icon("rotate-cw") | safe }}</button>
+      <button id="mobile-desktop" class="btn btn-secondary btn-icon" aria-label="Open remote desktop">{{ icon("monitor") | safe }}</button>
     </div>
   </div>
+</div>
+<!-- Remote-desktop escape hatch: full-screen noVNC overlay, one tap from
+     anywhere (topbar / mobile bar). Connects only when opened. -->
+<div id="vnc-overlay" class="vnc-overlay" hidden role="dialog" aria-modal="true" aria-labelledby="vnc-overlay-title">
+  <div class="vnc-overlay-bar">
+    <span id="vnc-overlay-title" class="vnc-overlay-title">{{ icon("monitor", "icon-sm") | safe }}Remote desktop (:99)</span>
+    <span class="hint m-0" id="vnc-overlay-status">connecting…</span>
+    <button id="vnc-overlay-close" class="btn btn-secondary btn-touch" aria-label="Close remote desktop">{{ icon("x") | safe }}Close</button>
+  </div>
+  <div id="vnc-overlay-screen" class="vnc-overlay-screen"></div>
 </div>
 {% endif %}
 <div id="toasts"></div>

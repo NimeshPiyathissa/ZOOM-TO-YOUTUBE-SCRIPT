@@ -25,13 +25,110 @@ async function streamAction(btn, action, confirmMsg) {
   });
 }
 
+const PHASE_LABEL = { STOPPED: "Stopped", STARTING: "Starting…", LIVE: "LIVE", RECONNECTING: "Reconnecting…", FAILED: "Failed" };
+let lastState = null;
+
 window.addEventListener("zsdash:state", (e) => {
-  const phase = e.detail && e.detail.stream && e.detail.stream.phase;
+  const d = e.detail; const phase = d && d.stream && d.stream.phase;
   if (!phase) return;
-  streamPhase = phase;
+  streamPhase = phase; lastState = d;
   const canStop = phase === "LIVE" || phase === "RECONNECTING";
   document.getElementById("r-go-live").hidden = canStop;
   document.getElementById("r-stop").hidden = !canStop;
+  renderProgram(d); renderRail(d);
+});
+
+// ---------------------------------------------------------------- program: state badge + elapsed + preview
+
+function renderProgram(d) {
+  const st = d.stream, badge = document.getElementById("panel-state");
+  badge.className = "badge panel-state " + phaseBadgeClass(st.phase);
+  document.getElementById("panel-state-text").textContent = PHASE_LABEL[st.phase] || st.phase;
+  document.getElementById("panel-elapsed").textContent = st.phase === "LIVE" ? fmtUptime(st.uptime_seconds) : "";
+}
+
+let previewTimer = null;
+async function pollPreview() {
+  if (document.hidden) return;
+  const img = document.getElementById("preview-img"), ph = document.getElementById("preview-placeholder");
+  const box = document.getElementById("panel-preview"), age = document.getElementById("panel-preview-age");
+  try {
+    const res = await fetch(`/api/preview.jpg?t=${Date.now()}`, { credentials: "same-origin" });
+    if (!res.ok) throw new Error("no preview");
+    const blob = await res.blob(); const url = URL.createObjectURL(blob); const old = img.src;
+    img.src = url; img.hidden = false; ph.hidden = true; box.classList.remove("is-stale");
+    age.textContent = "live"; box.dataset.lastOk = String(Date.now());
+    if (old && old.startsWith("blob:")) URL.revokeObjectURL(old);
+  } catch (err) {
+    const last = Number(box.dataset.lastOk || 0);
+    if (last && Date.now() - last < 30000) { box.classList.add("is-stale"); age.textContent = "stale " + Math.round((Date.now() - last) / 1000) + "s"; }
+    else { img.hidden = true; ph.hidden = false; age.textContent = ""; }
+  }
+}
+
+// ---------------------------------------------------------------- status rail
+
+const RESTART_ALARM = 3;
+function setTile(id, text, cls) {
+  const el = document.getElementById(id); el.textContent = text;
+  const tile = el.closest(".rail-tile"); tile.classList.toggle("is-warn", cls === "warn"); tile.classList.toggle("is-bad", cls === "bad");
+}
+function renderRail(d) {
+  const ff = d.ffmpeg, st = d.stream, sys = d.system || {};
+  document.getElementById("rail-updated").textContent = ff ? "updated " + fmtAgo(ff.age_seconds) : (st.phase === "LIVE" ? "waiting for encoder stats" : "not streaming");
+  if (ff) {
+    setTile("rail-speed", ff.speed + "x", ff.speed < 0.95 ? "bad" : ff.speed < 1 ? "warn" : "");
+    setTile("rail-fps", String(ff.fps), "");
+    setTile("rail-bitrate", Math.round(ff.bitrate_kbps) + "k", "");
+    setTile("rail-drop", String(ff.drop), ff.drop > 200 ? "warn" : "");
+  } else { ["rail-speed", "rail-fps", "rail-bitrate", "rail-drop"].forEach((id) => setTile(id, "—", "")); }
+  setTile("rail-cpu", sys.cpu_avg != null ? sys.cpu_avg + "%" : "—", sys.cpu_avg > 85 ? "bad" : sys.cpu_avg > 70 ? "warn" : "");
+  setTile("rail-ram", sys.mem_percent != null ? Math.round(sys.mem_percent) + "%" : "—", sys.mem_percent > 90 ? "bad" : "");
+  const n = st.restarts_last_5min, badge = document.getElementById("rail-restart-badge"), alarming = n > RESTART_ALARM;
+  badge.className = "badge restart-rate-badge " + (alarming ? "badge-failed is-alarm" : "badge-inactive");
+  document.getElementById("rail-restart-text").textContent = (n ?? "—") + " restart" + (n === 1 ? "" : "s") + " / 5 min";
+  document.getElementById("rail-restart-total").textContent = st.restart_count ? st.restart_count + " total" : "";
+  if (alarming && !badge.dataset.announced) { announce("Warning: " + n + " encoder restarts in five minutes"); badge.dataset.announced = "1"; }
+  if (!alarming) delete badge.dataset.announced;
+  const failed = document.getElementById("rail-failed");
+  failed.hidden = st.phase !== "FAILED";
+  if (st.phase === "FAILED") {
+    document.getElementById("rail-failed-msg").textContent = "Encoder failed after " + st.restart_count + " restarts." + (st.cause ? " Likely cause: " + st.cause + "." : "");
+    document.getElementById("rail-failed-err").textContent = st.last_error || "";
+  }
+}
+
+// ---------------------------------------------------------------- mixer: level meter + stream volume
+
+let levelTimer = null;
+async function pollLevel() {
+  if (document.hidden) return;
+  let lv; try { lv = await apiFetch("/api/audio/level"); } catch (err) { return; }
+  const meter = document.getElementById("stream-meter"), fill = document.getElementById("stream-meter-fill"), peak = document.getElementById("stream-meter-peak");
+  const note = document.getElementById("stream-meter-note"), db = document.getElementById("stream-meter-db");
+  if (!lv.live) {
+    fill.style.setProperty("--level", "0%"); peak.style.setProperty("--peak", "0%");
+    db.textContent = "— dBFS"; note.textContent = lv.age_seconds == null ? "starting meter…" : "no signal";
+    meter.setAttribute("aria-valuenow", "-60"); return;
+  }
+  const pct = (v) => Math.max(0, Math.min(100, (v + 60) / 60 * 100));
+  const rmsPct = pct(lv.rms_db), peakPct = pct(lv.peak_db);
+  fill.style.setProperty("--level", rmsPct.toFixed(1) + "%"); fill.style.setProperty("--level-frac", String(Math.max(rmsPct / 100, 0.0001)));
+  peak.style.setProperty("--peak", peakPct.toFixed(1) + "%");
+  db.textContent = lv.rms_db.toFixed(0) + " dBFS rms · peak " + lv.peak_db.toFixed(0);
+  note.textContent = lv.peak_db > -1 ? "clipping" : lv.rms_db < -50 ? "near silence" : "";
+  meter.setAttribute("aria-valuenow", String(Math.round(lv.rms_db)));
+}
+
+let streamVolDebounce = null;
+const streamVol = document.getElementById("r-stream-volume");
+streamVol.addEventListener("input", (e) => {
+  document.getElementById("r-stream-volume-val").textContent = e.target.value + "%";
+  clearTimeout(streamVolDebounce);
+  streamVolDebounce = setTimeout(async () => {
+    try { const d = await post("/api/audio/stream", { action: "volume", volume: Number(e.target.value) }); paintStreamAudio(d.muted, d.volume); }
+    catch (err) { toast(err.message, "err"); }
+  }, 250);
 });
 
 // ---------------------------------------------------------------- sources: tiles + switching
@@ -362,7 +459,9 @@ document.getElementById("direct-probe").addEventListener("click", async (e) => {
 // ---------------------------------------------------------------- audio (stream mute / Zoom mic - unchanged behaviour)
 
 const streamAudioBtn = document.getElementById("r-stream-audio");
-function paintStreamAudio(muted) {
+function paintStreamAudio(muted, volume) {
+  document.getElementById("stream-meter").classList.toggle("is-muted", !!muted);
+  if (volume != null && document.activeElement !== streamVol) { streamVol.value = volume; document.getElementById("r-stream-volume-val").textContent = volume + "%"; }
   streamAudioBtn.innerHTML = icon(muted ? "volume-x" : "volume-2");
   streamAudioBtn.setAttribute("aria-pressed", String(muted));
   streamAudioBtn.setAttribute("aria-label", muted ? "Unmute stream audio" : "Mute stream audio");
@@ -373,7 +472,7 @@ streamAudioBtn.addEventListener("click", async () => {
   paintStreamAudio(!wasMuted); streamAudioBtn.disabled = true;
   try {
     const data = await post("/api/audio/stream", { action: wasMuted ? "unmute" : "mute" });
-    paintStreamAudio(data.muted); toast(data.muted ? "Stream audio muted" : "Stream audio unmuted"); announce(data.muted ? "Stream audio muted" : "Stream audio unmuted");
+    paintStreamAudio(data.muted, data.volume); toast(data.muted ? "Stream audio muted" : "Stream audio unmuted"); announce(data.muted ? "Stream audio muted" : "Stream audio unmuted");
   } catch (err) { paintStreamAudio(wasMuted); toast(err.message, "err"); }
   finally { streamAudioBtn.disabled = false; }
 });
@@ -397,7 +496,9 @@ zoomMicBtn.addEventListener("click", async () => {
 
 // ---------------------------------------------------------------- init
 
-apiFetch("/api/audio/stream").then((d) => paintStreamAudio(d.muted)).catch(() => {});
+apiFetch("/api/audio/stream").then((d) => paintStreamAudio(d.muted, d.volume)).catch(() => {});
+pollPreview(); previewTimer = setInterval(pollPreview, 3000);
+pollLevel(); levelTimer = setInterval(pollLevel, 1000);
 apiFetch("/api/audio/zoom-mic").then(paintZoomMic).catch(() => {});
 paintTiles();
 showContextPanel();

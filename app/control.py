@@ -528,19 +528,25 @@ XSETROOT_BIN = "/usr/bin/xsetroot"
 SLATE_COLOR = "#0b0f14"  # matches the dashboard's own dark background token
 
 
-def stream_audio_action(action: str) -> dict:
-    """Mutes/unmutes what viewers hear by muting the zoom_out sink
-    ffmpeg captures from - never touches ffmpeg or the RTMP connection.
-    Always returns the real state read back from pactl, not the state
-    the caller asked for, in case the write silently didn't take."""
-    if action not in ("mute", "unmute", "status"):
+def stream_audio_action(action: str, volume: int | None = None) -> dict:
+    """Mutes/unmutes or sets the volume of what viewers hear, via the
+    zoom_out sink ffmpeg captures from - never touches ffmpeg or the RTMP
+    connection. Always returns the real state read back from pactl, not
+    the state the caller asked for, in case the write silently didn't
+    take. Returns {"muted": bool, "volume": 0-150}."""
+    if action not in ("mute", "unmute", "status", "volume"):
         raise ControlError(f"invalid stream-audio action: {action}")
     argv = [SUDO, "-u", config.ZOOMBOT_USER, str(STREAM_AUDIO_SCRIPT), action]
+    if action == "volume":
+        if volume is None or not (0 <= int(volume) <= 150):
+            raise ControlError("volume must be 0-150")
+        argv.append(str(int(volume)))
     proc = run_as_zoombot(argv, timeout=10)
-    out = proc.stdout.decode(errors="replace").strip()
-    if proc.returncode != 0 or out not in ("muted", "unmuted"):
-        raise ControlError("failed to read/set stream audio mute: " + proc.stderr.decode(errors="replace").strip())
-    return {"muted": out == "muted"}
+    out = proc.stdout.decode(errors="replace").strip().split()
+    if proc.returncode != 0 or not out or out[0] not in ("muted", "unmuted"):
+        raise ControlError("failed to read/set stream audio: " + proc.stderr.decode(errors="replace").strip())
+    vol = int(out[1]) if len(out) > 1 and out[1].isdigit() else 100
+    return {"muted": out[0] == "muted", "volume": vol}
 
 
 def zoom_mic_state_heuristic() -> dict:

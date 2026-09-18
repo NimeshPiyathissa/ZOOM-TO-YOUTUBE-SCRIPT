@@ -25,6 +25,7 @@ from . import cdp, youtube
 from .youtube import YouTubeURLError
 from . import accounts as accounts_mod
 from .accounts import AccountError
+from . import audio_level
 
 BASE_DIR = pathlib.Path(__file__).resolve().parent.parent
 
@@ -912,14 +913,25 @@ async def api_audio_stream_post(request: Request):
     deps.require_rate_limit(session, "audio_stream", max_calls=10, window_seconds=10)
     body = await request.json()
     action = str(body.get("action", ""))
-    if action not in ("mute", "unmute"):
-        raise HTTPException(status_code=400, detail="action must be mute or unmute")
+    if action not in ("mute", "unmute", "volume"):
+        raise HTTPException(status_code=400, detail="action must be mute, unmute or volume")
     try:
-        result = await run_in_threadpool(control.stream_audio_action, action)
-    except control.ControlError as exc:
+        volume = int(body.get("volume", 100)) if action == "volume" else None
+        result = await run_in_threadpool(control.stream_audio_action, action, volume)
+    except (control.ControlError, ValueError) as exc:
         return _api_error(exc)
-    db.audit(session["username"], "audio_stream_" + action, ip=deps.client_ip(request))
+    db.audit(session["username"], "audio_stream_" + action, str(volume) if volume is not None else "", deps.client_ip(request))
     return result
+
+
+@app.get("/api/audio/level")
+async def api_audio_level(request: Request):
+    """Live level of what viewers hear (zoom_out.monitor). Polling this
+    is what keeps the sampler running - it stops by itself ~15s after the
+    last poll, so it costs nothing when no panel is open."""
+    deps.require_session_api(request)
+    await audio_level.manager.touch()
+    return audio_level.manager.snapshot()
 
 
 @app.get("/api/audio/zoom-mic")

@@ -1,21 +1,48 @@
 {% extends "base.html" %}
 {% from "_macros.html" import icon %}
-{% block title %}Remote - Zoom Stream Dashboard{% endblock %}
+{% block title %}Control panel - Zoom Stream Dashboard{% endblock %}
 {% block extra_css %}<link rel="stylesheet" href="/static/css/remote.css">{% endblock %}
 {% block content %}
 
-<div class="remote-grid">
+<div class="remote-grid panel-grid">
 
-  <section class="card" aria-labelledby="remote-stream-h">
-    <h2 id="remote-stream-h" class="remote-section-title">{{ icon("radio", "icon-sm") }}Stream</h2>
-    <div class="remote-action-row">
+  <!-- Program: live preview of :99 + state, elapsed, and the status rail -->
+  <section class="card panel-program" aria-labelledby="panel-program-h">
+    <h2 id="panel-program-h" class="visually-hidden">Program</h2>
+    <div class="panel-preview" id="panel-preview">
+      <img id="preview-img" alt="Live preview of display :99" hidden>
+      <div class="empty-state p-0" id="preview-placeholder">{{ icon("video") }}<div class="empty-sub">No preview yet</div></div>
+      <div class="panel-preview-overlay">
+        <span class="badge badge-inactive panel-state" id="panel-state"><span class="dot"></span><span id="panel-state-text">—</span></span>
+        <span class="tnum panel-elapsed" id="panel-elapsed" aria-label="Elapsed"></span>
+        <span class="hint tnum panel-preview-age" id="panel-preview-age"></span>
+      </div>
+    </div>
+    <div class="remote-action-row mt-3 panel-program-row">
       <button id="r-go-live" class="btn btn-primary btn-touch">{{ icon("play") }}Go Live</button>
       <button id="r-stop" class="btn btn-danger btn-touch" hidden>{{ icon("square") }}Stop</button>
       <button id="r-restart" class="btn btn-secondary btn-touch" data-tooltip="Restart the encoder">{{ icon("rotate-cw") }}Restart</button>
     </div>
   </section>
 
-  <section class="card" aria-labelledby="remote-sources-h">
+  <section class="card panel-rail" aria-labelledby="panel-rail-h" aria-live="polite">
+    <h2 id="panel-rail-h" class="remote-section-title">{{ icon("activity", "icon-sm") }}Status <span class="hint m-0 tnum" id="rail-updated"></span></h2>
+    <div class="rail-grid">
+      <div class="rail-tile"><span class="eyebrow">Speed</span><span class="stat-value tnum" id="rail-speed">—</span></div>
+      <div class="rail-tile"><span class="eyebrow">FPS</span><span class="stat-value tnum" id="rail-fps">—</span></div>
+      <div class="rail-tile"><span class="eyebrow">Bitrate</span><span class="stat-value tnum" id="rail-bitrate">—</span></div>
+      <div class="rail-tile"><span class="eyebrow">Dropped</span><span class="stat-value tnum" id="rail-drop">—</span></div>
+      <div class="rail-tile"><span class="eyebrow">CPU</span><span class="stat-value tnum" id="rail-cpu">—</span></div>
+      <div class="rail-tile"><span class="eyebrow">RAM</span><span class="stat-value tnum" id="rail-ram">—</span></div>
+    </div>
+    <div class="rail-restarts">
+      <span class="badge badge-inactive restart-rate-badge" id="rail-restart-badge" aria-label="Restarts in the last 5 minutes">{{ icon("rotate-cw", "icon-sm") }}<span id="rail-restart-text">— restarts / 5 min</span></span>
+      <span class="hint tnum" id="rail-restart-total"></span>
+    </div>
+    <div class="banner banner-error mt-2" id="rail-failed" hidden>{{ icon("alert-triangle") }}<div><div id="rail-failed-msg"></div><div class="hint mt-1 mono" id="rail-failed-err"></div></div></div>
+  </section>
+
+  <section class="card panel-sources" aria-labelledby="remote-sources-h">
     <h2 id="remote-sources-h" class="remote-section-title">{{ icon("shuffle", "icon-sm") }}Sources</h2>
     <div class="source-tiles" id="source-tiles" role="list" aria-label="Saved sources">
       {% for s in sources %}
@@ -33,7 +60,7 @@
   </section>
 
   <!-- Context panel: swaps to the active source's controls -->
-  <section class="card" id="ctx-webpage" hidden aria-labelledby="ctx-webpage-h">
+  <section class="card panel-context" id="ctx-webpage" hidden aria-labelledby="ctx-webpage-h">
     <h2 id="ctx-webpage-h" class="remote-section-title">{{ icon("globe", "icon-sm") }}YouTube / web page <span class="hint m-0" id="ctx-webpage-name"></span></h2>
 
     <div class="field">
@@ -101,7 +128,7 @@
     </div>
   </section>
 
-  <section class="card" id="ctx-zoom" hidden aria-labelledby="ctx-zoom-h">
+  <section class="card panel-context" id="ctx-zoom" hidden aria-labelledby="ctx-zoom-h">
     <h2 id="ctx-zoom-h" class="remote-section-title">{{ icon("video", "icon-sm") }}Zoom <span class="hint m-0" id="ctx-zoom-name"></span></h2>
 
     <div class="zoom-status" id="zoom-status" aria-live="polite">
@@ -143,7 +170,7 @@
     <div class="hint mt-2" id="zoom-readback"></div>
   </section>
 
-  <section class="card" id="ctx-direct" hidden aria-labelledby="ctx-direct-h">
+  <section class="card panel-context" id="ctx-direct" hidden aria-labelledby="ctx-direct-h">
     <h2 id="ctx-direct-h" class="remote-section-title">{{ icon("cast", "icon-sm") }}Direct media <span class="hint m-0" id="ctx-direct-name"></span></h2>
     <div class="mono text-dim" id="direct-url"></div>
     <div class="hint mt-1" id="direct-options"></div>
@@ -154,21 +181,37 @@
     <p class="hint mt-2">Encoding, loop and reconnect options are edited on the Configuration page; switching to a direct source restarts the encoder.</p>
   </section>
 
-  <section aria-labelledby="remote-audio-h">
-    <h2 id="remote-audio-h" class="remote-section-title">{{ icon("volume-2", "icon-sm") }}Audio</h2>
-    <div class="card audio-card audio-stream">
-      <div class="audio-card-label">
-        <span class="audio-card-title">Stream audio</span>
-        <span class="audio-card-hint">What viewers hear &mdash; RTMP stays connected either way</span>
+  <!-- Mixer strip: two genuinely different controls, kept visually distinct -->
+  <section class="card panel-mixer" aria-labelledby="remote-audio-h">
+    <h2 id="remote-audio-h" class="remote-section-title">{{ icon("volume-2", "icon-sm") }}Audio mixer</h2>
+    <div class="mixer-channel audio-stream">
+      <div class="mixer-head">
+        <div class="audio-card-label">
+          <span class="audio-card-title">Stream audio</span>
+          <span class="audio-card-hint">What viewers hear &mdash; RTMP stays connected either way</span>
+        </div>
+        <button id="r-stream-audio" class="btn btn-secondary btn-touch btn-icon" aria-pressed="false" aria-label="Mute stream audio">{{ icon("volume-2") }}</button>
       </div>
-      <button id="r-stream-audio" class="btn btn-secondary btn-touch btn-icon" aria-pressed="false" aria-label="Mute stream audio">{{ icon("volume-2") }}</button>
+      <div class="meter" id="stream-meter" role="meter" aria-label="Stream audio level" aria-valuemin="-60" aria-valuemax="0" aria-valuenow="-60">
+        <div class="meter-fill" id="stream-meter-fill"></div>
+        <div class="meter-peak" id="stream-meter-peak"></div>
+      </div>
+      <div class="mixer-readout"><span class="tnum" id="stream-meter-db">— dBFS</span><span class="hint" id="stream-meter-note">meter starts when the panel is open</span></div>
+      <div class="remote-volume-row">
+        {{ icon("volume-2", "icon-sm") }}
+        <input type="range" id="r-stream-volume" class="slider" min="0" max="150" value="100" aria-label="Stream audio volume (percent)">
+        <span class="tnum mixer-vol" id="r-stream-volume-val">100%</span>
+      </div>
     </div>
-    <div class="card audio-card audio-zoom-mic mt-3">
-      <div class="audio-card-label">
-        <span class="audio-card-title">Zoom mic</span>
-        <span class="audio-card-hint" id="r-zoom-mic-hint">The bot's own mic status in the meeting</span>
+    <div class="mixer-channel audio-zoom-mic mt-3">
+      <div class="mixer-head">
+        <div class="audio-card-label">
+          <span class="audio-card-title">Zoom mic</span>
+          <span class="audio-card-hint" id="r-zoom-mic-hint">The bot's own mic status in the meeting</span>
+        </div>
+        <button id="r-zoom-mic" class="btn btn-secondary btn-touch btn-icon" aria-pressed="false" aria-label="Toggle Zoom microphone">{{ icon("mic") }}</button>
       </div>
-      <button id="r-zoom-mic" class="btn btn-secondary btn-touch btn-icon" aria-pressed="false" aria-label="Toggle Zoom microphone">{{ icon("mic") }}</button>
+      <div class="hint">No microphone hardware exists on this VPS - this toggles Zoom's own reported mic status (what other participants see), so there is no level to meter here.</div>
     </div>
   </section>
 

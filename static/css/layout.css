@@ -137,7 +137,8 @@ main.page {
     backdrop-filter: blur(8px);
     border-top: 1px solid var(--border);
   }
-  .mobile-bar .btn { flex: 1; height: 44px; }
+  .mobile-bar .btn { flex: 1; height: 56px; font-size: var(--text-base); }
+  .mobile-bar .btn-icon { flex: 0 0 56px; width: 56px; }
 }
 
 @media (max-width: 767px) {
@@ -153,3 +154,17 @@ main.page {
 @media (min-width: 1440px) {
   main.page { padding-left: var(--space-8); padding-right: var(--space-8); }
 }
+
+/* ---------------------------------------------------------------- remote-desktop overlay (Part 4) */
+
+.vnc-overlay { position: fixed; inset: 0; z-index: var(--z-modal); background: #000; display: flex; flex-direction: column; }
+.vnc-overlay[hidden] { display: none; }
+.vnc-overlay-bar {
+  display: flex; align-items: center; gap: var(--space-3);
+  padding: var(--space-2) var(--space-3) var(--space-2) var(--space-4);
+  background: var(--bg-panel); border-bottom: 1px solid var(--border);
+  padding-top: calc(var(--space-2) + env(safe-area-inset-top, 0px));
+}
+.vnc-overlay-title { display: inline-flex; align-items: center; gap: var(--space-2); font-weight: var(--weight-semibold); flex: 1; min-width: 0; }
+.vnc-overlay-screen { flex: 1; min-height: 0; }
+.vnc-overlay-screen > * { width: 100%; height: 100%; }
