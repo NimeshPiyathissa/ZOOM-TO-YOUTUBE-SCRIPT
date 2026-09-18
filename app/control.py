@@ -73,6 +73,7 @@ def _zoombot_env() -> dict:
     return {
         "XDG_RUNTIME_DIR": f"/run/user/{zoombot_uid()}",
         "PATH": "/usr/bin:/bin",
+        "DISPLAY": config.DISPLAY_NUM,
     }
 
 
@@ -404,3 +405,89 @@ def zoom_session_heuristic() -> dict:
             found = True
             break
     return {"session_files_present": found, "authoritative": False}
+
+
+# ---------------------------------------------------------------- touch remote / media control (Part 3)
+
+STREAM_AUDIO_SCRIPT = config.STREAM_SCRIPTS_DIR / "set-stream-audio.sh"
+ZOOM_MIC_TOGGLE_SCRIPT = config.STREAM_SCRIPTS_DIR / "toggle-zoom-mic.sh"
+ZOOM_MIC_ATSPI_SCRIPT = config.STREAM_SCRIPTS_DIR / "zoom-mic-atspi-check.py"
+PYTHON3_BIN = "/usr/bin/python3"
+XSETROOT_BIN = "/usr/bin/xsetroot"
+SLATE_COLOR = "#0b0f14"  # matches the dashboard's own dark background token
+
+
+def stream_audio_action(action: str) -> dict:
+    """Mutes/unmutes what viewers hear by muting the zoom_out sink
+    ffmpeg captures from - never touches ffmpeg or the RTMP connection.
+    Always returns the real state read back from pactl, not the state
+    the caller asked for, in case the write silently didn't take."""
+    if action not in ("mute", "unmute", "status"):
+        raise ControlError(f"invalid stream-audio action: {action}")
+    argv = [SUDO, "-u", config.ZOOMBOT_USER, str(STREAM_AUDIO_SCRIPT), action]
+    proc = run_as_zoombot(argv, timeout=10)
+    out = proc.stdout.decode(errors="replace").strip()
+    if proc.returncode != 0 or out not in ("muted", "unmuted"):
+        raise ControlError("failed to read/set stream audio mute: " + proc.stderr.decode(errors="replace").strip())
+    return {"muted": out == "muted"}
+
+
+def zoom_mic_state_heuristic() -> dict:
+    """Best-effort, NON-authoritative read of Zoom's own reported mic
+    mute state via AT-SPI - same spirit and same honesty as
+    zoom_session_heuristic() above, for the same reason: Zoom doesn't
+    expose a documented, reliable "am I muted" query. Zoom's Qt client
+    only exposes an AT-SPI tree at all when launched with
+    QT_LINUX_ACCESSIBILITY_ALWAYS_ON=1 (see systemd/zoom.service) - until
+    that unit is next restarted with this env var, this always reports
+    unavailable, honestly, rather than guessing."""
+    argv = [SUDO, "-u", config.ZOOMBOT_USER, PYTHON3_BIN, str(ZOOM_MIC_ATSPI_SCRIPT)]
+    try:
+        proc = run_as_zoombot(argv, timeout=10)
+    except ControlError:
+        return {"available": False, "reason": "check did not run"}
+    out = proc.stdout.decode(errors="replace").strip()
+    if out.startswith("label:"):
+        label = out[len("label:"):].lower()
+        # UI convention (unverified for Zoom specifically): a button
+        # labeled "unmute ..." offers to unmute, meaning current state is
+        # muted, and vice versa.
+        if "unmute" in label:
+            return {"available": True, "authoritative": False, "muted": True, "raw_label": label}
+        if "mute" in label:
+            return {"available": True, "authoritative": False, "muted": False, "raw_label": label}
+    return {"available": False, "reason": out or "no output from check"}
+
+
+def zoom_mic_toggle() -> dict:
+    """Sends Zoom's own Alt+A mute/unmute shortcut to the Zoom meeting
+    window specifically (never a blind global keypress). Then attempts
+    the best-effort AT-SPI verification above - `verify.available` tells
+    the caller whether that verification actually means anything right
+    now."""
+    argv = [SUDO, "-u", config.ZOOMBOT_USER, str(ZOOM_MIC_TOGGLE_SCRIPT)]
+    proc = run_as_zoombot(argv, timeout=10)
+    if proc.returncode != 0:
+        raise ControlError("failed to toggle Zoom mic: " + proc.stderr.decode(errors="replace").strip())
+    return {"sent": True, "verify": zoom_mic_state_heuristic()}
+
+
+def zoom_leave(then: str) -> list[dict]:
+    """Leaves the Zoom meeting (stops zoom.service - a clean leave, Zoom
+    itself handles hanging up). `then` decides what happens to the
+    stream: "stop" also stops ffmpeg-stream; "slate" leaves ffmpeg-stream
+    running and sets a plain solid-color background on :99 (via
+    xsetroot) so viewers see a calm screen instead of whatever the
+    desktop happened to show - not a branded graphic or text, which
+    would need an image-compositing step this project doesn't otherwise
+    have; swap the color/add an image by hand over noVNC if wanted."""
+    if then not in ("stop", "slate"):
+        raise ControlError(f"invalid 'then' value: {then}")
+    results = [unit_action("zoom", "stop")]
+    if then == "stop":
+        results.append(unit_action("ffmpeg-stream", "stop"))
+    else:
+        argv = [SUDO, "-u", config.ZOOMBOT_USER, XSETROOT_BIN, "-solid", SLATE_COLOR]
+        proc = run_as_zoombot(argv, timeout=10)
+        results.append({"ok": proc.returncode == 0, "action": "slate", "stderr": proc.stderr.decode(errors="replace").strip()})
+    return results

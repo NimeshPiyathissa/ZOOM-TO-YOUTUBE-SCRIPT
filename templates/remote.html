@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon %}
+{% block title %}Remote - Zoom Stream Dashboard{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="/static/css/remote.css">{% endblock %}
+{% block content %}
+
+<div class="remote-grid">
+
+  <section class="card" aria-labelledby="remote-stream-h">
+    <h2 id="remote-stream-h" class="remote-section-title">{{ icon("radio", "icon-sm") }}Stream</h2>
+    <div class="remote-action-row">
+      <button id="r-go-live" class="btn btn-primary btn-touch">{{ icon("play") }}Go Live</button>
+      <button id="r-stop" class="btn btn-danger btn-touch" hidden>{{ icon("square") }}Stop</button>
+      <button id="r-restart" class="btn btn-secondary btn-touch" data-tooltip="Restart the encoder">{{ icon("rotate-cw") }}Restart</button>
+    </div>
+  </section>
+
+  <section aria-labelledby="remote-audio-h">
+    <h2 id="remote-audio-h" class="remote-section-title">{{ icon("volume-2", "icon-sm") }}Audio</h2>
+    <div class="card audio-card audio-stream">
+      <div class="audio-card-label">
+        <span class="audio-card-title">Stream audio</span>
+        <span class="audio-card-hint">What viewers hear &mdash; RTMP stays connected either way</span>
+      </div>
+      <button id="r-stream-audio" class="btn btn-secondary btn-touch btn-icon"
+              aria-pressed="false" aria-label="Mute stream audio">
+        {{ icon("volume-2") }}
+      </button>
+    </div>
+    <div class="card audio-card audio-zoom-mic mt-3">
+      <div class="audio-card-label">
+        <span class="audio-card-title">Zoom mic</span>
+        <span class="audio-card-hint" id="r-zoom-mic-hint">The bot's own mic status in the meeting</span>
+      </div>
+      <button id="r-zoom-mic" class="btn btn-secondary btn-touch btn-icon"
+              aria-pressed="false" aria-label="Toggle Zoom microphone">
+        {{ icon("mic") }}
+      </button>
+    </div>
+  </section>
+
+  <section class="card" aria-labelledby="remote-zoom-h">
+    <h2 id="remote-zoom-h" class="remote-section-title">{{ icon("video", "icon-sm") }}Zoom</h2>
+    <p class="hint mb-3">Leaving keeps the stream config as-is: choose whether the encoder shows a plain slate or stops entirely.</p>
+    <div class="remote-action-row">
+      <button id="r-leave-slate" class="btn btn-secondary btn-touch">{{ icon("door-open") }}Leave &rarr; Slate</button>
+      <button id="r-leave-stop" class="btn btn-danger btn-touch">{{ icon("door-open") }}Leave &rarr; Stop</button>
+      <button id="r-rejoin" class="btn btn-secondary btn-touch">{{ icon("rotate-cw") }}Rejoin</button>
+    </div>
+  </section>
+
+  <section class="card" aria-labelledby="remote-yt-h">
+    <h2 id="remote-yt-h" class="remote-section-title">{{ icon("cast", "icon-sm") }}YouTube switcher</h2>
+    <p class="hint mb-3">Only takes effect while the active source is a webpage source with the browser open.</p>
+
+    <div class="remote-yt-list" id="r-yt-list" role="list" aria-label="Saved YouTube links">
+      {% for link in youtube_links %}
+      <button type="button" class="remote-yt-item" role="listitem" data-link-id="{{ link.id }}" data-url="{{ link.url }}">
+        {{ icon("play", "icon-sm") }}<span class="remote-yt-item-name">{{ link.name }}</span>
+        <button type="button" class="btn btn-ghost btn-icon btn-sm r-yt-delete" data-link-id="{{ link.id }}" aria-label="Delete {{ link.name }}">{{ icon("trash-2", "icon-sm") }}</button>
+      </button>
+      {% else %}
+      <div class="empty-state" id="r-yt-empty">{{ icon("cast") }}<div class="empty-sub">No saved links yet</div></div>
+      {% endfor %}
+    </div>
+
+    <div class="field mt-4">
+      <label class="label" for="r-yt-name">Save a new link</label>
+      <input type="text" id="r-yt-name" class="input mb-2" placeholder="Name (e.g. Lo-fi loop)" maxlength="120">
+      <input type="url" id="r-yt-url" class="input" placeholder="https://www.youtube.com/watch?v=&hellip;">
+    </div>
+    <div class="btn-row">
+      <button id="r-yt-save" class="btn btn-secondary btn-touch">{{ icon("plus") }}Save &amp; play</button>
+    </div>
+
+    <div class="remote-yt-transport">
+      <button id="r-yt-prev" class="btn btn-secondary btn-touch btn-icon" aria-label="Previous saved link">{{ icon("skip-back") }}</button>
+      <button id="r-yt-play" class="btn btn-primary btn-touch btn-icon" aria-label="Play">{{ icon("play") }}</button>
+      <button id="r-yt-pause" class="btn btn-secondary btn-touch btn-icon" aria-label="Pause">{{ icon("pause") }}</button>
+      <button id="r-yt-next" class="btn btn-secondary btn-touch btn-icon" aria-label="Next saved link">{{ icon("skip-forward") }}</button>
+    </div>
+    <div class="remote-volume-row">
+      {{ icon("volume-2", "icon-sm") }}
+      <input type="range" id="r-yt-volume" class="slider" min="0" max="100" value="100"
+             aria-label="YouTube player volume">
+    </div>
+  </section>
+
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script src="/static/js/remote.js"></script>
+{% endblock %}

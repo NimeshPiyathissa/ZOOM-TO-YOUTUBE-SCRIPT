@@ -140,3 +140,20 @@ PROBE_TIMEOUT_SECONDS = 15
 FFPROBE_BIN = "/usr/bin/ffprobe"
 GOOGLE_CHROME_BIN = "/usr/bin/google-chrome-stable"
 UNCLUTTER_BIN = "/usr/bin/unclutter"
+
+# --- touch remote / media control (Part 3) ---
+
+# Must match scripts/browser-source.sh's --remote-debugging-port in the
+# zoom-stream repo - bound to 127.0.0.1 there, so this is only ever
+# reached from this same box, same as x11vnc/novnc-proxy.
+CHROME_DEBUG_PORT = 9222
+
+# Must match scripts/audio-setup.sh's null sink name in the zoom-stream
+# repo (`zoom_out`) - muting this sink silences whatever stream.sh's
+# ffmpeg captures from `zoom_out.monitor` without touching ffmpeg itself,
+# so the RTMP connection never drops.
+STREAM_AUDIO_SINK = "zoom_out"
+
+XDOTOOL_BIN = "/usr/bin/xdotool"
+WMCTRL_BIN = "/usr/bin/wmctrl"
+PACTL_BIN = "/usr/bin/pactl"

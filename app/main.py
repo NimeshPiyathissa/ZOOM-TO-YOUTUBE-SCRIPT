@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import pathlib
 import subprocess
@@ -20,6 +21,8 @@ from . import sources as sources_mod
 from . import probe as probe_mod
 from . import url_security
 from .url_security import URLSecurityError
+from . import cdp, youtube
+from .youtube import YouTubeURLError
 
 BASE_DIR = pathlib.Path(__file__).resolve().parent.parent
 
@@ -159,6 +162,23 @@ async def controls_page(request: Request):
         "request": request, "csrf_token": session["csrf_token"], "username": session["username"],
         "units": config.VISIBLE_UNITS, "sources": sources_mod.list_sources(),
         "active_source_id": active["id"] if active else None,
+    })
+
+
+@app.get("/remote", response_class=HTMLResponse)
+async def remote_page(request: Request):
+    """Touch-first quick-control surface (Part 3) - a separate page from
+    /controls (the full admin settings page) on purpose: this is the
+    small set of things worth doing one-handed from a phone while away
+    from the desk, not the whole pipeline/danger-zone surface."""
+    session = _require_page(request)
+    if isinstance(session, RedirectResponse):
+        return session
+    with db.get_conn() as conn:
+        links = [dict(r) for r in conn.execute("SELECT * FROM youtube_links ORDER BY sort_order, id").fetchall()]
+    return templates.TemplateResponse("remote.html", {
+        "request": request, "csrf_token": session["csrf_token"], "username": session["username"],
+        "youtube_links": links,
     })
 
 
@@ -318,6 +338,7 @@ async def api_pipeline_restart(request: Request):
 async def api_stream_action(action: str, request: Request):
     session = deps.require_session_api(request)
     deps.require_csrf(request, session)
+    deps.require_rate_limit(session, "stream_" + action, max_calls=6, window_seconds=15)
     verb = {"go-live": "start", "stop": "stop", "restart": "restart"}.get(action)
     if not verb:
         raise HTTPException(status_code=400, detail="invalid action")
@@ -333,6 +354,7 @@ async def api_stream_action(action: str, request: Request):
 async def api_zoom_action(action: str, request: Request):
     session = deps.require_session_api(request)
     deps.require_csrf(request, session)
+    deps.require_rate_limit(session, "zoom_" + action, max_calls=6, window_seconds=15)
     verb = {"join": "start", "leave": "stop", "rejoin": "restart"}.get(action)
     if not verb:
         raise HTTPException(status_code=400, detail="invalid action")
@@ -654,6 +676,176 @@ async def api_zoom_signout(request: Request):
     db.set_setting("zoom_account_label", "")
     db.audit(session["username"], "zoom_signout", ip=deps.client_ip(request))
     return result
+
+
+# ---------------------------------------------------------------- api: touch remote / media control (Part 3)
+
+@app.get("/api/audio/stream")
+async def api_audio_stream_get(request: Request):
+    deps.require_session_api(request)
+    try:
+        result = await run_in_threadpool(control.stream_audio_action, "status")
+    except control.ControlError as exc:
+        return _api_error(exc)
+    return result
+
+
+@app.post("/api/audio/stream")
+async def api_audio_stream_post(request: Request):
+    session = deps.require_session_api(request)
+    deps.require_csrf(request, session)
+    deps.require_rate_limit(session, "audio_stream", max_calls=10, window_seconds=10)
+    body = await request.json()
+    action = str(body.get("action", ""))
+    if action not in ("mute", "unmute"):
+        raise HTTPException(status_code=400, detail="action must be mute or unmute")
+    try:
+        result = await run_in_threadpool(control.stream_audio_action, action)
+    except control.ControlError as exc:
+        return _api_error(exc)
+    db.audit(session["username"], "audio_stream_" + action, ip=deps.client_ip(request))
+    return result
+
+
+@app.get("/api/audio/zoom-mic")
+async def api_zoom_mic_state(request: Request):
+    deps.require_session_api(request)
+    return await run_in_threadpool(control.zoom_mic_state_heuristic)
+
+
+@app.post("/api/audio/zoom-mic/toggle")
+async def api_zoom_mic_toggle(request: Request):
+    session = deps.require_session_api(request)
+    deps.require_csrf(request, session)
+    deps.require_rate_limit(session, "zoom_mic_toggle", max_calls=6, window_seconds=10)
+    try:
+        result = await run_in_threadpool(control.zoom_mic_toggle)
+    except control.ControlError as exc:
+        return _api_error(exc)
+    db.audit(session["username"], "zoom_mic_toggle", ip=deps.client_ip(request))
+    return result
+
+
+@app.post("/api/zoom/leave-with-choice")
+async def api_zoom_leave_with_choice(request: Request):
+    """Distinct from POST /api/zoom/leave (used by the desktop Controls
+    page, which just stops zoom.service): this is the touch remote's
+    "Leave meeting" action, which also decides what happens to the
+    stream afterwards."""
+    session = deps.require_session_api(request)
+    deps.require_csrf(request, session)
+    deps.require_rate_limit(session, "zoom_leave", max_calls=3, window_seconds=30)
+    body = await request.json()
+    then = str(body.get("then", "slate"))
+    if then not in ("stop", "slate"):
+        raise HTTPException(status_code=400, detail="'then' must be 'stop' or 'slate'")
+    try:
+        results = await run_in_threadpool(control.zoom_leave, then)
+    except control.ControlError as exc:
+        return _api_error(exc)
+    db.audit(session["username"], "zoom_leave", then, deps.client_ip(request))
+    return {"results": results}
+
+
+@app.get("/api/youtube-links")
+async def api_youtube_links_list(request: Request):
+    deps.require_session_api(request)
+    with db.get_conn() as conn:
+        rows = conn.execute("SELECT * FROM youtube_links ORDER BY sort_order, id").fetchall()
+        return [dict(r) for r in rows]
+
+
+@app.post("/api/youtube-links")
+async def api_youtube_links_create(request: Request):
+    session = deps.require_session_api(request)
+    deps.require_csrf(request, session)
+    body = await request.json()
+    name = str(body.get("name", "")).strip()[:120]
+    url = str(body.get("url", "")).strip()
+    if not name or not url:
+        raise HTTPException(status_code=400, detail="name and url are required")
+    try:
+        await run_in_threadpool(youtube.to_embed_url, url)  # validate it's usable before saving
+    except (YouTubeURLError, URLSecurityError) as exc:
+        return _api_error(exc)
+    with db.get_conn() as conn:
+        cur = conn.execute(
+            "INSERT INTO youtube_links (name, url, created_at, sort_order) VALUES (?,?,?,?)",
+            (name, url, time.time(), int(body.get("sort_order", 0))),
+        )
+        lid = cur.lastrowid
+    db.audit(session["username"], "youtube_link_create", name, deps.client_ip(request))
+    return {"id": lid}
+
+
+@app.delete("/api/youtube-links/{link_id}")
+async def api_youtube_links_delete(link_id: int, request: Request):
+    session = deps.require_session_api(request)
+    deps.require_csrf(request, session)
+    with db.get_conn() as conn:
+        conn.execute("DELETE FROM youtube_links WHERE id=?", (link_id,))
+    db.audit(session["username"], "youtube_link_delete", str(link_id), deps.client_ip(request))
+    return {"ok": True}
+
+
+@app.post("/api/youtube/play")
+async def api_youtube_play(request: Request):
+    session = deps.require_session_api(request)
+    deps.require_csrf(request, session)
+    deps.require_rate_limit(session, "youtube_play", max_calls=6, window_seconds=15)
+    body = await request.json()
+    raw_url = str(body.get("url", "")).strip()
+    link_id = body.get("link_id")
+    if link_id and not raw_url:
+        with db.get_conn() as conn:
+            row = conn.execute("SELECT url FROM youtube_links WHERE id=?", (link_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="saved link not found")
+        raw_url = row["url"]
+    if not raw_url:
+        raise HTTPException(status_code=400, detail="url or link_id is required")
+    try:
+        embed_url = await run_in_threadpool(youtube.to_embed_url, raw_url)
+        await cdp.navigate(embed_url)
+        # The player's JS needs a moment to initialize before a <video>
+        # element exists - poll briefly rather than a fixed blind sleep,
+        # give up quietly after ~5s (the play button still works from
+        # there once the page finishes loading on its own).
+        for _ in range(10):
+            await asyncio.sleep(0.5)
+            try:
+                res = await cdp.evaluate(cdp.JS_ENSURE_UNMUTED)
+            except cdp.CDPError:
+                continue
+            if res.get("value"):
+                break
+    except (YouTubeURLError, URLSecurityError, cdp.CDPError) as exc:
+        return _api_error(exc)
+    db.audit(session["username"], "youtube_play", raw_url, deps.client_ip(request))
+    return {"ok": True, "embed_url": embed_url}
+
+
+@app.post("/api/youtube/control")
+async def api_youtube_control(request: Request):
+    session = deps.require_session_api(request)
+    deps.require_csrf(request, session)
+    deps.require_rate_limit(session, "youtube_control", max_calls=15, window_seconds=10)
+    body = await request.json()
+    action = str(body.get("action", ""))
+    try:
+        if action == "play":
+            await cdp.evaluate(cdp.JS_PLAY)
+        elif action == "pause":
+            await cdp.evaluate(cdp.JS_PAUSE)
+        elif action == "volume":
+            level = int(body.get("level", 100))
+            await cdp.evaluate(cdp.js_set_volume(level))
+        else:
+            raise HTTPException(status_code=400, detail="invalid action")
+    except cdp.CDPError as exc:
+        return _api_error(exc)
+    db.audit(session["username"], "youtube_control_" + action, ip=deps.client_ip(request))
+    return {"ok": True}
 
 
 # ---------------------------------------------------------------- api: schedules

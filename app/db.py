@@ -83,6 +83,19 @@ CREATE TABLE IF NOT EXISTS schedules (
     days_of_week TEXT NOT NULL,  -- comma list, 0=Mon .. 6=Sun (APScheduler cron convention)
     enabled INTEGER NOT NULL DEFAULT 1
 );
+
+-- Saved YouTube URLs/playlists for the touch remote's video switcher
+-- (Part 3). `url` is the original pasted link (shown back to the admin);
+-- the embed URL actually navigated to is derived from it fresh each time
+-- (app/youtube.py), never stored, so a change to that logic applies to
+-- already-saved links too.
+CREATE TABLE IF NOT EXISTS youtube_links (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    url TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    sort_order INTEGER NOT NULL DEFAULT 0
+);
 """
 
 # Columns added after the initial release: CREATE TABLE IF NOT EXISTS won't

@@ -1,0 +1,104 @@
+/* ============================================================
+   /remote - touch-first quick-control surface (Part 3). Loaded only on
+   this page (base.html's extra_css block), reusing every existing
+   token/component (.card, .btn, .badge, .field, .slider) rather than
+   introducing a parallel design system.
+   ============================================================ */
+
+.remote-grid {
+  display: grid;
+  gap: var(--space-4);
+  max-width: 640px;
+  margin: 0 auto;
+}
+
+.remote-section-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--text-dim);
+  margin-bottom: var(--space-3);
+}
+
+/* 56px minimum touch target, per the spec - .btn's --btn-h custom
+   property makes this a one-line extension of the existing button
+   system rather than a fork of it. */
+.btn-touch {
+  --btn-h: 56px;
+  padding: 0 var(--space-6);
+  font-size: var(--text-base);
+  font-weight: var(--weight-semibold);
+}
+.btn-touch.btn-icon { width: var(--btn-h); padding: 0; }
+
+.remote-action-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: var(--space-3);
+}
+
+/* Audio has two genuinely different controls that are easy to confuse
+   (what viewers hear vs. Zoom's own mic status) - distinct icon, label,
+   and a colored left border per card so they never look like the same
+   control at a glance, not just different text. */
+.audio-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  border-left: 3px solid var(--border-strong);
+}
+.audio-card.audio-stream { border-left-color: var(--accent); }
+.audio-card.audio-zoom-mic { border-left-color: var(--warning); }
+.audio-card-label { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.audio-card-title { font-weight: var(--weight-semibold); }
+.audio-card-hint { font-size: var(--text-xs); color: var(--text-faint); }
+
+.remote-yt-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-height: 280px;
+  overflow-y: auto;
+}
+.remote-yt-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  cursor: pointer;
+  min-height: 56px;
+  text-align: left;
+  width: 100%;
+  color: var(--text);
+  font: inherit;
+}
+.remote-yt-item:hover { background: var(--bg-hover); }
+.remote-yt-item.is-current { border-color: var(--accent-ring); background: var(--accent-tint); }
+.remote-yt-item-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.remote-yt-transport {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+
+.remote-volume-row { display: flex; align-items: center; gap: var(--space-3); margin-top: var(--space-3); }
+.remote-volume-row .icon { flex: none; color: var(--text-dim); }
+
+/* No horizontal scroll anywhere on this page, and value updates (badge
+   text, slider fill) never reflow surrounding layout - only opacity/
+   color/transform change, same discipline as the overview page's
+   sparkline updates. */
+body:has(.remote-grid) { overflow-x: hidden; }
+
+@media (max-width: 480px) {
+  .remote-action-row { grid-template-columns: 1fr 1fr; }
+}
