@@ -29,6 +29,7 @@
       <a href="/" class="{{ 'active' if request.url.path == '/' }}">{{ icon("layout-dashboard") | safe }}<span class="label">Overview</span></a>
       <a href="/controls" class="{{ 'active' if request.url.path == '/controls' }}">{{ icon("sliders-horizontal") | safe }}<span class="label">Controls</span></a>
       <a href="/remote" class="{{ 'active' if request.url.path == '/remote' }}">{{ icon("cast") | safe }}<span class="label">Remote</span></a>
+      <a href="/accounts" class="{{ 'active' if request.url.path == '/accounts' }}">{{ icon("user") | safe }}<span class="label">Accounts</span></a>
       <a href="/config" class="{{ 'active' if request.url.path == '/config' }}">{{ icon("settings") | safe }}<span class="label">Configuration</span></a>
       <a href="/logs" class="{{ 'active' if request.url.path == '/logs' }}">{{ icon("terminal") | safe }}<span class="label">Logs</span></a>
       <a href="/vnc" class="{{ 'active' if request.url.path == '/vnc' }}">{{ icon("monitor") | safe }}<span class="label">Remote GUI</span></a>

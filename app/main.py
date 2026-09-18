@@ -23,6 +23,8 @@ from . import url_security
 from .url_security import URLSecurityError
 from . import cdp, youtube
 from .youtube import YouTubeURLError
+from . import accounts as accounts_mod
+from .accounts import AccountError
 
 BASE_DIR = pathlib.Path(__file__).resolve().parent.parent
 
@@ -179,6 +181,17 @@ async def remote_page(request: Request):
     return templates.TemplateResponse("remote.html", {
         "request": request, "csrf_token": session["csrf_token"], "username": session["username"],
         "youtube_links": links,
+    })
+
+
+@app.get("/accounts", response_class=HTMLResponse)
+async def accounts_page(request: Request):
+    session = _require_page(request)
+    if isinstance(session, RedirectResponse):
+        return session
+    return templates.TemplateResponse("accounts.html", {
+        "request": request, "csrf_token": session["csrf_token"], "username": session["username"],
+        "accounts": accounts_mod.list_accounts(),
     })
 
 
@@ -675,6 +688,111 @@ async def api_zoom_signout(request: Request):
     db.set_setting("zoom_account_signed_in", "0")
     db.set_setting("zoom_account_label", "")
     db.audit(session["username"], "zoom_signout", ip=deps.client_ip(request))
+    return result
+
+
+# ---------------------------------------------------------------- api: accounts (Part 2)
+#
+# No route here ever receives or returns a password, 2FA code, token or
+# cookie. Sign-in happens in a Chrome window over noVNC; these routes
+# only open/close that window and ask Google whether a session exists.
+
+@app.get("/api/accounts")
+async def api_accounts_list(request: Request):
+    deps.require_session_api(request)
+    return accounts_mod.list_accounts()
+
+
+@app.post("/api/accounts")
+async def api_accounts_create(request: Request):
+    session = deps.require_session_api(request)
+    deps.require_csrf(request, session)
+    deps.require_rate_limit(session, "account_create", max_calls=5, window_seconds=60)
+    body = await request.json()
+    try:
+        aid = await run_in_threadpool(accounts_mod.create_account, str(body.get("label", "")))
+    except (AccountError, control.ControlError) as exc:
+        return _api_error(exc)
+    db.audit(session["username"], "account_create", str(aid), deps.client_ip(request))
+    return {"id": aid}
+
+
+@app.put("/api/accounts/{account_id}")
+async def api_accounts_rename(account_id: int, request: Request):
+    session = deps.require_session_api(request)
+    deps.require_csrf(request, session)
+    body = await request.json()
+    try:
+        accounts_mod.rename_account(account_id, str(body.get("label", "")))
+    except AccountError as exc:
+        return _api_error(exc)
+    db.audit(session["username"], "account_rename", str(account_id), deps.client_ip(request))
+    return {"ok": True}
+
+
+@app.delete("/api/accounts/{account_id}")
+async def api_accounts_delete(account_id: int, request: Request):
+    session = deps.require_session_api(request)
+    deps.require_csrf(request, session)
+    deps.require_rate_limit(session, "account_delete", max_calls=5, window_seconds=60)
+    try:
+        await run_in_threadpool(accounts_mod.remove_account, account_id)
+    except (AccountError, control.ControlError) as exc:
+        return _api_error(exc)
+    db.audit(session["username"], "account_delete", str(account_id), deps.client_ip(request))
+    return {"ok": True}
+
+
+@app.post("/api/accounts/{account_id}/signin/start")
+async def api_accounts_signin_start(account_id: int, request: Request):
+    session = deps.require_session_api(request)
+    deps.require_csrf(request, session)
+    deps.require_rate_limit(session, "account_signin", max_calls=6, window_seconds=60)
+    try:
+        result = await run_in_threadpool(accounts_mod.signin_start, account_id)
+    except (AccountError, control.ControlError) as exc:
+        return _api_error(exc)
+    db.audit(session["username"], "account_signin_start", str(account_id), deps.client_ip(request))
+    return result
+
+
+@app.post("/api/accounts/{account_id}/signin/cancel")
+async def api_accounts_signin_cancel(account_id: int, request: Request):
+    session = deps.require_session_api(request)
+    deps.require_csrf(request, session)
+    try:
+        await run_in_threadpool(accounts_mod.signin_cancel, account_id)
+    except (AccountError, control.ControlError) as exc:
+        return _api_error(exc)
+    db.audit(session["username"], "account_signin_cancel", str(account_id), deps.client_ip(request))
+    return {"ok": True}
+
+
+@app.get("/api/accounts/{account_id}/signin/status")
+async def api_accounts_signin_status(account_id: int, request: Request):
+    deps.require_session_api(request)
+    try:
+        return await run_in_threadpool(accounts_mod.signin_status, account_id)
+    except (AccountError, control.ControlError) as exc:
+        return _api_error(exc)
+
+
+_verify_lock = asyncio.Lock()  # one headless verify at a time (fixed profile lock semantics)
+
+
+@app.post("/api/accounts/{account_id}/verify")
+async def api_accounts_verify(account_id: int, request: Request):
+    """Also the "I'm done" step of sign-in: closes the sign-in window
+    (flushing cookies) and asks Google whether a session now exists."""
+    session = deps.require_session_api(request)
+    deps.require_csrf(request, session)
+    deps.require_rate_limit(session, "account_verify", max_calls=6, window_seconds=60)
+    async with _verify_lock:
+        try:
+            result = await run_in_threadpool(accounts_mod.verify_account, account_id)
+        except (AccountError, control.ControlError) as exc:
+            return _api_error(exc)
+    db.audit(session["username"], "account_verify", f"{account_id}:{result['state']}", deps.client_ip(request))
     return result
 
 

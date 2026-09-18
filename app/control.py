@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import functools
 import pwd
+import re
 import subprocess
 import time
 
@@ -423,6 +424,29 @@ def zoom_session_heuristic() -> dict:
             found = True
             break
     return {"session_files_present": found, "authoritative": False}
+
+
+# ---------------------------------------------------------------- accounts (Part 2)
+
+ACCOUNT_SCRIPT = config.STREAM_SCRIPTS_DIR / "chrome-account.sh"
+ACCOUNT_ACTIONS = {"create", "signin", "close", "status", "verify", "remove"}
+_PROFILE_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,39}$")
+
+
+def account_profile_action(action: str, profile_id: str, timeout: int = 20) -> str:
+    """Runs scripts/chrome-account.sh as zoombot. The dashboard never
+    touches the profile directory itself (cookies live there); it only
+    ever gets this script's one-line result back. No credential is
+    passed in or out - see that script's header."""
+    if action not in ACCOUNT_ACTIONS:
+        raise ControlError(f"invalid account action: {action}")
+    if not _PROFILE_ID_RE.match(profile_id):
+        raise ControlError("invalid profile id")
+    argv = [SUDO, "-u", config.ZOOMBOT_USER, str(ACCOUNT_SCRIPT), action, profile_id]
+    proc = run_as_zoombot(argv, timeout=timeout)
+    if proc.returncode != 0:
+        raise ControlError(proc.stderr.decode(errors="replace").strip() or f"account {action} failed")
+    return proc.stdout.decode(errors="replace").strip()
 
 
 # ---------------------------------------------------------------- touch remote / media control (Part 3)

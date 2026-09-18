@@ -102,3 +102,34 @@ body:has(.remote-grid) { overflow-x: hidden; }
 @media (max-width: 480px) {
   .remote-action-row { grid-template-columns: 1fr 1fr; }
 }
+
+/* ---------------------------------------------------------------- accounts (Part 2) */
+
+.account-list { display: grid; gap: var(--space-3); }
+.account-card { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3); }
+.account-card-main { min-width: 0; flex: 1 1 260px; }
+.account-card-head { display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-1); }
+.account-label { font-weight: var(--weight-semibold); font-size: var(--text-base); }
+.account-meta { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: baseline; }
+.account-identity { color: var(--text-dim); }
+.account-result { margin-top: var(--space-1); min-height: 1.2em; }
+.account-card-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+
+/* State colors reuse the badge palette; the data-state attribute is the
+   single source of truth so JS only ever flips one attribute. */
+.account-state[data-state="signed_in"] { background: var(--success-tint); color: var(--success); }
+.account-state[data-state="signed_in"] .dot { background: var(--success); }
+.account-state[data-state="signed_out"] { background: var(--live-tint); color: var(--live); }
+.account-state[data-state="signed_out"] .dot { background: var(--live); }
+.account-state[data-state="inconclusive"] { background: var(--warning-tint); color: var(--warning); }
+.account-state[data-state="inconclusive"] .dot { background: var(--warning); }
+.account-state[data-state="never"] { background: var(--bg-hover); color: var(--text-faint); }
+.account-state[data-state="never"] .dot { background: var(--text-faint); }
+
+.signin-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr); gap: var(--space-4); align-items: start; }
+.signin-vnc { min-height: 50vh; }
+.signin-steps { padding-left: 1.25em; display: grid; gap: var(--space-3); font-size: var(--text-sm); line-height: 1.5; }
+@media (max-width: 900px) {
+  .signin-grid { grid-template-columns: 1fr; }
+  .signin-vnc { min-height: 40vh; }
+}

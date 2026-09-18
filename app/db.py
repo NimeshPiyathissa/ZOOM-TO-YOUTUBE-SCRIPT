@@ -89,6 +89,21 @@ CREATE TABLE IF NOT EXISTS schedules (
 -- the embed URL actually navigated to is derived from it fresh each time
 -- (app/youtube.py), never stored, so a change to that logic applies to
 -- already-saved links too.
+-- Google accounts for interactive sign-in (Part 2). Holds NO password,
+-- token or cookie - only a label, which zoombot-owned Chrome profile
+-- directory backs it (app/accounts.py + scripts/chrome-account.sh), the
+-- email Google reported at the last verification, and that result.
+CREATE TABLE IF NOT EXISTS accounts (
+    id INTEGER PRIMARY KEY,
+    label TEXT UNIQUE NOT NULL,
+    profile_id TEXT UNIQUE NOT NULL,
+    email TEXT,
+    state TEXT NOT NULL DEFAULT 'never',   -- never | signed_in | signed_out | inconclusive
+    last_verified_at REAL,
+    last_result TEXT,
+    created_at REAL NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS youtube_links (
     id INTEGER PRIMARY KEY,
     name TEXT NOT NULL,

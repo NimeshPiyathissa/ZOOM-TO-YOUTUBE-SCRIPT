@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon %}
+{% block title %}Accounts - Zoom Stream Dashboard{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="/static/css/remote.css">{% endblock %}
+{% block content %}
+
+<div class="section mt-0">
+  <div class="section-head"><h2>Google accounts</h2><span class="hint m-0">interactive sign-in, nothing stored</span></div>
+  <div class="banner banner-info mb-4" role="note">
+    {{ icon("shield-check") }}
+    <div>
+      <strong>No password, code or token is ever stored by this system.</strong>
+      Each account is just a label plus its own private Chrome profile on the VPS. You sign in yourself, by hand,
+      in that Chrome window over the remote desktop; the dashboard only opens the window and afterwards asks Google
+      whether a session exists. Removing an account deletes its profile directory (and the session with it).
+    </div>
+  </div>
+
+  <div class="account-list" id="account-list">
+    {% for a in accounts %}
+    <div class="card account-card" data-account-id="{{ a.id }}" data-label="{{ a.label }}">
+      <div class="account-card-main">
+        <div class="account-card-head">
+          <span class="account-label">{{ a.label }}</span>
+          <span class="badge account-state" data-state="{{ a.state }}"><span class="dot"></span><span class="account-state-text">{{ a.state }}</span></span>
+        </div>
+        <div class="account-meta">
+          <span class="mono account-identity">{{ a.identity_masked or "identity unknown" }}</span>
+          <span class="hint account-verified tnum" data-ts="{{ a.last_verified_at or '' }}">{{ "never verified" if not a.last_verified_at else "" }}</span>
+        </div>
+        <div class="hint account-result">{{ a.last_result or "" }}</div>
+      </div>
+      <div class="account-card-actions">
+        <button class="btn btn-primary btn-touch act-signin" data-account-id="{{ a.id }}">{{ icon("log-in") }}<span>{{ "Re-authenticate" if a.state in ("signed_out", "inconclusive") else "Sign in" }}</span></button>
+        <button class="btn btn-secondary btn-touch act-verify" data-account-id="{{ a.id }}">{{ icon("shield-check") }}Verify</button>
+        <button class="btn btn-ghost btn-touch btn-icon act-rename" data-account-id="{{ a.id }}" aria-label="Rename {{ a.label }}" data-tooltip="Rename">{{ icon("settings", "icon-sm") }}</button>
+        <button class="btn btn-ghost btn-touch btn-icon act-remove" data-account-id="{{ a.id }}" aria-label="Remove {{ a.label }}" data-tooltip="Remove">{{ icon("trash-2", "icon-sm") }}</button>
+      </div>
+    </div>
+    {% else %}
+    <div class="empty-state" id="account-empty">{{ icon("user") }}<div class="empty-sub">No accounts yet - add one below.</div></div>
+    {% endfor %}
+  </div>
+
+  <div class="card mt-4">
+    <div class="field max-w-sm">
+      <label class="label" for="account-new-label">Add an account</label>
+      <input type="text" id="account-new-label" class="input" placeholder="Label (e.g. Church channel)" maxlength="60">
+    </div>
+    <button id="account-add" class="btn btn-secondary btn-touch">{{ icon("plus") }}Add account</button>
+    <p class="hint mt-2">Creates an empty Chrome profile. Nothing is signed in until you do it yourself in the next step.</p>
+  </div>
+</div>
+
+<section class="section" id="signin-panel" hidden aria-labelledby="signin-title" aria-live="polite">
+  <div class="section-head"><h2 id="signin-title">Sign in: <span id="signin-account-label"></span></h2></div>
+  <div class="signin-grid">
+    <div class="vnc-frame-box signin-vnc" id="signin-vnc"></div>
+    <div class="card signin-guide">
+      <ol class="signin-steps">
+        <li><strong>A Chrome window has opened on the remote desktop</strong> at Google's sign-in page. If you only see a black screen, wait a few seconds; if asked, enter the VNC password.</li>
+        <li><strong>Sign in on the touchscreen</strong> exactly as you would on a phone: email, password, then any 2-Step prompt. Type into the remote desktop, not this page.</li>
+        <li><strong>If Google says "This browser or app may not be secure":</strong> that's Google's automation check. This window is opened without any automation hooks, so it's usually the new-device/datacenter-IP signal instead. Tap <em>Try another way</em> and approve on your phone, or use a backup code. If it still refuses, sign in to the same account once from your phone or PC, then retry here within a few minutes - Google relaxes the check for a recently-approved account. Turning on 2-Step Verification with phone prompts makes this far more reliable.</li>
+        <li><strong>Extra verification prompts</strong> (phone tap, code by SMS/app, recovery email) are expected on a first sign-in from this machine - complete them on the remote desktop.</li>
+        <li>When you can see your account avatar in the top-right of Google, tap <strong>I'm done</strong>. The window closes so the session is saved, then the dashboard asks Google to confirm it. Nothing you typed is kept anywhere.</li>
+      </ol>
+      <div class="btn-row mt-4">
+        <button id="signin-done" class="btn btn-primary btn-touch">{{ icon("check") }}I'm done - verify</button>
+        <button id="signin-cancel" class="btn btn-secondary btn-touch">{{ icon("x") }}Cancel</button>
+        <a href="/vnc" class="btn btn-ghost btn-touch" target="_blank" rel="noopener">{{ icon("external-link", "icon-sm") }}Open full remote desktop</a>
+      </div>
+      <p class="hint mt-3" id="signin-status"></p>
+    </div>
+  </div>
+</section>
+
+{% endblock %}
+{% block scripts %}
+<script type="module" src="/static/js/accounts.js"></script>
+{% endblock %}
