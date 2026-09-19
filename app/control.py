@@ -510,20 +510,28 @@ def zoom_session_heuristic() -> dict:
 # ---------------------------------------------------------------- accounts (Part 2)
 
 ACCOUNT_SCRIPT = config.STREAM_SCRIPTS_DIR / "chrome-account.sh"
-ACCOUNT_ACTIONS = {"create", "signin", "close", "status", "verify", "remove"}
+ACCOUNT_ACTIONS = {"create", "signin", "close", "status", "verify", "remove",
+                   "import", "signout", "backup", "restore", "backups"}
 _PROFILE_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,39}$")
+_BACKUP_NAME_RE = re.compile(r"^[a-z0-9-]+-\d{8}-\d{6}\.tar\.gz$")
 
 
-def account_profile_action(action: str, profile_id: str, timeout: int = 20) -> str:
+def account_profile_action(action: str, profile_id: str, timeout: int = 20, extra: str | None = None) -> str:
     """Runs scripts/chrome-account.sh as zoombot. The dashboard never
     touches the profile directory itself (cookies live there); it only
     ever gets this script's one-line result back. No credential is
-    passed in or out - see that script's header."""
+    passed in or out - see that script's header. `extra` is the one
+    optional trailing argument some actions take (a backup file name for
+    restore), validated here before it becomes argv."""
     if action not in ACCOUNT_ACTIONS:
         raise ControlError(f"invalid account action: {action}")
     if not _PROFILE_ID_RE.match(profile_id):
         raise ControlError("invalid profile id")
     argv = [SUDO, "-u", config.ZOOMBOT_USER, str(ACCOUNT_SCRIPT), action, profile_id]
+    if extra:
+        if action != "restore" or not _BACKUP_NAME_RE.match(extra) or not extra.startswith(profile_id + "-"):
+            raise ControlError("invalid backup name")
+        argv.append(extra)
     proc = run_as_zoombot(argv, timeout=timeout)
     if proc.returncode != 0:
         raise ControlError(proc.stderr.decode(errors="replace").strip() or f"account {action} failed")

@@ -102,7 +102,7 @@ def load_schedules() -> None:
     from apscheduler.triggers.date import DateTrigger
     from datetime import datetime
     for job in list(scheduler.get_jobs()):
-        if job.id != "watchdog":
+        if job.id not in ("watchdog", "verify-accounts"):
             scheduler.remove_job(job.id)
     for s in sources_mod.list_sources():
         join_at = (s.get("options") or {}).get("join_at") if s["type"] == "zoom" else None
@@ -126,7 +126,28 @@ def load_schedules() -> None:
         )
 
 
+ACCOUNT_VERIFY_INTERVAL_HOURS = 6
+
+
+async def _verify_accounts() -> None:
+    """Every few hours, ask Google whether each account's session still
+    exists (headless, or through the running kiosk for a profile it
+    holds) so a lapsed session is flagged in the UI before a stream
+    depends on it. Not more often: each check is a Chrome launch."""
+    from . import accounts as accounts_mod
+    try:
+        results = await asyncio.get_event_loop().run_in_executor(None, accounts_mod.verify_all, "scheduled")
+        lost = [r for r in results if r.get("state") in ("signed_out", "inconclusive")]
+        if lost:
+            await _send_alert("Google account needs re-authentication: " + ", ".join(r["label"] for r in lost))
+    except Exception:  # noqa: BLE001 - never let a check kill the loop
+        pass
+
+
 def start() -> None:
+    from datetime import datetime, timedelta
     scheduler.add_job(_watchdog, "interval", seconds=WATCHDOG_INTERVAL_SECONDS, id="watchdog")
+    scheduler.add_job(_verify_accounts, "interval", hours=ACCOUNT_VERIFY_INTERVAL_HOURS, id="verify-accounts",
+                      next_run_time=datetime.now(ZoneInfo(config.TIMEZONE)) + timedelta(minutes=3))
     load_schedules()
     scheduler.start()

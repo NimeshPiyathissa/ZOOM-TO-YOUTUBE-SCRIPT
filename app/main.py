@@ -802,14 +802,30 @@ async def api_sources_set_account(source_id: int, request: Request):
     session = deps.require_session_api(request)
     deps.require_csrf(request, session)
     body = await request.json()
-    if not sources_mod.get_source(source_id):
+    s = sources_mod.get_source(source_id)
+    if not s:
         raise HTTPException(status_code=404, detail="source not found")
     try:
         sources_mod.set_account(source_id, body.get("account_id"))
     except env_store.ValidationError as exc:
         return _api_error(exc)
-    db.audit(session["username"], "source_bind_account", f"{source_id}:{body.get('account_id')}", deps.client_ip(request))
-    return {"ok": True}
+    applied = False
+    # apply_now: the source is the active web source, so relaunch just the
+    # browser on the new profile. Chrome cannot change user-data-dir in
+    # place; the encoder keeps running (RTMP stays up), viewers see the
+    # page reload. Never automatic while the stream is live - the UI asks.
+    if body.get("apply_now"):
+        active = sources_mod.get_active_source()
+        if active and active["id"] == source_id and s["type"] == "webpage":
+            try:
+                fresh = sources_mod.get_source(source_id)
+                await run_in_threadpool(control.apply_source_config, fresh)
+                await run_in_threadpool(control.unit_action, "browser-source", "restart")
+                applied = True
+            except control.ControlError as exc:
+                return _api_error(exc)
+    db.audit(session["username"], "source_bind_account", f"{source_id}:{body.get('account_id')} applied={applied}", deps.client_ip(request))
+    return {"ok": True, "applied": applied}
 
 
 @app.post("/api/zoom/classify")
@@ -996,6 +1012,75 @@ async def api_accounts_create(request: Request):
         return _api_error(exc)
     db.audit(session["username"], "account_create", str(aid), deps.client_ip(request))
     return {"id": aid}
+
+
+@app.post("/api/accounts/import")
+async def api_accounts_import(request: Request):
+    """New account from the shared stream profile's existing session (the
+    one Zoom's Google sign-in / the kiosk used). Nothing is read from the
+    profile here - it is copied as zoombot and then verified with Google."""
+    session = deps.require_session_api(request)
+    deps.require_csrf(request, session)
+    deps.require_rate_limit(session, "account_import", max_calls=3, window_seconds=60)
+    body = await request.json()
+    try:
+        aid = await run_in_threadpool(accounts_mod.import_stream_profile, str(body.get("label", "")))
+        async with _verify_lock:
+            result = await run_in_threadpool(accounts_mod.verify_account, aid)
+    except (AccountError, control.ControlError) as exc:
+        return _api_error(exc)
+    db.audit(session["username"], "account_import", f"{aid}:{result['state']}", deps.client_ip(request))
+    return {"id": aid, "verify": result}
+
+
+@app.post("/api/accounts/{account_id}/signout")
+async def api_accounts_signout(account_id: int, request: Request):
+    session = deps.require_session_api(request)
+    deps.require_csrf(request, session)
+    try:
+        await run_in_threadpool(accounts_mod.sign_out, account_id)
+    except (AccountError, control.ControlError) as exc:
+        return _api_error(exc)
+    db.audit(session["username"], "account_signout", str(account_id), deps.client_ip(request))
+    return {"ok": True}
+
+
+@app.post("/api/accounts/{account_id}/backup")
+async def api_accounts_backup(account_id: int, request: Request):
+    session = deps.require_session_api(request)
+    deps.require_csrf(request, session)
+    deps.require_rate_limit(session, "account_backup", max_calls=4, window_seconds=60)
+    try:
+        result = await run_in_threadpool(accounts_mod.backup_account, account_id)
+    except (AccountError, control.ControlError) as exc:
+        return _api_error(exc)
+    db.audit(session["username"], "account_backup", f"{account_id}:{result['backup']}", deps.client_ip(request))
+    return result
+
+
+@app.get("/api/accounts/{account_id}/backups")
+async def api_accounts_backups(account_id: int, request: Request):
+    deps.require_session_api(request)
+    try:
+        return await run_in_threadpool(accounts_mod.list_backups, account_id)
+    except (AccountError, control.ControlError) as exc:
+        return _api_error(exc)
+
+
+@app.post("/api/accounts/{account_id}/restore")
+async def api_accounts_restore(account_id: int, request: Request):
+    session = deps.require_session_api(request)
+    deps.require_csrf(request, session)
+    deps.require_rate_limit(session, "account_restore", max_calls=4, window_seconds=60)
+    body = await request.json()
+    name = str(body.get("name") or "") or None
+    try:
+        async with _verify_lock:
+            result = await run_in_threadpool(accounts_mod.restore_account, account_id, name)
+    except (AccountError, control.ControlError) as exc:
+        return _api_error(exc)
+    db.audit(session["username"], "account_restore", f"{account_id}:{result.get('restored', '')}:{result['state']}", deps.client_ip(request))
+    return result
 
 
 @app.put("/api/accounts/{account_id}")
