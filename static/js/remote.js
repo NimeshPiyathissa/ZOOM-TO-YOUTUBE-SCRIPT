@@ -2,8 +2,9 @@
 // the "zsdash:state" event it dispatches rather than a second poll loop.
 // Per-source panels below only poll their own thing while visible.
 
-const SOURCES = JSON.parse(document.getElementById("sources-data").textContent);
+let SOURCES = JSON.parse(document.getElementById("sources-data").textContent);
 let activeSourceId = JSON.parse(document.getElementById("active-source-id").textContent);
+let sourcesRev = JSON.parse(document.getElementById("sources-rev").textContent || "0") || 0;
 let streamPhase = "STOPPED";
 const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -142,6 +143,40 @@ function paintTiles() {
     t.classList.toggle("is-active", on);
     t.setAttribute("aria-pressed", String(on));
   });
+}
+
+// The tiles are rendered from SOURCES on the client so that changes made
+// on the Zoom page (or anywhere else) show up here without a reload: the
+// same `sources` table backs both, and GET /api/sources?since=<rev>
+// answers {"changed": false} until something was written.
+const escHtml = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+function renderSourceTiles() {
+  const box = document.getElementById("source-tiles");
+  if (!SOURCES.length) {
+    box.innerHTML = `<div class="empty-state">${icon("link")}<div class="empty-sub">No saved sources - add a Zoom meeting on the Zoom page, or other sources on Configuration.</div></div>`;
+    return;
+  }
+  box.innerHTML = SOURCES.map((s) => {
+    const kind = s.type === "zoom" ? ((s.options || {}).meeting_kind || "meeting") : s.type;
+    const sub = s.type === "zoom"
+      ? (kind === "pmi" ? "personal room" : kind) + (s.missing && s.missing.length ? " · needs " + escHtml(s.missing[0].split(" (")[0]) : "")
+      : s.type;
+    const ic = s.type === "zoom" ? (kind === "webinar" ? "ticket" : kind === "pmi" ? "house" : "video") : (s.type === "webpage" ? "globe" : "cast");
+    return `<button type="button" class="source-tile${s.id === activeSourceId ? " is-active" : ""}" role="listitem" data-source-id="${s.id}" data-type="${s.type}" aria-pressed="${s.id === activeSourceId}">
+      ${icon(ic)}<span class="source-tile-name">${escHtml(s.name)}</span><span class="source-tile-type">${sub}</span></button>`;
+  }).join("");
+}
+async function syncSources() {
+  if (document.hidden) return;
+  let r; try { r = await apiFetch(`/api/sources?since=${sourcesRev}`); } catch (err) { return; }
+  if (!r.changed) return;
+  sourcesRev = r.rev; SOURCES = r.sources || [];
+  const prevActive = activeSourceId; activeSourceId = r.active_id;
+  renderSourceTiles();
+  const hint = document.getElementById("source-switch-hint");
+  hint.dataset.orig = hint.dataset.orig || hint.textContent;
+  hint.textContent = "Sources updated (edited elsewhere - the Zoom page or Configuration)."; setTimeout(() => { hint.textContent = hint.dataset.orig; }, 4000);
+  if (prevActive !== activeSourceId) showContextPanel();
 }
 
 function showContextPanel() {
@@ -660,6 +695,7 @@ pollLevel(); levelTimer = setInterval(pollLevel, 1000);
 // canvas alert (a Zoom dialog on top of the browser is a program-panel
 // problem, not a Zoom-panel one) and the mixer's mic readback.
 canvasPoll(); canvasTimer = setInterval(canvasPoll, 5000);
-paintTiles();
+renderSourceTiles();
 showContextPanel();
-document.addEventListener("visibilitychange", () => { if (document.hidden) stopPanelPolls(); else { showContextPanel(); canvasPoll(); pollSink(); } });
+setInterval(syncSources, 3000);
+document.addEventListener("visibilitychange", () => { if (document.hidden) stopPanelPolls(); else { showContextPanel(); canvasPoll(); pollSink(); syncSources(); } });

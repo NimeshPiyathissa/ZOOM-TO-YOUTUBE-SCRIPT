@@ -7,78 +7,10 @@
    into the rest of the dashboard. Loaded only on /remote and /accounts
    (base.html's extra_css block) - the accounts block at the bottom is
    shared and unchanged.
+   Shared depth tokens / module cards live in static/css/rack.css.
    ============================================================ */
 
-.remote-grid {
-  /* page-scoped tokens */
-  --rm-ink: #07090c;                              /* monitor bezel + glass */
-  --rm-edge: rgba(255, 255, 255, 0.07);           /* hairline highlight on every module */
-  --rm-edge-strong: rgba(255, 255, 255, 0.12);
-  --rm-sheen: linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0) 38%);
-  --rm-rule: rgba(255, 255, 255, 0.06);           /* telemetry dividers */
-  --rm-tally-off: #2a303b;
-  --rm-label: var(--text-faint);
-  --rm-glow-live: 0 0 14px 2px rgba(255, 107, 107, 0.55);
-  --rm-glow-accent: 0 0 18px -2px var(--accent-ring);
-
-  display: grid;
-  gap: var(--space-4);
-  max-width: 1100px;
-  margin: 0 auto;
-}
-
-@media (prefers-color-scheme: light) {
-  :root:not([data-theme="dark"]) .remote-grid {
-    --rm-ink: #0f1216;
-    --rm-edge: rgba(16, 19, 24, 0.08);
-    --rm-edge-strong: rgba(16, 19, 24, 0.14);
-    --rm-sheen: linear-gradient(180deg, rgba(255, 255, 255, 0.6), rgba(255, 255, 255, 0) 40%);
-    --rm-rule: rgba(16, 19, 24, 0.08);
-    --rm-tally-off: #cfd4dc;
-    --rm-glow-live: 0 0 14px 1px rgba(220, 38, 38, 0.45);
-  }
-}
-:root[data-theme="light"] .remote-grid {
-  --rm-ink: #0f1216;
-  --rm-edge: rgba(16, 19, 24, 0.08);
-  --rm-edge-strong: rgba(16, 19, 24, 0.14);
-  --rm-sheen: linear-gradient(180deg, rgba(255, 255, 255, 0.6), rgba(255, 255, 255, 0) 40%);
-  --rm-rule: rgba(16, 19, 24, 0.08);
-  --rm-tally-off: #cfd4dc;
-  --rm-glow-live: 0 0 14px 1px rgba(220, 38, 38, 0.45);
-}
-
-/* ---------------------------------------------------------------- rack modules (cards) */
-
-.remote-grid > .card {
-  position: relative;
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--rm-edge);
-  background: var(--bg-panel);
-  background-image: var(--rm-sheen);
-  box-shadow: var(--shadow-md);
-  padding: var(--space-5);
-  min-width: 0;   /* grid items must shrink below their content's min width - never widen the page */
-}
-
-/* Engraved module label: small, tracked, quiet - the icon carries the
-   accent so the label itself can stay neutral. */
-.remote-section-title {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  margin: 0 0 var(--space-4);
-  font-size: 11px;
-  font-weight: var(--weight-semibold);
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--rm-label);
-}
-.remote-section-title .icon { width: 14px; height: 14px; color: var(--accent); }
-.remote-section-title .hint { text-transform: none; letter-spacing: 0; font-weight: var(--weight-normal); margin-left: var(--space-1); }
-h3.remote-section-title { margin-top: var(--space-6); }
-
-.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.remote-grid { /* depth tokens, module cards and labels come from rack.css (class rack-grid on the same element) */ }
 
 /* ---------------------------------------------------------------- layout */
 
@@ -107,9 +39,6 @@ h3.remote-section-title { margin-top: var(--space-6); }
 }
 @media (max-width: 480px) { .remote-action-row { grid-template-columns: 1fr 1fr; } }
 
-/* No horizontal scroll anywhere on this page; value updates never
-   reflow surrounding layout (fixed-height readouts below). */
-body:has(.remote-grid) { overflow-x: hidden; }
 
 /* ---------------------------------------------------------------- program monitor (the signature) */
 

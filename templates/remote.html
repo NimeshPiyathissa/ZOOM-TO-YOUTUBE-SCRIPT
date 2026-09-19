@@ -1,10 +1,10 @@
 {% extends "base.html" %}
 {% from "_macros.html" import icon %}
 {% block title %}Control panel - Zoom Stream Dashboard{% endblock %}
-{% block extra_css %}<link rel="stylesheet" href="/static/css/remote.css">{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="/static/css/rack.css"><link rel="stylesheet" href="/static/css/remote.css">{% endblock %}
 {% block content %}
 
-<div class="remote-grid panel-grid">
+<div class="remote-grid rack-grid panel-grid">
 
   <!-- Program: live preview of :99 + state, elapsed, and the status rail -->
   <section class="card panel-program" aria-labelledby="panel-program-h">
@@ -227,7 +227,8 @@
   </section>
 
   <section class="card panel-context" id="ctx-zoom" hidden aria-labelledby="ctx-zoom-h">
-    <h2 id="ctx-zoom-h" class="remote-section-title">{{ icon("video", "icon-sm") }}Zoom <span class="hint m-0" id="ctx-zoom-name"></span></h2>
+    <h2 id="ctx-zoom-h" class="remote-section-title">{{ icon("video", "icon-sm") }}Zoom <span class="hint m-0" id="ctx-zoom-name"></span>
+      <span class="rack-title-end"><a href="/zoom" class="btn btn-ghost btn-sm">{{ icon("external-link", "icon-sm") }}Zoom page</a></span></h2>
 
     <div class="zoom-status" id="zoom-status" aria-live="polite">
       <span class="badge badge-inactive" id="zoom-status-badge"><span class="dot"></span><span id="zoom-status-text">checking…</span></span>
@@ -330,6 +331,7 @@
 {% block scripts %}
 <script type="application/json" id="sources-data">{{ sources | tojson }}</script>
 <script type="application/json" id="active-source-id">{{ active_source_id | tojson }}</script>
+<script type="application/json" id="sources-rev">{{ sources_rev | tojson }}</script>
 <script src="/static/js/remote.js"></script>
 <script type="module" src="/static/js/interact.js"></script>
 {% endblock %}
