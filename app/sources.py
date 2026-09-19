@@ -17,15 +17,63 @@ MEDIA_EXTENSIONS = (".m3u8", ".mp4", ".mkv", ".flv", ".ts", ".mov", ".webm")
 
 
 def _row_to_dict(row) -> dict:
+    """The INTERNAL row: full URL and options, secrets included. Only
+    control/scheduler code may consume this; anything that leaves the
+    process (API, template, audit) goes through public_view()."""
     d = dict(row)
     try:
         d["options"] = json.loads(d["options"]) if d["options"] else {}
     except json.JSONDecodeError:
         d["options"] = {}
     if d["type"] == "zoom":
-        d["link_kind"] = zoomlink.classify(d["url"])["kind"]
+        info = zoomlink.classify(d["url"])
+        d["link_kind"] = info["kind"]
         d["join_ready"] = bool(effective_zoom_join_url(d))
+        d["meeting_id"] = info["meeting_id"] or zoomlink.classify(d["options"].get("join_url") or "")["meeting_id"]
+        d["missing"] = zoom_missing(d)
     return d
+
+
+ZOOM_SECRET_OPTION_KEYS = ("passcode", "join_url")
+
+
+def public_view(d: dict | None) -> dict | None:
+    """What the browser and audit log get: pwd=/tk= redacted in every
+    URL, the passcode replaced by has_passcode/passcode_masked, the
+    personal join link by has_join_url. reveal_secrets() is the one
+    audited way back."""
+    if d is None:
+        return None
+    v = dict(d)
+    v["url"] = zoomlink.redact_url(d["url"])
+    if d["type"] == "zoom":
+        o = dict(d.get("options") or {})
+        pc = o.pop("passcode", "") or ""
+        ju = o.pop("join_url", "") or ""
+        o["has_passcode"] = bool(pc) or zoomlink.classify(d["url"])["has_pwd"] or zoomlink.classify(ju)["has_pwd"]
+        o["passcode_masked"] = ("\u2022" * min(max(len(pc), 4), 8)) if pc else ""
+        o["has_join_url"] = bool(ju)
+        o["join_url_redacted"] = zoomlink.redact_url(ju) if ju else ""
+        v["options"] = o
+        v["meeting_id_formatted"] = zoomlink.format_meeting_id(d.get("meeting_id"))
+    return v
+
+
+def zoom_missing(d: dict) -> list[str]:
+    """Exactly what stops this Zoom source from joining, in the operator's
+    words. Empty list = joinable now."""
+    missing: list[str] = []
+    kind = zoomlink.classify(d["url"])["kind"]
+    o = d.get("options") or {}
+    if kind == "registration" and not o.get("join_url"):
+        missing.append("the personal join link Zoom issues after you register")
+    elif kind == "vanity":
+        missing.append("a resolved join link for this personal room (re-paste it on the Zoom page)")
+    elif kind not in ("meeting", "personal", "registration"):
+        missing.append("a valid Zoom join link or meeting ID")
+    if o.get("signin_mode") == "google" and not d.get("account_id"):
+        missing.append("a Google account to join with (or switch to guest)")
+    return missing
 
 
 def effective_zoom_join_url(source: dict) -> str | None:
@@ -47,6 +95,42 @@ def list_sources() -> list[dict]:
         return [_row_to_dict(r) for r in rows]
 
 
+def list_sources_public() -> list[dict]:
+    return [public_view(s) for s in list_sources()]
+
+
+# Live sync between /zoom and /remote (and anything else listing sources):
+# a monotonic revision bumped by every write here, polled cheaply by the
+# pages. Stored in settings so it survives a dashboard restart.
+def sources_rev() -> int:
+    try:
+        return int(db.get_setting("sources_rev", "0") or 0)
+    except ValueError:
+        return 0
+
+
+def _bump_rev() -> int:
+    rev = sources_rev() + 1
+    db.set_setting("sources_rev", str(rev))
+    return rev
+
+
+def reveal_secrets(source_id: int) -> dict:
+    """The masked bits of one Zoom source, for an explicit, audited
+    'reveal' tap: full URL, passcode, personal join link."""
+    s = get_source(source_id)
+    if not s or s["type"] != "zoom":
+        raise ValidationError("Not a Zoom source")
+    o = s.get("options") or {}
+    return {"url": s["url"], "passcode": o.get("passcode", ""), "join_url": o.get("join_url", "")}
+
+
+def mark_joined(source_id: int) -> None:
+    with db.get_conn() as conn:
+        conn.execute("UPDATE sources SET last_joined_at=? WHERE id=?", (time.time(), source_id))
+    _bump_rev()
+
+
 def get_source(source_id: int) -> dict | None:
     with db.get_conn() as conn:
         row = conn.execute("SELECT * FROM sources WHERE id=?", (source_id,)).fetchone()
@@ -62,6 +146,7 @@ def get_active_source() -> dict | None:
 
 def set_active_source_id(source_id: int | None) -> None:
     db.set_setting("active_source_id", str(source_id) if source_id is not None else "")
+    _bump_rev()
 
 
 def detect_type(url: str) -> str:
@@ -92,15 +177,21 @@ def _validate_name(name: str) -> str:
     return name
 
 
+ZOOM_VIEWS = {"speaker", "gallery"}
+ZOOM_REJOIN_MAX_RANGE = (1, 20)
+
+
 def _validate_zoom_options(options: dict) -> dict:
-    passcode = str(options.get("passcode", "")).strip()
-    bot_name = str(options.get("bot_name", "Stream Bot")).strip()
-    signin_mode = str(options.get("signin_mode", "guest")).strip().lower()
-    join_url = str(options.get("join_url", "")).strip()
+    passcode = str(options.get("passcode", "") or "").strip()
+    bot_name = str(options.get("bot_name", "Stream Bot") or "Stream Bot").strip()
+    signin_mode = str(options.get("signin_mode", "guest") or "guest").strip().lower()
+    join_url = str(options.get("join_url", "") or "").strip()
     if not bot_name or len(bot_name) > 64 or any(c in bot_name for c in "\r\n"):
         raise ValidationError("Bot name must be 1-64 characters, no newlines")
     if signin_mode not in config.ZOOM_SIGNIN_MODES:
         raise ValidationError(f"signin_mode must be one of {sorted(config.ZOOM_SIGNIN_MODES)}")
+    if passcode and not zoomlink._PWD_RE.match(passcode):
+        raise ValidationError("Passcode may only contain letters, digits and . _ - = (max 128)")
     if join_url:
         # The personal (tk=) link saved after completing a registration
         # form by hand - see zoomlink.py.
@@ -108,7 +199,46 @@ def _validate_zoom_options(options: dict) -> dict:
             zoomlink.validate_joinable(join_url)
         except zoomlink.ZoomLinkError as exc:
             raise ValidationError(f"Saved join link: {exc}")
-    return {"passcode": passcode, "bot_name": bot_name, "signin_mode": signin_mode, "join_url": join_url}
+        join_url = zoomlink.normalize_url(join_url)
+    meeting_kind = str(options.get("meeting_kind", "meeting") or "meeting").strip().lower()
+    if meeting_kind not in zoomlink.MEETING_KINDS:
+        raise ValidationError(f"meeting_kind must be one of {sorted(zoomlink.MEETING_KINDS)}")
+    view = str(options.get("view", "speaker") or "speaker").strip().lower()
+    if view not in ZOOM_VIEWS:
+        raise ValidationError(f"view must be one of {sorted(ZOOM_VIEWS)}")
+    lo, hi = ZOOM_REJOIN_MAX_RANGE
+    try:
+        rejoin_max = int(options.get("rejoin_max", 5))
+    except (TypeError, ValueError):
+        raise ValidationError("rejoin_max must be an integer")
+    if not (lo <= rejoin_max <= hi):
+        raise ValidationError(f"rejoin_max must be between {lo} and {hi}")
+    join_at = options.get("join_at")
+    if join_at in ("", None):
+        join_at = None
+    else:
+        try:
+            join_at = float(join_at)
+        except (TypeError, ValueError):
+            raise ValidationError("join_at must be a unix timestamp")
+        if join_at < time.time() - 60:
+            raise ValidationError("The scheduled join time is in the past")
+        if join_at > time.time() + 366 * 86400:
+            raise ValidationError("The scheduled join time is more than a year away")
+    vanity_url = str(options.get("vanity_url", "") or "").strip()
+    if vanity_url and zoomlink.classify(vanity_url)["kind"] != "vanity":
+        vanity_url = ""
+    return {
+        "passcode": passcode, "bot_name": bot_name, "signin_mode": signin_mode, "join_url": join_url,
+        "meeting_kind": meeting_kind,
+        "audio_on": bool(options.get("audio_on", False)),
+        "video_on": bool(options.get("video_on", False)),
+        "view": view,
+        "auto_rejoin": bool(options.get("auto_rejoin", True)),
+        "rejoin_max": rejoin_max,
+        "join_at": join_at,
+        "vanity_url": vanity_url,
+    }
 
 
 def _validate_webpage_options(options: dict) -> dict:
@@ -163,7 +293,12 @@ def validate_source(type_: str, url: str, options: dict) -> tuple[str, dict]:
         # A registration page is a valid thing to SAVE (the flow completes
         # it later and stores the personal link in options.join_url); it
         # just isn't joinable by itself - see effective_zoom_join_url().
+        url = zoomlink.normalize_url(url)
         kind = zoomlink.classify(url)["kind"]
+        if kind == "vanity":
+            raise ValidationError(
+                "Personal room URLs must be resolved to their join link first - paste it on the Zoom page"
+            )
         if kind not in ("meeting", "personal", "registration"):
             raise ValidationError(
                 "Not a recognized Zoom link. Expected a join link (zoom.us/j/<id>), a personal "
@@ -209,11 +344,31 @@ def create_source(name: str, type_: str, url: str, options: dict, account_id=Non
             )
         except sqlite3.IntegrityError:
             raise ValidationError(f"A source named {name!r} already exists")
-        return cur.lastrowid
+        sid = cur.lastrowid
+    _bump_rev()
+    return sid
+
+
+def _merge_masked(existing: dict | None, type_: str, url: str, options: dict) -> tuple[str, dict]:
+    """An edit form only ever sees the public view, so a submitted URL
+    equal to the redacted form of the stored one, or a passcode/join_url
+    left out (or sent as the mask), means 'keep what is stored'."""
+    if not existing or existing["type"] != type_ or type_ != "zoom":
+        return url, options
+    options = dict(options or {})
+    eo = existing.get("options") or {}
+    if (url or "").strip() in ("", zoomlink.redact_url(existing["url"])) or "\u2022\u2022\u2022" in (url or ""):
+        url = existing["url"]
+    for key in ZOOM_SECRET_OPTION_KEYS:
+        val = options.get(key)
+        if key not in options or val is None or (isinstance(val, str) and ("\u2022" in val)):
+            options[key] = eo.get(key, "")
+    return url, options
 
 
 def update_source(source_id: int, name: str, type_: str, url: str, options: dict, account_id=None) -> None:
     name = _validate_name(name)
+    url, options = _merge_masked(get_source(source_id), type_, url, options)
     url, options = validate_source(type_, url, options)
     account_id = _validate_account_id(account_id)
     with db.get_conn() as conn:
@@ -224,6 +379,30 @@ def update_source(source_id: int, name: str, type_: str, url: str, options: dict
             )
         except sqlite3.IntegrityError:
             raise ValidationError(f"A source named {name!r} already exists")
+    _bump_rev()
+
+
+def duplicate_source(source_id: int) -> int:
+    """A copy named '<name> (copy)' (numbered if taken), secrets included -
+    this never leaves the process, it goes straight back into the table."""
+    s = get_source(source_id)
+    if not s:
+        raise ValidationError("Source not found")
+    existing = {x["name"] for x in list_sources()}
+    base = f"{s['name']} (copy)"
+    name, n = base, 2
+    while name in existing:
+        name = f"{base} {n}"; n += 1
+    name = name[:64]
+    now = time.time()
+    with db.get_conn() as conn:
+        cur = conn.execute(
+            "INSERT INTO sources (name, type, url, options, created_at, updated_at, account_id) VALUES (?,?,?,?,?,?,?)",
+            (name, s["type"], s["url"], json.dumps(s["options"]), now, now, s.get("account_id")),
+        )
+        sid = cur.lastrowid
+    _bump_rev()
+    return sid
 
 
 def set_zoom_join_url(source_id: int, join_url: str) -> dict:
@@ -240,10 +419,11 @@ def set_zoom_join_url(source_id: int, join_url: str) -> dict:
     if s["url"] and zoomlink.classify(s["url"]).get("meeting_id") and info["meeting_id"] \
             and zoomlink.classify(s["url"])["meeting_id"] != info["meeting_id"]:
         raise ValidationError("That join link is for a different meeting ID than this source")
-    options = dict(s["options"]); options["join_url"] = join_url
+    options = dict(s["options"]); options["join_url"] = zoomlink.normalize_url(join_url)
     with db.get_conn() as conn:
         conn.execute("UPDATE sources SET options=?, updated_at=? WHERE id=?",
                      (json.dumps(options), time.time(), source_id))
+    _bump_rev()
     return get_source(source_id)
 
 
@@ -251,6 +431,7 @@ def set_account(source_id: int, account_id) -> None:
     account_id = _validate_account_id(account_id)
     with db.get_conn() as conn:
         conn.execute("UPDATE sources SET account_id=?, updated_at=? WHERE id=?", (account_id, time.time(), source_id))
+    _bump_rev()
 
 
 def delete_source(source_id: int) -> None:
@@ -258,3 +439,4 @@ def delete_source(source_id: int) -> None:
         conn.execute("DELETE FROM sources WHERE id=?", (source_id,))
     if db.get_setting("active_source_id") == str(source_id):
         set_active_source_id(None)
+    _bump_rev()

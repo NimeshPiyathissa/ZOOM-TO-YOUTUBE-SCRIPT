@@ -21,6 +21,7 @@ from . import sources as sources_mod
 from . import probe as probe_mod
 from . import url_security
 from .url_security import URLSecurityError
+from . import zoomlink
 from . import cdp, youtube
 from .youtube import YouTubeURLError
 from . import accounts as accounts_mod
@@ -167,7 +168,7 @@ async def controls_page(request: Request):
     active = sources_mod.get_active_source()
     return templates.TemplateResponse("controls.html", {
         "request": request, "csrf_token": session["csrf_token"], "username": session["username"],
-        "units": config.VISIBLE_UNITS, "sources": sources_mod.list_sources(),
+        "units": config.VISIBLE_UNITS, "sources": sources_mod.list_sources_public(),
         "active_source_id": active["id"] if active else None,
     })
 
@@ -187,9 +188,28 @@ async def remote_page(request: Request):
     active = sources_mod.get_active_source()
     return templates.TemplateResponse("remote.html", {
         "request": request, "csrf_token": session["csrf_token"], "username": session["username"],
-        "youtube_links": links, "sources": sources_mod.list_sources(),
+        "youtube_links": links, "sources": sources_mod.list_sources_public(),
         "active_source_id": active["id"] if active else None,
+        "sources_rev": sources_mod.sources_rev(),
         "accounts": accounts_mod.list_accounts(),
+    })
+
+
+@app.get("/zoom", response_class=HTMLResponse)
+async def zoom_page(request: Request):
+    """The Zoom page: every way of joining a meeting, the live meeting
+    state, and the saved-meetings library - which is simply the zoom-type
+    rows of the one `sources` table /remote also lists."""
+    session = _require_page(request)
+    if isinstance(session, RedirectResponse):
+        return session
+    active = sources_mod.get_active_source()
+    meetings = [s for s in sources_mod.list_sources_public() if s["type"] == "zoom"]
+    return templates.TemplateResponse("zoom.html", {
+        "request": request, "csrf_token": session["csrf_token"], "username": session["username"],
+        "meetings": meetings, "active_source_id": active["id"] if active else None,
+        "sources_rev": sources_mod.sources_rev(),
+        "accounts": accounts_mod.list_accounts(), "timezone": config.TIMEZONE,
     })
 
 
@@ -216,7 +236,7 @@ async def config_page(request: Request):
     }
     return templates.TemplateResponse("config.html", {
         "request": request, "csrf_token": session["csrf_token"], "username": session["username"],
-        "cfg": env_store.masked_view(), "sources": sources_mod.list_sources(),
+        "cfg": env_store.masked_view(), "sources": sources_mod.list_sources_public(),
         "active_source_id": active["id"] if active else None,
         "presets": config.RESOLUTION_PRESETS,
         "auto_recovery": db.get_setting("auto_recovery", "off"),
@@ -254,7 +274,7 @@ async def schedule_page(request: Request):
         return session
     return templates.TemplateResponse("schedule.html", {
         "request": request, "csrf_token": session["csrf_token"], "username": session["username"],
-        "sources": sources_mod.list_sources(), "schedules": _list_schedules(),
+        "sources": sources_mod.list_sources_public(), "schedules": _list_schedules(),
     })
 
 
@@ -305,7 +325,8 @@ async def api_state(request: Request):
     if active_source:
         active_source_view = {
             "id": active_source["id"], "name": active_source["name"], "type": active_source["type"],
-            "url": active_source["url"], "url_truncated": _truncate_url(active_source["url"]),
+            "url": zoomlink.redact_url(active_source["url"]),
+            "url_truncated": _truncate_url(zoomlink.redact_url(active_source["url"])),
         }
         if active_source["type"] == "webpage":
             source_health = stats.webpage_health()
@@ -373,20 +394,141 @@ async def api_stream_action(action: str, request: Request):
     return result
 
 
-@app.post("/api/zoom/{action}")
-async def api_zoom_action(action: str, request: Request):
+async def _zoom_action(action: str, request: Request):
+    """join / rejoin re-apply the active Zoom source's config first (so a
+    fresh ZOOM_JOIN_EPOCH resets join-zoom.sh's rejoin counter), then
+    start/restart zoom.service; leave stops it. After a join, a
+    background task waits for the meeting window and applies the
+    meeting's mic/camera/view options with read-back."""
     session = deps.require_session_api(request)
     deps.require_csrf(request, session)
     deps.require_rate_limit(session, "zoom_" + action, max_calls=6, window_seconds=15)
-    verb = {"join": "start", "leave": "stop", "rejoin": "restart"}.get(action)
-    if not verb:
-        raise HTTPException(status_code=400, detail="invalid action")
+    active = sources_mod.get_active_source()
     try:
-        result = control.unit_action("zoom", verb)
+        result = await run_in_threadpool(control.zoom_join, action, active)
     except control.ControlError as exc:
         return _api_error(exc)
-    db.audit(session["username"], f"zoom_{action}", ip=deps.client_ip(request))
+    if action in ("join", "rejoin") and active:
+        sources_mod.mark_joined(active["id"])
+        asyncio.create_task(_apply_join_options_later(active["id"]))
+    db.audit(session["username"], f"zoom_{action}", active["name"] if active else "", deps.client_ip(request))
     return result
+
+
+@app.post("/api/zoom/join")
+async def api_zoom_join(request: Request):
+    return await _zoom_action("join", request)
+
+
+@app.post("/api/zoom/leave")
+async def api_zoom_leave(request: Request):
+    return await _zoom_action("leave", request)
+
+
+@app.post("/api/zoom/rejoin")
+async def api_zoom_rejoin(request: Request):
+    return await _zoom_action("rejoin", request)
+
+
+_join_options_last: dict = {}
+
+
+async def _apply_join_options_later(source_id: int, timeout: float = 150.0) -> None:
+    """Poll for the meeting window after a join, then enforce the saved
+    mic/camera/view options once. Result is kept for the Zoom page to
+    show (GET /api/zoom/join-options)."""
+    deadline = time.time() + timeout
+    _join_options_last.clear()
+    _join_options_last.update({"source_id": source_id, "state": "waiting", "started_at": time.time()})
+    try:
+        while time.time() < deadline:
+            await asyncio.sleep(4)
+            st = await run_in_threadpool(control.zoom_meeting_status)
+            if st.get("status") == "in_meeting":
+                s = sources_mod.get_source(source_id)
+                if not s:
+                    break
+                report = await run_in_threadpool(control.zoom_apply_join_options, s)
+                _join_options_last.update({"state": "done", "report": report, "finished_at": time.time()})
+                db.audit(None, "zoom_join_options_applied",
+                         f"source_id={source_id} applied={','.join(report.get('applied', []))} skipped={','.join(report.get('skipped', []))}")
+                return
+            if st.get("terminal") or (st.get("status") == "not_joined" and st.get("service") == control.PHASE_STOPPED):
+                _join_options_last.update({"state": "abandoned", "status": st.get("status"), "finished_at": time.time()})
+                return
+        _join_options_last.update({"state": "timeout", "finished_at": time.time()})
+    except Exception as exc:  # noqa: BLE001 - background task must not die silently
+        _join_options_last.update({"state": "error", "error": str(exc)[:200], "finished_at": time.time()})
+
+
+@app.get("/api/zoom/join-options")
+async def api_zoom_join_options_last(request: Request):
+    deps.require_session_api(request)
+    return dict(_join_options_last)
+
+
+@app.post("/api/zoom/apply-options")
+async def api_zoom_apply_options(request: Request):
+    """Enforce the active meeting's saved mic/camera/view now (only
+    toggles a control whose read-back state differs; unknown = left
+    alone and reported)."""
+    session = deps.require_session_api(request)
+    deps.require_csrf(request, session)
+    deps.require_rate_limit(session, "zoom_apply_options", max_calls=6, window_seconds=30)
+    active = sources_mod.get_active_source()
+    if not active or active["type"] != "zoom":
+        raise HTTPException(status_code=400, detail="the active source isn't a Zoom meeting")
+    report = await run_in_threadpool(control.zoom_apply_join_options, active)
+    db.audit(session["username"], "zoom_apply_options",
+             f"applied={','.join(report.get('applied', []))} skipped={','.join(report.get('skipped', []))}", deps.client_ip(request))
+    return report
+
+
+@app.post("/api/zoom/reset")
+async def api_zoom_reset(request: Request):
+    """Reset Zoom window: dismiss stale dialogs, and if Zoom is still
+    stuck, quit it to the slate. The encoder is never touched."""
+    session = deps.require_session_api(request)
+    deps.require_csrf(request, session)
+    deps.require_rate_limit(session, "zoom_reset", max_calls=4, window_seconds=30)
+    try:
+        result = await run_in_threadpool(control.zoom_reset)
+    except control.ControlError as exc:
+        return _api_error(exc)
+    db.audit(session["username"], "zoom_reset",
+             f"dismissed={len(result.get('dismissed', []))} stopped={result.get('stopped')}", deps.client_ip(request))
+    return result
+
+
+@app.post("/api/zoom/parse")
+async def api_zoom_parse(request: Request):
+    """Smart paste: whatever was pasted (link, personal link, registration
+    page, meeting ID, personal room URL, zoommtg:// deep link, or a whole
+    invite) -> what was understood, with warnings, for the operator to
+    confirm or correct. Secrets come back redacted (url_redacted,
+    has_passcode); the raw url/passcode are echoed only so the form can
+    submit them straight back to POST /api/sources over the same session.
+    Personal rooms are resolved through Zoom's own redirect."""
+    session = deps.require_session_api(request)
+    deps.require_csrf(request, session)
+    deps.require_rate_limit(session, "zoom_parse", max_calls=20, window_seconds=30)
+    body = await request.json()
+    text = str(body.get("text", ""))[:20000]
+    passcode = str(body.get("passcode", "") or "")[:128]
+    parsed = zoomlink.parse_any(text, passcode)
+    if parsed.get("needs_resolve") and parsed.get("url"):
+        try:
+            r = await run_in_threadpool(zoomlink.resolve_vanity, parsed["url"])
+            parsed.update({"vanity_url": parsed["url"], "url": r["url"], "meeting_id": r["meeting_id"],
+                           "meeting_id_formatted": zoomlink.format_meeting_id(r["meeting_id"]),
+                           "url_redacted": zoomlink.redact_url(r["url"]), "needs_resolve": False,
+                           "has_passcode": bool(parsed.get("passcode")) or r["has_pwd"], "ok": True})
+            parsed["warnings"].append("Personal room resolved to its current meeting ID. If the host changes the room's PMI, re-paste the room URL.")
+        except (zoomlink.ZoomLinkError, Exception) as exc:  # network errors included
+            parsed["errors"].append(str(exc)[:300] if isinstance(exc, zoomlink.ZoomLinkError) else "Couldn't reach zoom.us to resolve the room right now.")
+            parsed["ok"] = False
+    db.audit(session["username"], "zoom_parse", f"{parsed.get('input_kind')} ok={parsed.get('ok')}", deps.client_ip(request))
+    return parsed
 
 
 @app.post("/api/test-recording")
@@ -560,7 +702,40 @@ async def api_profiles_switch(profile_id: int, request: Request):
 async def api_sources_list(request: Request):
     deps.require_session_api(request)
     active = sources_mod.get_active_source()
-    return {"sources": sources_mod.list_sources(), "active_id": active["id"] if active else None}
+    rev = sources_mod.sources_rev()
+    # Cheap poll for the live-sync pages: ?since=<rev> -> {"changed": false}
+    since = request.query_params.get("since")
+    if since is not None and since.isdigit() and int(since) == rev:
+        return {"changed": False, "rev": rev}
+    return {"changed": True, "rev": rev, "sources": sources_mod.list_sources_public(),
+            "active_id": active["id"] if active else None}
+
+
+@app.get("/api/sources/{source_id}/reveal")
+async def api_sources_reveal(source_id: int, request: Request):
+    """The masked secrets of one Zoom source (full link, passcode,
+    personal join link) for an explicit reveal tap. Rate-limited and
+    audited; never cached by the page."""
+    session = deps.require_session_api(request)
+    deps.require_rate_limit(session, "source_reveal", max_calls=10, window_seconds=60)
+    try:
+        secrets = sources_mod.reveal_secrets(source_id)
+    except env_store.ValidationError as exc:
+        return _api_error(exc)
+    db.audit(session["username"], "source_reveal", str(source_id), deps.client_ip(request))
+    return JSONResponse(secrets, headers={"Cache-Control": "no-store"})
+
+
+@app.post("/api/sources/{source_id}/duplicate")
+async def api_sources_duplicate(source_id: int, request: Request):
+    session = deps.require_session_api(request)
+    deps.require_csrf(request, session)
+    try:
+        sid = sources_mod.duplicate_source(source_id)
+    except env_store.ValidationError as exc:
+        return _api_error(exc)
+    db.audit(session["username"], "source_duplicate", f"{source_id}->{sid}", deps.client_ip(request))
+    return {"id": sid, "source": sources_mod.public_view(sources_mod.get_source(sid))}
 
 
 @app.post("/api/sources/detect-type")
@@ -598,8 +773,9 @@ async def api_sources_create(request: Request):
         )
     except (env_store.ValidationError, URLSecurityError) as exc:
         return _api_error(exc)
-    db.audit(session["username"], "source_create", body.get("name", ""), deps.client_ip(request))
-    return {"id": sid}
+    scheduler.load_schedules()
+    db.audit(session["username"], "source_create", str(body.get("name", ""))[:64], deps.client_ip(request))
+    return {"id": sid, "source": sources_mod.public_view(sources_mod.get_source(sid))}
 
 
 @app.put("/api/sources/{source_id}")
@@ -614,8 +790,9 @@ async def api_sources_update(source_id: int, request: Request):
         )
     except (env_store.ValidationError, URLSecurityError) as exc:
         return _api_error(exc)
+    scheduler.load_schedules()
     db.audit(session["username"], "source_update", str(source_id), deps.client_ip(request))
-    return {"ok": True}
+    return {"ok": True, "source": sources_mod.public_view(sources_mod.get_source(source_id))}
 
 
 @app.post("/api/sources/{source_id}/account")
@@ -688,7 +865,7 @@ async def api_sources_join_url(source_id: int, request: Request):
     except control.ControlError:
         pass
     db.audit(session["username"], "zoom_join_url_saved", str(source_id), deps.client_ip(request))
-    return {"ok": True, "link_kind": s["link_kind"], "join_ready": s["join_ready"]}
+    return {"ok": True, "link_kind": s["link_kind"], "join_ready": s["join_ready"], "source": sources_mod.public_view(s)}
 
 
 @app.delete("/api/sources/{source_id}")
@@ -696,6 +873,7 @@ async def api_sources_delete(source_id: int, request: Request):
     session = deps.require_session_api(request)
     deps.require_csrf(request, session)
     sources_mod.delete_source(source_id)
+    scheduler.load_schedules()
     db.audit(session["username"], "source_delete", str(source_id), deps.client_ip(request))
     return {"ok": True}
 
@@ -716,6 +894,9 @@ async def api_sources_switch(source_id: int, request: Request):
     except control.ControlError as exc:
         return _api_error(exc)
     sources_mod.set_active_source_id(source_id)
+    if s["type"] == "zoom":
+        sources_mod.mark_joined(source_id)
+        asyncio.create_task(_apply_join_options_later(source_id))
     db.audit(session["username"], "source_switch",
              f"{s['name']} hot={outcome['hot_swapped']} dropped={outcome['rtmp_dropped']}", deps.client_ip(request))
     return outcome
@@ -733,7 +914,7 @@ async def api_sources_switch_preview(source_id: int, request: Request):
     ffmpeg_up = await run_in_threadpool(control._ffmpeg_is_up)
     needs_restart = s["type"] == "direct" or old_type == "direct"
     return {"ffmpeg_up": ffmpeg_up, "rtmp_would_drop": needs_restart and ffmpeg_up,
-            "join_ready": s.get("join_ready", True)}
+            "join_ready": s.get("join_ready", True), "missing": s.get("missing", [])}
 
 
 # ---------------------------------------------------------------- api: Zoom Google sign-in (Change 2)

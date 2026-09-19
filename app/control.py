@@ -226,6 +226,11 @@ SOURCE_ENV_KEYS = (
     # app/accounts.py); read by browser-source.sh and
     # open-url-with-account.sh. Empty = shared stream profile.
     "ACCOUNT_PROFILE_ID",
+    # Zoom page: per-meeting join policy read by join-zoom.sh. Not secret
+    # (the link/passcode stay in .env). ZOOM_JOIN_EPOCH changes on every
+    # operator-initiated join so the script's rejoin counter resets.
+    "ZOOM_AUTO_REJOIN", "ZOOM_REJOIN_MAX", "ZOOM_JOIN_EPOCH",
+    "ZOOM_AUDIO_ON", "ZOOM_VIDEO_ON", "ZOOM_VIEW",
 )
 
 
@@ -280,7 +285,14 @@ def _source_env_lines(source: dict) -> dict[str, str]:
     values = {k: "" for k in SOURCE_ENV_KEYS}
     values["SOURCE_TYPE"] = type_
     values["ACCOUNT_PROFILE_ID"] = _account_profile_id(source)
-    if type_ == "webpage":
+    if type_ == "zoom":
+        values["ZOOM_AUTO_REJOIN"] = "1" if options.get("auto_rejoin", True) else "0"
+        values["ZOOM_REJOIN_MAX"] = str(int(options.get("rejoin_max", 5)))
+        values["ZOOM_JOIN_EPOCH"] = str(int(time.time()))
+        values["ZOOM_AUDIO_ON"] = "1" if options.get("audio_on") else "0"
+        values["ZOOM_VIDEO_ON"] = "1" if options.get("video_on") else "0"
+        values["ZOOM_VIEW"] = str(options.get("view", "speaker"))
+    elif type_ == "webpage":
         url = url_security.validate_url(source["url"], "webpage")
         values["WEBPAGE_URL"] = url
         values["WEBPAGE_ZOOM"] = str(options.get("zoom_level", 1.0))
@@ -686,6 +698,94 @@ def zoom_dialog(action: str) -> dict:
         return json.loads(proc.stdout.decode(errors="replace").strip().splitlines()[-1])
     except (json.JSONDecodeError, IndexError):
         raise ControlError("zoom-dialog produced no result: " + proc.stderr.decode(errors="replace")[-300:])
+
+
+ZOOM_JOIN_VERBS = {"join": "start", "leave": "stop", "rejoin": "restart"}
+
+
+def zoom_join(action: str, source: dict | None) -> dict:
+    """join / rejoin / leave for the ACTIVE Zoom source. join and rejoin
+    first re-apply the source's config (link, passcode, bot name, join
+    policy) - that also stamps a fresh ZOOM_JOIN_EPOCH so join-zoom.sh's
+    auto-rejoin counter starts from zero for this operator-initiated
+    join. leave is a plain unit stop (a clean Zoom leave)."""
+    verb = ZOOM_JOIN_VERBS.get(action)
+    if not verb:
+        raise ControlError("action must be join, rejoin or leave")
+    if action in ("join", "rejoin"):
+        if not source or source["type"] != "zoom":
+            raise ControlError("The active source isn't a Zoom meeting - pick one first")
+        from . import sources as sources_mod
+        missing = sources_mod.zoom_missing(source)
+        if missing:
+            raise ControlError("Can't join yet - missing " + "; ".join(missing))
+        apply_source_config(source)
+    result = unit_action("zoom", verb)
+    result["action"] = action
+    return result
+
+
+def zoom_reset() -> dict:
+    """"Reset Zoom window": dismiss whatever dialogs Zoom has up (their
+    own OK/Close buttons via AT-SPI), then look again; if a dialog is
+    still stuck or Zoom is in a state it won't recover from, stop
+    zoom.service and put the slate on :99. Never touches ffmpeg."""
+    out: dict = {"dismissed": [], "remaining": [], "stopped": False}
+    try:
+        d = zoom_dialog("dismiss")
+        out["dismissed"] = d.get("dismissed", [])
+        out["remaining"] = d.get("remaining", [])
+    except ControlError as exc:
+        out["dialog_error"] = str(exc)
+    status = zoom_meeting_status()
+    out["status_after_dismiss"] = status.get("status")
+    if out["remaining"] or status.get("terminal") or status.get("status") in ("unknown",):
+        out["results"] = zoom_leave("slate")
+        out["stopped"] = True
+    return out
+
+
+def _want_state(desired_on: bool, kind: str) -> str:
+    if kind == "mic":
+        return "unmuted" if desired_on else "muted"
+    return "on" if desired_on else "off"
+
+
+def zoom_apply_join_options(source: dict) -> dict:
+    """Bring Zoom's mic / camera / view in line with the meeting's saved
+    options - the Linux deep link can't express them, so this happens
+    after the join, using Zoom's own shortcuts and reading the result
+    back from its accessibility tree. A control is toggled only when the
+    read-back state differs from what's wanted; if the state can't be
+    read at all it is left alone and reported as unknown (never blindly
+    toggled: that could unmute a bot into a live meeting)."""
+    options = source.get("options") or {}
+    report: dict = {"applied": [], "skipped": [], "mic": None, "camera": None, "view": None}
+    status = zoom_meeting_status()
+    report["status"] = status.get("status")
+    if status.get("status") != "in_meeting":
+        report["reason"] = "not in a meeting yet"
+        return report
+    for kind, opt in (("mic", "audio_on"), ("camera", "video_on")):
+        want = _want_state(bool(options.get(opt, False)), kind)
+        before = _zoom_atspi(kind)
+        entry = {"want": want, "before": before.get("state"), "after": before.get("state"), "available": before.get("available", False)}
+        if not before.get("available") or before.get("state") in ("unknown", "no_audio"):
+            entry["note"] = before.get("reason") or ("no audio joined" if before.get("state") == "no_audio" else "state unreadable")
+            report["skipped"].append(kind)
+        elif before.get("state") != want:
+            r = zoom_shortcut(kind)
+            entry["after"] = (r.get("verify") or {}).get("state")
+            report["applied"].append(kind)
+        report[kind] = entry
+    view = options.get("view", "speaker")
+    try:
+        zoom_shortcut("view-speaker" if view == "speaker" else "view-gallery")
+        report["view"] = {"want": view, "sent": True, "note": "view mode has no readable state"}
+        report["applied"].append("view")
+    except ControlError as exc:
+        report["view"] = {"want": view, "sent": False, "note": str(exc)}
+    return report
 
 
 def zoom_quit_to_slate() -> list[dict]:

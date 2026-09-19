@@ -79,10 +79,40 @@ async def _run_scheduled(action: str, source_id: int | None) -> None:
         await _send_alert(f"Scheduled {action} failed: {exc}")
 
 
+async def _run_join_at(source_id: int) -> None:
+    """One-off scheduled join from the Zoom page: switch to the meeting
+    (same path as tapping its tile - keeps RTMP up where possible, and
+    starts the encoder if it isn't running), then clear the timestamp so
+    it never fires twice."""
+    try:
+        s = sources_mod.get_source(source_id)
+        if not s or s["type"] != "zoom":
+            return
+        await asyncio.get_event_loop().run_in_executor(None, control.start_source, s)
+        sources_mod.set_active_source_id(source_id)
+        sources_mod.mark_joined(source_id)
+        opts = dict(s.get("options") or {}); opts["join_at"] = None
+        sources_mod.update_source(source_id, s["name"], s["type"], s["url"], opts, s.get("account_id"))
+        db.audit(None, "scheduled_join", f"source_id={source_id}")
+    except Exception as exc:  # noqa: BLE001 - scheduled job must never crash the loop
+        await _send_alert(f"Scheduled Zoom join failed: {exc}")
+
+
 def load_schedules() -> None:
+    from apscheduler.triggers.date import DateTrigger
+    from datetime import datetime
     for job in list(scheduler.get_jobs()):
         if job.id != "watchdog":
             scheduler.remove_job(job.id)
+    for s in sources_mod.list_sources():
+        join_at = (s.get("options") or {}).get("join_at") if s["type"] == "zoom" else None
+        if not join_at:
+            continue
+        when = datetime.fromtimestamp(float(join_at), ZoneInfo(config.TIMEZONE))
+        if when.timestamp() < time.time() - 300:
+            continue  # stale (dashboard was down when it was due) - shown as overdue on the page, never auto-fired late
+        scheduler.add_job(_run_join_at, DateTrigger(run_date=when), args=[s["id"]],
+                          id=f"join-at-{s['id']}", replace_existing=True)
     with db.get_conn() as conn:
         rows = conn.execute("SELECT * FROM schedules WHERE enabled=1").fetchall()
     for row in rows:
