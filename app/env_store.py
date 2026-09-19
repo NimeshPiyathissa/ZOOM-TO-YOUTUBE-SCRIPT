@@ -121,6 +121,8 @@ def validate_updates(updates: dict[str, str]) -> None:
             raise ValidationError("BOT_NAME must be 1-64 characters, no newlines")
     if "ZOOM_SIGNIN_MODE" in updates and updates["ZOOM_SIGNIN_MODE"] not in config.ZOOM_SIGNIN_MODES:
         raise ValidationError(f"ZOOM_SIGNIN_MODE must be one of {sorted(config.ZOOM_SIGNIN_MODES)}")
+    if "X264_PRESET" in updates and updates["X264_PRESET"] not in config.X264_PRESETS:
+        raise ValidationError(f"X264_PRESET must be one of {config.X264_PRESETS}")
     unknown = set(updates) - set(config.ALL_ENV_KEYS)
     if unknown:
         raise ValidationError(f"Unknown config key(s): {', '.join(sorted(unknown))}")

@@ -74,6 +74,7 @@ ENV_KEY_RESTART_MAP = {
     "FPS": ["ffmpeg-stream"],
     "VIDEO_BITRATE": ["ffmpeg-stream"],
     "AUDIO_BITRATE": ["ffmpeg-stream"],
+    "X264_PRESET": ["ffmpeg-stream"],
     "RESOLUTION": ["full-pipeline"],
     "DISPLAY_NUM": ["full-pipeline"],
 }
@@ -82,13 +83,21 @@ ENV_KEY_RESTART_MAP = {
 
 SECRET_ENV_KEYS = {"ZOOM_LINK", "ZOOM_PASSCODE", "YT_STREAM_KEY", "VNC_PASSWORD"}
 NON_SECRET_ENV_KEYS = [
-    "BOT_NAME", "RESOLUTION", "FPS", "VIDEO_BITRATE", "AUDIO_BITRATE", "DISPLAY_NUM", "ZOOM_SIGNIN_MODE",
+    "BOT_NAME", "RESOLUTION", "FPS", "VIDEO_BITRATE", "AUDIO_BITRATE", "X264_PRESET", "DISPLAY_NUM", "ZOOM_SIGNIN_MODE",
 ]
+# X264_PRESET must live in ALL_ENV_KEYS: env_store.write_updates rewrites
+# .env from exactly these keys, so a key missing here is silently dropped
+# on the next config save (that would revert the encoder to stream.sh's
+# veryfast default and bring back the CPU overload the ultrafast preset
+# fixed).
 ALL_ENV_KEYS = [
     "ZOOM_LINK", "ZOOM_PASSCODE", "BOT_NAME", "ZOOM_SIGNIN_MODE", "YT_STREAM_KEY",
-    "RESOLUTION", "FPS", "VIDEO_BITRATE", "AUDIO_BITRATE", "VNC_PASSWORD", "DISPLAY_NUM",
+    "RESOLUTION", "FPS", "VIDEO_BITRATE", "AUDIO_BITRATE", "X264_PRESET", "VNC_PASSWORD", "DISPLAY_NUM",
 ]
 ZOOM_SIGNIN_MODES = {"guest", "google"}
+# x264 presets the panel offers, fastest (least CPU) first. ultrafast is
+# the current default on this box for headroom while live at 720p.
+X264_PRESETS = ["ultrafast", "superfast", "veryfast", "faster", "fast", "medium"]
 
 RESOLUTION_PRESETS = {
     "1080p30": {"RESOLUTION": "1920x1080", "FPS": "30", "VIDEO_BITRATE": "6000", "AUDIO_BITRATE": "192"},

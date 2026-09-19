@@ -179,6 +179,14 @@
       <div class="field"><label class="label" for="cfg-fps">FPS (15&ndash;30)</label><input class="input" id="cfg-fps" type="number" min="15" max="30" value="{{ cfg.FPS }}"></div>
     </div>
     <div class="field">
+      <label class="label" for="cfg-preset">Encoder preset (faster = less CPU, slightly lower quality per bit)</label>
+      <select class="input" id="cfg-preset">
+        {% for p in ["ultrafast","superfast","veryfast","faster","fast","medium"] %}
+        <option value="{{ p }}"{{ ' selected' if (cfg.X264_PRESET or 'veryfast') == p else '' }}>{{ p }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field">
       <label class="label" for="cfg-vbitrate">Video bitrate (1000&ndash;8000 kbps)</label>
       <div class="slider-row">
         <input type="range" class="slider" id="cfg-vbitrate-range" min="1000" max="8000" step="100">

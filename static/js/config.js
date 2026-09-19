@@ -193,6 +193,7 @@ initSegmented(document.getElementById("preset-group"), (name) => {
   const p = PRESETS[name];
   document.getElementById("cfg-res").value = p.RESOLUTION;
   document.getElementById("cfg-fps").value = p.FPS;
+  { const s = document.getElementById("cfg-preset"); if (s) s.value = p.X264_PRESET || "veryfast"; }
   document.getElementById("cfg-vbitrate").value = p.VIDEO_BITRATE;
   document.getElementById("cfg-vbitrate-range").value = p.VIDEO_BITRATE;
   document.getElementById("cfg-abitrate").value = p.AUDIO_BITRATE;
@@ -207,6 +208,7 @@ document.getElementById("save-stream-settings").onclick = async (e) => {
       const res = await apiFetch("/api/config", { method: "POST", body: JSON.stringify({
         RESOLUTION: document.getElementById("cfg-res").value.trim(),
         FPS: document.getElementById("cfg-fps").value,
+        X264_PRESET: document.getElementById("cfg-preset").value,
         VIDEO_BITRATE: document.getElementById("cfg-vbitrate").value,
         AUDIO_BITRATE: document.getElementById("cfg-abitrate").value,
       })});
