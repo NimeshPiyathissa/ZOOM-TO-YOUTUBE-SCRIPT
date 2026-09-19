@@ -77,7 +77,9 @@ async def security_headers(request: Request, call_next):
     response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
     response.headers["Content-Security-Policy"] = (
         "default-src 'self'; "
-        "script-src 'self' https://cdn.jsdelivr.net; "
+        # noVNC is vendored under /static/vendor/novnc, so no third-party
+        # script origin is needed any more (was: https://cdn.jsdelivr.net).
+        "script-src 'self'; "
         "style-src 'self'; "
         # blob: is required for the Overview preview thumbnail (overview.js
         # fetches a JPEG and shows it via URL.createObjectURL), a JS-created

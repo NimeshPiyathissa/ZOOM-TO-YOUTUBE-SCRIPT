@@ -12,11 +12,70 @@
     <div class="panel-preview" id="panel-preview">
       <img id="preview-img" alt="Live preview of display :99" hidden>
       <div class="empty-state p-0" id="preview-placeholder">{{ icon("video") }}<div class="empty-sub">No preview yet</div></div>
+      <!-- Interactive layer (interact.js): a live noVNC session in the same
+           box. rd-stage is noVNC's target; it is resized/offset (never CSS-
+           transformed) to implement pinch-zoom so noVNC's own coordinate
+           mapping stays exact. Hidden and disconnected unless Interact is on. -->
+      <div class="rd-viewport" id="rd-viewport" hidden>
+        <div class="rd-stage" id="rd-stage"></div>
+        <div class="rd-connecting" id="rd-connecting" hidden><span class="spinner"></span> connecting…</div>
+      </div>
       <div class="panel-preview-overlay">
         <span class="badge badge-inactive panel-state" id="panel-state"><span class="dot"></span><span id="panel-state-text">—</span></span>
         <span class="tnum panel-elapsed" id="panel-elapsed" aria-label="Elapsed"></span>
+        <span class="badge badge-live rd-badge" id="rd-badge" hidden>{{ icon("pointer", "icon-sm") }}INTERACT</span>
         <span class="hint tnum panel-preview-age" id="panel-preview-age"></span>
       </div>
+      <!-- Quick actions for the fiddly targets, shown only while interactive -->
+      <div class="rd-quick" id="rd-quick" hidden role="toolbar" aria-label="Quick actions">
+        <button class="rd-qbtn" data-q="focus-zoom" aria-label="Focus Zoom window">{{ icon("focus") }}<span>Zoom win</span></button>
+        <button class="rd-qbtn" data-q="focus-browser" aria-label="Focus browser window">{{ icon("globe") }}<span>Browser</span></button>
+        <button class="rd-qbtn" data-q="zoom-join" aria-label="Zoom join">{{ icon("video") }}<span>Join</span></button>
+        <button class="rd-qbtn" data-q="zoom-leave" aria-label="Zoom leave">{{ icon("door-open") }}<span>Leave</span></button>
+        <button class="rd-qbtn" data-q="zoom-mic" aria-label="Zoom mute or unmute">{{ icon("mic") }}<span>Mute</span></button>
+        <button class="rd-qbtn" data-q="yt-play" aria-label="YouTube play">{{ icon("play") }}<span>Play</span></button>
+        <button class="rd-qbtn" data-q="yt-pause" aria-label="YouTube pause">{{ icon("pause") }}<span>Pause</span></button>
+        <button class="rd-qbtn" data-q="yt-fullscreen" aria-label="YouTube fullscreen">{{ icon("maximize") }}<span>Full</span></button>
+        <button class="rd-qbtn" data-q="zoom-reset" aria-label="Reset preview zoom" hidden id="rd-zoom-reset">{{ icon("zoom-in") }}<span id="rd-zoom-label">1×</span></button>
+      </div>
+    </div>
+    <!-- Interact controls: always present (no layout shift when toggling) -->
+    <div class="rd-toolbar">
+      <button id="rd-toggle" class="btn btn-secondary btn-touch" aria-pressed="false">{{ icon("pointer") }}Interact</button>
+      <button id="rd-kbd-toggle" class="btn btn-secondary btn-touch btn-icon" aria-pressed="false" aria-label="On-screen keyboard" disabled>{{ icon("keyboard") }}</button>
+      <span class="hint rd-status" id="rd-status">Passive preview · 1 frame / 3 s</span>
+    </div>
+    <div class="rd-keyboard" id="rd-keyboard" hidden>
+      <div class="rd-keys" id="rd-keys">
+        <button class="rd-key rd-mod" data-mod="ctrl">Ctrl</button>
+        <button class="rd-key rd-mod" data-mod="alt">Alt</button>
+        <button class="rd-key rd-mod" data-mod="shift">Shift</button>
+        <button class="rd-key rd-mod" data-mod="super">Win</button>
+        <button class="rd-key" data-key="Escape">Esc</button>
+        <button class="rd-key" data-key="Tab">Tab</button>
+        <button class="rd-key" data-key="BackSpace">{{ icon("chevron-left", "icon-sm") }}⌫</button>
+        <button class="rd-key" data-key="Delete">Del</button>
+        <button class="rd-key rd-key-wide" data-key="Return">{{ icon("corner-down-left", "icon-sm") }}Enter</button>
+        <button class="rd-key rd-key-wide" data-key="space">Space</button>
+        <button class="rd-key" data-key="Up">↑</button>
+        <button class="rd-key" data-key="Down">↓</button>
+        <button class="rd-key" data-key="Left">←</button>
+        <button class="rd-key" data-key="Right">→</button>
+        <button class="rd-key" data-key="Home">Home</button>
+        <button class="rd-key" data-key="End">End</button>
+        <button class="rd-key" data-key="Page_Up">PgUp</button>
+        <button class="rd-key" data-key="Page_Down">PgDn</button>
+        {% for n in range(1, 13) %}<button class="rd-key rd-fkey" data-key="F{{ n }}">F{{ n }}</button>{% endfor %}
+      </div>
+      <div class="rd-text-row">
+        <input type="text" id="rd-text" class="input" placeholder="Text to send (URL, meeting ID, email…)" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="send" aria-label="Text to type on the remote desktop">
+      </div>
+      <div class="btn-row rd-text-actions">
+        <button id="rd-type" class="btn btn-primary btn-touch">{{ icon("keyboard") }}Type</button>
+        <button id="rd-type-enter" class="btn btn-secondary btn-touch">{{ icon("corner-down-left") }}Type + Enter</button>
+        <button id="rd-paste" class="btn btn-secondary btn-touch" data-tooltip="Sets the remote clipboard, then presses Ctrl+V">{{ icon("clipboard-paste") }}Paste</button>
+      </div>
+      <div class="hint">Typing sends real key events to whatever window has focus on :99 - use <em>Zoom win</em> / <em>Browser</em> above to pick it. Modifier keys are one-shot: tap Ctrl, then the key.</div>
     </div>
     <!-- Canvas alert: anything sitting on :99 that Zoom won't recover from
          by itself (expired link, ended, removed, waiting room, passcode...)
@@ -258,4 +317,5 @@
 <script type="application/json" id="sources-data">{{ sources | tojson }}</script>
 <script type="application/json" id="active-source-id">{{ active_source_id | tojson }}</script>
 <script src="/static/js/remote.js"></script>
+<script type="module" src="/static/js/interact.js"></script>
 {% endblock %}

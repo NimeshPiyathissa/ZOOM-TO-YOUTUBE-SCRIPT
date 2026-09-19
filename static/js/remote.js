@@ -49,7 +49,9 @@ function renderProgram(d) {
 
 let previewTimer = null;
 async function pollPreview() {
-  if (document.hidden) return;
+  // Paused while the interactive (noVNC) preview owns the box - interact.js
+  // turns the thumbnail poll back on the moment Interact goes off.
+  if (document.hidden || (window.zsInteract && window.zsInteract.active)) return;
   const img = document.getElementById("preview-img"), ph = document.getElementById("preview-placeholder");
   const box = document.getElementById("panel-preview"), age = document.getElementById("panel-preview-age");
   try {
