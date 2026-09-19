@@ -6,9 +6,11 @@
 // admin panel loads no third-party script origin at all - the CSP is
 // script-src 'self' only.
 //
-// The separate VNC password is asked for once per page load (interact.js
-// keeps it in a JS variable for the life of the page - never in
-// localStorage/sessionStorage, never sent anywhere but the RFB handshake).
+// No VNC password is asked of the viewer: the /vnc/ws proxy authenticates
+// to x11vnc server-side (app/vnc_proxy.py + app/vncauth.py) and offers the
+// browser the "None" security type, since access is already gated by the
+// dashboard session. The password prompt below survives only as a fallback
+// for a proxy/server that still presents VNC auth.
 import RFB from '/static/vendor/novnc/core/rfb.js';
 
 export function promptText(message) {
@@ -43,7 +45,13 @@ export function promptText(message) {
  */
 export function connectVnc(target, { onDisconnect, getPassword } = {}) {
   const proto = location.protocol === "https:" ? "wss" : "ws";
-  const rfb = new RFB(target, `${proto}://${location.host}/vnc/ws`);
+  // Request the "binary" subprotocol explicitly. noVNC 1.4 defaults
+  // wsProtocols to [] (no subprotocol requested); our /vnc/ws proxy
+  // accepts with subprotocol "binary", and a server echoing a
+  // subprotocol the client never offered makes the browser abort the
+  // handshake with code 1006 - the "VNC disconnected unexpectedly" bug.
+  // Asking for "binary" here makes client and proxy agree.
+  const rfb = new RFB(target, `${proto}://${location.host}/vnc/ws`, { wsProtocols: ["binary"] });
   rfb.scaleViewport = true;
   rfb.resizeSession = false;
   rfb.addEventListener("credentialsrequired", async () => {
