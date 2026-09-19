@@ -117,32 +117,31 @@ async def _authenticate_downstream(websocket: WebSocket, reader: "_WSByteReader"
     await websocket.send_bytes((0).to_bytes(4, "big"))   # SecurityResult OK
 
 _sessions = 0
-_rate_lock = asyncio.Lock()
 
-
-async def _apply_rate(mode: str) -> None:
-    """Best-effort: a failure here (x11vnc not running yet, sudo hiccup)
-    must never break the VNC session itself."""
-    async with _rate_lock:
-        try:
-            result = await run_in_threadpool(control.set_vnc_rate, mode)
-            log.info("x11vnc poll rate -> %s (%s)", mode, result)
-        except control.ControlError as exc:
-            log.warning("could not set x11vnc rate to %s: %s", mode, exc)
+# Poll-rate policy is CLIENT-driven (interact.js POSTs /api/vnc/rate fast
+# when Interact connects, slow when it turns off), because that is
+# deterministic - it maps exactly to "the operator is interacting". The
+# proxy keeps only a safety net: when the last VNC session closes it
+# forces slow, so a client that vanished without saying slow (phone
+# killed, network dropped) can't leave x11vnc polling fast forever. The
+# proxy never sets *fast* itself; that avoids the fast/slow race on
+# x11vnc's single control property that made the screen stick at the slow
+# 10fps rate mid-session (the "remote screen is laggy" bug)."""
 
 
 async def _session_opened() -> None:
     global _sessions
     _sessions += 1
-    if _sessions == 1:
-        asyncio.create_task(_apply_rate("fast"))
 
 
 async def _session_closed() -> None:
     global _sessions
     _sessions = max(0, _sessions - 1)
     if _sessions == 0:
-        asyncio.create_task(_apply_rate("slow"))
+        try:
+            await run_in_threadpool(control.set_vnc_rate, "slow")
+        except control.ControlError as exc:
+            log.warning("could not restore slow x11vnc rate on last close: %s", exc)
 
 
 def active_sessions() -> int:

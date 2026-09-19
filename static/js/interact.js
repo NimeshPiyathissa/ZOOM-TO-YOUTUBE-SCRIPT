@@ -233,9 +233,13 @@ async function turnOn() {
     rfb.showDotCursor = true;     // always see where a tap will land
     rfb.addEventListener("connect", () => {
       state.connected = true; connectingEl.hidden = true;
-      setStatus("Interactive · live (≤25 fps) · tap = click · hold = right-click · 2 fingers = scroll · pinch = zoom");
+      setStatus("Interactive · live (~60 fps) · tap = click · hold = right-click · 2 fingers = scroll · pinch = zoom");
       layoutStage();
       try { rfb.focus({ preventScroll: true }); } catch (err) { /* older noVNC */ }
+      // Ask x11vnc to poll fast while we're actually interacting. Client-
+      // driven (not tied to the proxy connection) so it maps exactly to
+      // "Interact is on" and can't get stuck at the slow rate on reconnect.
+      post("/api/vnc/rate", { mode: "fast" }).catch(() => {});
       announce("Interactive preview connected");
     });
     rfb.addEventListener("securityfailure", (e) => {
@@ -261,10 +265,22 @@ function turnOff(reason) {
   kbdToggle.disabled = true; kbdToggle.setAttribute("aria-pressed", "false"); keyboard.hidden = true;
   state.mods.clear(); document.querySelectorAll(".rd-mod.is-on").forEach((b) => b.classList.remove("is-on"));
   setStatus("Passive preview · 1 frame / 3 s" + (reason && reason !== "user" ? " · Interact off (" + reason + ")" : ""));
+  // Drop x11vnc back to the low idle poll now that we're done interacting.
+  post("/api/vnc/rate", { mode: "slow" }).catch(() => {});
   if (typeof pollPreview === "function") pollPreview();   // bring the thumbnail back right away
 }
 
 toggleBtn.addEventListener("click", () => (state.active ? turnOff("user") : turnOn()));
+// Best-effort: if the page is torn down mid-session, still ask for slow so
+// x11vnc doesn't keep polling fast (keepalive lets the request outlive the page).
+window.addEventListener("pagehide", () => {
+  if (!state.active) return;
+  try {
+    fetch("/api/vnc/rate", { method: "POST", credentials: "same-origin", keepalive: true,
+      headers: { "Content-Type": "application/json", "X-CSRF-Token": (typeof csrfToken === "function" ? csrfToken() : "") },
+      body: JSON.stringify({ mode: "slow" }) });
+  } catch (err) { /* leaving anyway */ }
+});
 
 // ---------------------------------------------------------------- preview fullscreen (fills the phone)
 // Distinct from the YouTube "Full" quick action (which fullscreens the
