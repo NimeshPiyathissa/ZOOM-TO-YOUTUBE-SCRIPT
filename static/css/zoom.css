@@ -72,15 +72,6 @@
 .zm-active-empty .icon { color: var(--text-faint); }
 
 /* kind chip: icon + word, color reinforces, never alone */
-.zm-kind {
-  display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: var(--radius-full);
-  font-size: 11px; font-weight: var(--weight-semibold); letter-spacing: 0.06em; text-transform: uppercase;
-  background: var(--bg-hover); color: var(--text-dim); border: 1px solid var(--rm-edge); white-space: nowrap;
-}
-.zm-kind .icon { width: 13px; height: 13px; }
-.zm-kind-webinar { color: var(--info); background: var(--info-tint); }
-.zm-kind-pmi { color: var(--warning); background: var(--warning-tint); }
-.zm-kind-meeting { color: var(--accent); background: var(--accent-tint); }
 
 /* guidance banner with tone */
 .zm-guidance { margin-top: var(--space-3); align-items: flex-start; gap: var(--space-3); }
@@ -125,7 +116,6 @@ button.zm-ctl:focus-visible { outline: 2px solid var(--accent-ring); outline-off
 @media (max-width: 480px) { .zm-controls { grid-template-columns: 1fr 1fr; } .zm-ctl-view { grid-column: 1 / -1; } }
 
 /* segmented, tighter for these tiles */
-.zm-seg .seg-btn { padding: 6px 12px; font-size: var(--text-xs); min-height: 32px; white-space: nowrap; }
 
 /* ---------------------------------------------------------------- remote screen */
 
@@ -158,28 +148,9 @@ button.zm-ctl:focus-visible { outline: 2px solid var(--accent-ring); outline-off
 #zm-mid { font-size: var(--text-md); letter-spacing: 0.06em; }
 .zm-pass-status { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; font-size: var(--text-sm); color: var(--text-dim); }
 .zm-pass-status[data-ok="true"] { color: var(--success); }
-.zm-notes { list-style: none; padding: 0; margin: var(--space-3) 0 0; display: grid; gap: var(--space-2); }
-.zm-notes li { display: flex; gap: var(--space-2); align-items: flex-start; font-size: var(--text-xs); line-height: var(--leading-normal); color: var(--text-dim); }
-.zm-notes li .icon { flex: none; margin-top: 1px; }
-.zm-notes li.tone-bad { color: var(--live); }
-.zm-notes li.tone-warn .icon { color: var(--warning); }
 
-.zm-form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0 var(--space-4); }
 .zm-joinas { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); }
 .zm-joinas select { flex: 1 1 220px; }
-.zm-options { display: grid; gap: var(--space-2); margin-top: var(--space-2); }
-.zm-opt {
-  display: flex; align-items: center; justify-content: space-between; gap: var(--space-3);
-  min-height: 56px; padding: var(--space-2) var(--space-3); border-radius: var(--radius-md);
-  border: 1px solid var(--rm-edge); background: var(--bg-elevated); cursor: pointer;
-}
-.zm-opt-main { display: inline-flex; align-items: center; gap: var(--space-2); font-size: var(--text-sm); }
-.zm-opt-main .icon { color: var(--text-dim); }
-.zm-opt-end { display: inline-flex; align-items: center; gap: var(--space-2); }
-.zm-num { width: 64px; text-align: center; font-family: var(--font-mono); }
-.zm-dt { max-width: 220px; font-family: var(--font-mono); font-size: var(--text-sm); }
-.zm-save-row .btn { flex: 1 1 180px; }
-@media (max-width: 480px) { .zm-opt { flex-wrap: wrap; } .zm-opt-end { margin-left: auto; } .zm-dt { max-width: 100%; } }
 
 /* ---------------------------------------------------------------- library */
 

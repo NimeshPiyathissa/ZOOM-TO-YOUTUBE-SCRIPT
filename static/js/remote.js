@@ -316,20 +316,59 @@ document.getElementById("browser-open-google").addEventListener("click", async (
   });
 });
 
+// ---------------------------------------------------------------- YouTube deck (web source context)
+//
+// Player / Add / Library tabs. Everything shown about the player is read
+// off the kiosk tab over DevTools (/api/youtube/state -> phase +
+// guidance); the library is the youtube_links table; automation
+// (skip ads, dismiss the inactivity prompt, auto-advance) runs in the
+// dashboard's watcher, these switches only set it.
+
+const ytEsc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+let ytLinks = JSON.parse(document.getElementById("yt-links-data").textContent || "[]");
+let ytCurrentId = null;
+let ytEditingId = null;
+let ytParsed = null;
+const YT_KIND = { video: ["play", "Video"], playlist: ["list-checks", "Playlist"], live_channel: ["radio", "Live channel"] };
+const YT_PHASE_ICON = { idle: "cast", loading: "hourglass", playing: "play", paused: "pause", buffering: "hourglass", ad: "circle-slash", ended: "circle-check",
+  prompt: "circle-help", bot_check: "alert-triangle", signin: "log-in", age: "lock-keyhole", error: "alert-triangle", no_player: "globe", offline: "wifi-off" };
+const YT_ACTION_BTN = {
+  "skip-ad": `<button class="btn btn-primary btn-sm" data-ytact="skip-ad">${icon("skip-forward", "icon-sm")}Skip ad</button>`,
+  "dismiss-prompt": `<button class="btn btn-primary btn-sm" data-ytact="dismiss-prompt">${icon("circle-check", "icon-sm")}Continue watching</button>`,
+  replay: `<button class="btn btn-secondary btn-sm" data-ytact="replay">${icon("rotate-cw", "icon-sm")}Replay</button>`,
+  next: `<button class="btn btn-secondary btn-sm" data-ytact="next">${icon("skip-forward", "icon-sm")}Next in library</button>`,
+  retry: `<button class="btn btn-secondary btn-sm" data-ytact="retry">${icon("rotate-cw", "icon-sm")}Retry</button>`,
+  play: `<button class="btn btn-primary btn-sm" data-ytact="play">${icon("play", "icon-sm")}Play</button>`,
+  pause: ``,
+  "play-as": `<button class="btn btn-primary btn-sm" data-ytact="play-as">${icon("user", "icon-sm")}Play as a signed-in account</button>`,
+  accounts: `<a href="/accounts" class="btn btn-secondary btn-sm">${icon("log-in", "icon-sm")}Accounts</a>`,
+  "restart-browser": `<button class="btn btn-secondary btn-sm" data-ytact="restart-browser">${icon("rotate-cw", "icon-sm")}Restart browser source</button>`,
+};
+
+// tabs
+const ytTabs = document.querySelector(".yt-tabs");
+function ytShowTab(name) {
+  ytTabs.querySelectorAll(".seg-btn").forEach((b) => { const on = b.dataset.tab === name; b.classList.toggle("is-active", on); b.setAttribute("aria-selected", String(on)); });
+  document.querySelectorAll(".yt-tab").forEach((t) => { t.hidden = t.dataset.tab !== name; });
+  try { localStorage.setItem("zs-yt-tab", name); } catch (err) { /* private mode */ }
+}
+ytTabs.addEventListener("click", (e) => { const b = e.target.closest(".seg-btn"); if (b) ytShowTab(b.dataset.tab); });
+try { ytShowTab(localStorage.getItem("zs-yt-tab") || "player"); } catch (err) { ytShowTab("player"); }
+document.getElementById("ctx-account").addEventListener("focus", () => { document.getElementById("ctx-account-hint").hidden = false; });
+
+// ---------------------------------------------------------------- player state
+
+let ytLastPhase = null;
 async function ytPoll() {
   let st;
   try { st = await apiFetch("/api/youtube/state"); } catch (err) { return; }
-  const diag = document.getElementById("yt-diagnosis");
   if (st.available !== browserConnected) { browserConnected = st.available; browserStatus(); }
-  if (!st.available) {
-    document.getElementById("yt-title").textContent = "No player - browser not reachable (see above).";
-    diag.hidden = true; return;
-  }
+  renderYtHero(st);
+  const diag = document.getElementById("yt-diagnosis");
+  if (!st.available) { diag.hidden = true; return; }
   const fsBtn = document.getElementById("r-yt-fullscreen");
   fsBtn.setAttribute("aria-pressed", String(!!st.fullscreen));
   fsBtn.classList.toggle("btn-primary", !!st.fullscreen); fsBtn.classList.toggle("btn-secondary", !st.fullscreen);
-  document.getElementById("yt-title").textContent = st.has_video ? (st.title || "Playing") : "No player on the current page";
-  document.getElementById("yt-quality").textContent = st.quality ? `quality ${st.quality}` : "quality —";
   if (st.has_video) {
     if (!seekDragging) {
       seek.max = Math.max(1, Math.floor(st.duration || 0));
@@ -337,110 +376,230 @@ async function ytPoll() {
       document.getElementById("yt-cur").textContent = fmtTime(st.current_time);
     }
     document.getElementById("yt-dur").textContent = st.duration ? fmtTime(st.duration) : "live";
+    seek.disabled = !st.duration;
     const muteBtn = document.getElementById("r-yt-mute");
     muteBtn.setAttribute("aria-pressed", String(!!st.muted));
     muteBtn.innerHTML = icon(st.muted ? "volume-x" : "volume-2");
     muteBtn.classList.toggle("btn-danger", !!st.muted); muteBtn.classList.toggle("btn-secondary", !st.muted);
     const vol = document.getElementById("r-yt-volume");
     if (document.activeElement !== vol) vol.value = st.volume ?? 100;
+    const cc = document.getElementById("r-yt-cc");
+    cc.setAttribute("aria-pressed", String(!!st.captions)); cc.classList.toggle("btn-primary", !!st.captions); cc.classList.toggle("btn-secondary", !st.captions);
+    const sp = String(st.speed || 1).replace(/\.0$/, "");
+    document.querySelectorAll("#yt-speed-seg .seg-btn").forEach((b) => b.classList.toggle("is-active", b.dataset.value === sp));
   }
-  if (st.diagnosis) {
-    diag.hidden = false;
-    document.getElementById("yt-diagnosis-msg").textContent = st.diagnosis.message;
-    document.getElementById("yt-diagnosis-fix").textContent = st.diagnosis.fix;
-    document.getElementById("yt-diagnosis-link").hidden = st.diagnosis.kind === "playback_error" || st.diagnosis.kind === "bot_check";
-  } else diag.hidden = true;
+  if (st.current_link_id !== undefined && st.current_link_id !== ytCurrentId) { ytCurrentId = st.current_link_id; renderYtLibrary(); }
+  // diagnosis banner is subsumed by the hero guidance; keep it for the Accounts link on sign-in walls
+  diag.hidden = true;
+}
+
+function renderYtHero(st) {
+  const hero = document.getElementById("yt-hero");
+  const phase = st.phase || (st.available ? "idle" : "offline");
+  const changed = hero.dataset.phase !== phase;
+  hero.dataset.phase = phase; hero.dataset.tone = st.tone || "idle";
+  document.getElementById("yt-hero-icon").innerHTML = icon(YT_PHASE_ICON[phase] || "cast");
+  document.getElementById("yt-phase-label").textContent = st.label || phase;
+  document.getElementById("yt-live-badge").hidden = !st.live;
+  const cur = ytLinks.find((l) => l.id === ytCurrentId);
+  const title = st.has_video ? (cur && cur.title ? cur.title : (st.title || "").replace(/ - YouTube$/, "")) : (st.available ? "" : "");
+  document.getElementById("yt-title").textContent = title || (phase === "no_player" ? (st.title || "") : "—");
+  document.getElementById("yt-author").textContent = cur && cur.author ? cur.author : "";
+  document.getElementById("yt-quality").textContent = st.quality ? st.quality : "";
+  document.getElementById("yt-speed-badge").textContent = st.speed && st.speed !== 1 ? st.speed + "×" : "";
+  document.getElementById("yt-cc-badge").hidden = !st.captions;
+  const thumb = document.getElementById("yt-hero-thumb");
+  const art = cur && cur.thumbnail_url ? cur.thumbnail_url : "";
+  if (art) { if (thumb.src !== art) thumb.src = art; thumb.hidden = false; } else { thumb.hidden = true; thumb.removeAttribute("src"); }
+  const g = document.getElementById("yt-guidance");
+  if (st.guide) {
+    g.hidden = false; g.className = "banner yt-guidance tone-" + (st.tone || "idle");
+    document.getElementById("yt-guidance-text").textContent = st.guide;
+    document.getElementById("yt-guidance-actions").innerHTML = (st.actions || []).map((a) => YT_ACTION_BTN[a] || "").join("");
+  } else g.hidden = true;
+  const log = document.getElementById("yt-auto-log");
+  if (st.auto && st.auto.length) { log.hidden = false; log.textContent = "Automatic: " + st.auto.join(" · "); } else log.hidden = true;
+  if (changed && ytLastPhase !== null && ["ended", "bot_check", "signin", "age", "error", "prompt", "offline"].includes(phase)) announce("YouTube: " + (st.label || phase));
+  ytLastPhase = phase;
 }
 
 const ytControl = (action, extra) => async (e) => {
-  try { await post("/api/youtube/control", Object.assign({ action }, extra || {})); ytPoll(); }
+  try { const r = await post("/api/youtube/control", Object.assign({ action }, extra || {})); if (r && r.current_link_id !== undefined) { ytCurrentId = r.current_link_id; renderYtLibrary(); } ytPoll(); }
   catch (err) { toast(err.message, "err"); }
 };
 document.getElementById("r-yt-play").addEventListener("click", ytControl("play"));
 document.getElementById("r-yt-pause").addEventListener("click", ytControl("pause"));
 document.getElementById("r-yt-theater").addEventListener("click", ytControl("theater"));
 document.getElementById("r-yt-fullscreen").addEventListener("click", ytControl("fullscreen"));
-document.getElementById("r-yt-mute").addEventListener("click", (e) => {
-  const muted = e.currentTarget.getAttribute("aria-pressed") === "true";
-  return ytControl(muted ? "unmute" : "mute")(e);
-});
+document.getElementById("r-yt-cc").addEventListener("click", ytControl("captions"));
+document.getElementById("r-yt-prev").addEventListener("click", (e) => withLoading(e.currentTarget, ytControl("prev")));
+document.getElementById("r-yt-next").addEventListener("click", (e) => withLoading(e.currentTarget, ytControl("next")));
+document.getElementById("r-yt-mute").addEventListener("click", (e) => ytControl(e.currentTarget.getAttribute("aria-pressed") === "true" ? "unmute" : "mute")(e));
+initSegmented(document.getElementById("yt-speed-seg"), (v) => ytControl("speed", { rate: Number(v) })());
 let volumeDebounce = null;
 document.getElementById("r-yt-volume").addEventListener("input", (e) => {
   clearTimeout(volumeDebounce);
   const level = Number(e.target.value);
   volumeDebounce = setTimeout(() => post("/api/youtube/control", { action: "volume", level }).catch((err) => toast(err.message, "err")), 200);
 });
+document.getElementById("yt-guidance-actions").addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-ytact]"); if (!b) return;
+  const act = b.dataset.ytact;
+  if (act === "play-as") { ytShowTab("player"); document.getElementById("ctx-account").focus(); document.getElementById("ctx-account-hint").hidden = false; return; }
+  if (act === "restart-browser") { document.getElementById("browser-conn-restart").click(); return; }
+  await withLoading(b, ytControl(act));
+});
 
-// library
-let ytLinks = Array.from(document.querySelectorAll(".yt-card")).map((el) => ({ id: Number(el.dataset.linkId), url: el.dataset.url, el }));
-let ytCurrentIndex = -1;
-function renderYtCurrent() { ytLinks.forEach((l, i) => l.el.classList.toggle("is-current", i === ytCurrentIndex)); }
+// automation switches
+document.getElementById("yt-automation").addEventListener("change", async (e) => {
+  const inp = e.target.closest("input[data-setting]"); if (!inp) return;
+  try { await apiFetch("/api/youtube/settings", { method: "PUT", body: JSON.stringify({ [inp.dataset.setting]: inp.checked }) }); toast(inp.checked ? "On" : "Off"); }
+  catch (err) { inp.checked = !inp.checked; toast(err.message, "err"); }
+});
 
-async function ytPlay({ linkId, url, index }) {
+// ---------------------------------------------------------------- Add: smart paste
+
+let ytParseTimer = null;
+const ytPaste = document.getElementById("yt-paste");
+ytPaste.addEventListener("input", () => { clearTimeout(ytParseTimer); ytParseTimer = setTimeout(ytDetect, 500); });
+ytPaste.addEventListener("paste", () => { clearTimeout(ytParseTimer); ytParseTimer = setTimeout(ytDetect, 80); });
+document.getElementById("yt-detect").addEventListener("click", (e) => withLoading(e.currentTarget, ytDetect));
+
+async function ytDetect() {
+  const text = ytPaste.value.trim();
+  const status = document.getElementById("yt-detect-status");
+  if (!text) { ytParsed = null; document.getElementById("yt-parsed").hidden = true; document.getElementById("yt-form").hidden = !ytEditingId; return; }
+  status.textContent = "looking it up…";
+  try { ytParsed = await post("/api/youtube/parse", { text }); } catch (err) { status.textContent = ""; toast(err.message, "err"); return; }
+  status.textContent = "";
+  renderYtParsed();
+}
+function renderYtParsed() {
+  const p = ytParsed; const box = document.getElementById("yt-parsed"); box.hidden = false; box.classList.toggle("is-error", !p.ok);
+  const kind = YT_KIND[p.kind] || ["circle-help", p.kind === "channel" ? "Channel page" : "Unrecognized"];
+  document.getElementById("yt-parsed-kind").innerHTML = icon(kind[0], "icon-sm") + ytEsc(kind[1]) + (p.live_now === true ? " · live now" : p.live_now === false ? " · offline" : "");
+  const th = document.getElementById("yt-parsed-thumb");
+  if (p.thumbnail_url) { th.src = p.thumbnail_url; th.hidden = false; } else { th.hidden = true; th.removeAttribute("src"); }
+  document.getElementById("yt-parsed-title").textContent = p.title || (p.ok ? (p.kind === "playlist" ? "Playlist " + p.list_id : p.kind === "live_channel" ? (p.channel || "") + " live" : "Video " + (p.video_id || "")) : "Not playable");
+  document.getElementById("yt-parsed-meta").textContent = [p.author, p.video_id ? "id " + p.video_id : "", p.list_id ? "list " + p.list_id.slice(0, 12) + "…" : "", p.start ? "starts at " + p.start_formatted : ""].filter(Boolean).join(" · ");
+  const notes = [...(p.errors || []).map((t) => ["bad", "alert-triangle", t]), ...(p.warnings || []).map((t) => ["warn", "info", t])];
+  document.getElementById("yt-parsed-notes").innerHTML = notes.map(([tone, ic, t]) => `<li class="tone-${tone}">${icon(ic, "icon-sm")}<span>${ytEsc(t)}</span></li>`).join("");
+  document.getElementById("yt-form").hidden = !p.ok;
+  if (p.ok) {
+    document.getElementById("yt-name").placeholder = p.title || "Name";
+    if (p.start && !document.getElementById("yt-start").value) document.getElementById("yt-start").value = p.start_formatted;
+  }
+}
+initSegmented(document.getElementById("yt-form-speed"));
+function ytSegValue(seg) { const b = seg.querySelector(".seg-btn.is-active"); return b ? Number(b.dataset.value) : 1; }
+function ytSetSeg(seg, v) { seg.querySelectorAll(".seg-btn").forEach((b) => b.classList.toggle("is-active", Number(b.dataset.value) === Number(v))); }
+function ytReadForm() {
+  return { name: document.getElementById("yt-name").value.trim(), url: ytParsed ? ytParsed.url : "",
+    options: { start: document.getElementById("yt-start").value.trim() || null, loop: document.getElementById("yt-loop").checked, captions: document.getElementById("yt-captions").checked, speed: ytSegValue(document.getElementById("yt-form-speed")) } };
+}
+function ytResetForm() {
+  ytEditingId = null; ytParsed = null;
+  ytPaste.value = ""; document.getElementById("yt-parsed").hidden = true; document.getElementById("yt-form").hidden = true;
+  document.getElementById("yt-name").value = ""; document.getElementById("yt-start").value = ""; document.getElementById("yt-loop").checked = false; document.getElementById("yt-captions").checked = false;
+  ytSetSeg(document.getElementById("yt-form-speed"), 1); document.getElementById("yt-form-error").hidden = true;
+  document.getElementById("yt-edit-cancel").hidden = true; document.getElementById("yt-save").innerHTML = icon("check") + "Save"; document.getElementById("yt-play-once").hidden = false;
+}
+async function ytSave(thenPlay) {
+  const err = document.getElementById("yt-form-error"); err.hidden = true;
+  if (!ytEditingId && !(ytParsed && ytParsed.ok)) { err.hidden = false; err.textContent = "Paste a playable YouTube link first."; return; }
+  const body = ytReadForm();
   try {
-    await post("/api/youtube/play", { link_id: linkId, url });
-    if (index != null) ytCurrentIndex = index;
-    renderYtCurrent(); toast("Now playing"); announce("YouTube source switched"); ytPoll();
-  } catch (err) { toast(err.message, "err"); }
+    let link;
+    if (ytEditingId) link = (await apiFetch(`/api/youtube-links/${ytEditingId}`, { method: "PUT", body: JSON.stringify(body) })).link;
+    else link = (await post("/api/youtube-links", body)).link;
+    await ytReloadLinks();
+    toast(ytEditingId ? "Saved changes" : `Saved "${link.name}"`);
+    ytResetForm();
+    if (thenPlay) await ytPlayLink(link.id); else ytShowTab("library");
+  } catch (e2) { err.hidden = false; err.textContent = e2.message; }
+}
+document.getElementById("yt-save").addEventListener("click", (e) => withLoading(e.currentTarget, () => ytSave(false)));
+document.getElementById("yt-save-play").addEventListener("click", (e) => withLoading(e.currentTarget, () => ytSave(true)));
+document.getElementById("yt-play-once").addEventListener("click", (e) => withLoading(e.currentTarget, async () => {
+  if (!(ytParsed && ytParsed.ok)) { toast("Paste a playable YouTube link first", "err"); return; }
+  const body = ytReadForm();
+  try { await post("/api/youtube/play", { url: body.url, options: body.options }); ytCurrentId = null; renderYtLibrary(); toast("Playing"); ytShowTab("player"); setTimeout(ytPoll, 1200); }
+  catch (err) { toast(err.message, "err"); }
+}));
+document.getElementById("yt-edit-cancel").addEventListener("click", ytResetForm);
+
+function ytStartEdit(id) {
+  const l = ytLinks.find((x) => x.id === id); if (!l) return;
+  ytResetForm(); ytEditingId = id;
+  ytParsed = { ok: true, kind: l.kind, url: l.url, title: l.title, author: l.author, thumbnail_url: l.thumbnail_url, video_id: l.video_id, list_id: null, start: (l.options || {}).start, start_formatted: fmtTime((l.options || {}).start || 0), warnings: [], errors: [] };
+  ytPaste.value = l.url; renderYtParsed();
+  document.getElementById("yt-name").value = l.name; document.getElementById("yt-start").value = (l.options || {}).start ? fmtTime(l.options.start) : "";
+  document.getElementById("yt-loop").checked = !!(l.options || {}).loop; document.getElementById("yt-captions").checked = !!(l.options || {}).captions; ytSetSeg(document.getElementById("yt-form-speed"), (l.options || {}).speed || 1);
+  document.getElementById("yt-edit-cancel").hidden = false; document.getElementById("yt-save").innerHTML = icon("check") + "Save changes"; document.getElementById("yt-play-once").hidden = true;
+  ytShowTab("add"); document.getElementById("ctx-webpage").scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
-document.getElementById("r-yt-list").addEventListener("click", async (e) => {
-  const del = e.target.closest(".r-yt-delete");
-  if (del) {
-    if (!(await confirmDialog("Delete this saved link?", { danger: true }))) return;
-    try {
-      await apiFetch(`/api/youtube-links/${del.dataset.linkId}`, { method: "DELETE" });
-      del.closest(".yt-card").remove();
-      ytLinks = ytLinks.filter((l) => l.id !== Number(del.dataset.linkId));
-      toast("Link deleted");
-    } catch (err) { toast(err.message, "err"); }
-    return;
-  }
-  const play = e.target.closest(".yt-card-play");
-  if (!play) return;
-  const card = play.closest(".yt-card");
-  const index = ytLinks.findIndex((l) => l.id === Number(card.dataset.linkId));
-  await withLoading(play, () => ytPlay({ linkId: Number(card.dataset.linkId), index }));
-});
+// ---------------------------------------------------------------- Library
 
-document.getElementById("r-yt-save").addEventListener("click", async (e) => {
-  const nameEl = document.getElementById("r-yt-name"), urlEl = document.getElementById("r-yt-url");
-  const name = nameEl.value.trim(), url = urlEl.value.trim();
-  if (!name || !url) { toast("Name and URL are both required", "err"); return; }
-  await withLoading(e.currentTarget, async () => {
-    try {
-      const data = await post("/api/youtube-links", { name, url });
-      const links = await apiFetch("/api/youtube-links");
-      const saved = links.find((l) => l.id === data.id);
-      const empty = document.getElementById("r-yt-empty"); if (empty) empty.remove();
-      const card = document.createElement("div");
-      card.className = "yt-card"; card.setAttribute("role", "listitem"); card.dataset.linkId = data.id; card.dataset.url = url;
-      const thumb = saved && saved.thumbnail_url ? `<img src="${saved.thumbnail_url}" alt="" class="yt-thumb">` : `<div class="yt-thumb yt-thumb-empty">${icon("cast")}</div>`;
-      card.innerHTML = `<button type="button" class="yt-card-play" aria-label="Play ${name}">${thumb}<span class="yt-card-name"></span></button>` +
-        `<button type="button" class="btn btn-ghost btn-icon btn-sm r-yt-delete" data-link-id="${data.id}" aria-label="Delete ${name}">${icon("trash-2", "icon-sm")}</button>`;
-      card.querySelector(".yt-card-name").textContent = name;
-      document.getElementById("r-yt-list").appendChild(card);
-      ytLinks.push({ id: data.id, url, el: card });
-      nameEl.value = ""; urlEl.value = "";
-      await ytPlay({ linkId: data.id, index: ytLinks.length - 1 });
-    } catch (err) { toast(err.message, "err"); }
-  });
+function fmtPlayed(ts) { if (!ts) return "never played"; const s = Date.now() / 1000 - ts; return "played " + (s < 60 ? "just now" : s < 3600 ? Math.floor(s / 60) + " min ago" : s < 86400 ? Math.floor(s / 3600) + " h ago" : new Date(ts * 1000).toLocaleDateString()); }
+function renderYtLibrary() {
+  const box = document.getElementById("r-yt-list");
+  document.getElementById("r-yt-empty").hidden = ytLinks.length > 0;
+  document.getElementById("yt-lib-count").textContent = ytLinks.length;
+  const curIdx = ytLinks.findIndex((l) => l.id === ytCurrentId);
+  box.innerHTML = ytLinks.map((l, i) => {
+    const kind = YT_KIND[l.kind] || YT_KIND.video; const o = l.options || {};
+    const opts = [o.start ? "from " + fmtTime(o.start) : "", o.loop ? "loop" : "", o.captions ? "CC" : "", o.speed && o.speed !== 1 ? o.speed + "×" : ""].filter(Boolean).join(" · ");
+    const isCur = l.id === ytCurrentId, isNext = curIdx >= 0 && i === (curIdx + 1) % ytLinks.length && ytLinks.length > 1;
+    return `<article class="yt-card ${isCur ? "is-current" : ""}" role="listitem" data-link-id="${l.id}">
+      <button type="button" class="yt-card-play" aria-label="Play ${ytEsc(l.name)}">
+        ${l.thumbnail_url ? `<img src="${ytEsc(l.thumbnail_url)}" alt="" loading="lazy" class="yt-thumb">` : `<div class="yt-thumb yt-thumb-empty">${icon(kind[0])}</div>`}
+        <span class="yt-kind yt-kind-${l.kind}">${icon(kind[0], "icon-sm")}${kind[1]}</span>
+        ${isCur ? `<span class="yt-card-flag is-now">${icon("play", "icon-sm")}Now</span>` : isNext ? `<span class="yt-card-flag">Up next</span>` : ""}
+        <span class="yt-card-name">${ytEsc(l.name)}</span>
+      </button>
+      <div class="yt-card-body">
+        <div class="hint yt-card-meta">${ytEsc(l.author || "")}${l.author && opts ? " · " : ""}${ytEsc(opts)}</div>
+        <div class="hint yt-card-when">${fmtPlayed(l.last_played_at)}${l.plays ? " · " + l.plays + "×" : ""}</div>
+        <div class="yt-card-actions">
+          <button class="btn btn-ghost btn-icon btn-sm" data-ytlib="up" data-id="${l.id}" aria-label="Move up" ${i === 0 ? "disabled" : ""}>${icon("chevron-up", "icon-sm")}</button>
+          <button class="btn btn-ghost btn-icon btn-sm" data-ytlib="down" data-id="${l.id}" aria-label="Move down" ${i === ytLinks.length - 1 ? "disabled" : ""}>${icon("chevron-down", "icon-sm")}</button>
+          <button class="btn btn-ghost btn-icon btn-sm" data-ytlib="edit" data-id="${l.id}" aria-label="Edit ${ytEsc(l.name)}">${icon("pencil", "icon-sm")}</button>
+          <button class="btn btn-ghost btn-icon btn-sm" data-ytlib="dup" data-id="${l.id}" aria-label="Duplicate ${ytEsc(l.name)}">${icon("copy", "icon-sm")}</button>
+          <button class="btn btn-ghost btn-icon btn-sm yt-danger" data-ytlib="del" data-id="${l.id}" aria-label="Delete ${ytEsc(l.name)}">${icon("trash-2", "icon-sm")}</button>
+        </div>
+      </div>
+    </article>`;
+  }).join("");
+}
+async function ytReloadLinks() { try { ytLinks = await apiFetch("/api/youtube-links"); } catch (err) { /* keep what we have */ } renderYtLibrary(); }
+async function ytPlayLink(id) {
+  const l = ytLinks.find((x) => x.id === id); if (!l) return;
+  try { const r = await post("/api/youtube/play", { link_id: id }); ytCurrentId = r.current_link_id ?? id; renderYtLibrary(); toast(`Now playing: ${l.name}`); announce("YouTube: " + l.name); ytShowTab("player"); setTimeout(ytPoll, 1200); await ytReloadLinks(); }
+  catch (err) { toast(err.message, "err"); }
+}
+document.getElementById("r-yt-list").addEventListener("click", async (e) => {
+  const act = e.target.closest("[data-ytlib]");
+  if (act) {
+    const id = Number(act.dataset.id); const idx = ytLinks.findIndex((l) => l.id === id);
+    if (act.dataset.ytlib === "edit") { ytStartEdit(id); return; }
+    if (act.dataset.ytlib === "del") {
+      if (!(await confirmDialog(`Delete "${ytLinks[idx].name}" from the library?`, { danger: true, confirmText: "Delete" }))) return;
+      try { await apiFetch(`/api/youtube-links/${id}`, { method: "DELETE" }); if (ytEditingId === id) ytResetForm(); await ytReloadLinks(); toast("Deleted"); } catch (err) { toast(err.message, "err"); }
+      return;
+    }
+    if (act.dataset.ytlib === "dup") { try { await post(`/api/youtube-links/${id}/duplicate`); await ytReloadLinks(); toast("Duplicated"); } catch (err) { toast(err.message, "err"); } return; }
+    if (act.dataset.ytlib === "up" || act.dataset.ytlib === "down") {
+      const j = act.dataset.ytlib === "up" ? idx - 1 : idx + 1; if (j < 0 || j >= ytLinks.length) return;
+      const ids = ytLinks.map((l) => l.id); [ids[idx], ids[j]] = [ids[j], ids[idx]];
+      try { await post("/api/youtube-links/reorder", { ids }); await ytReloadLinks(); } catch (err) { toast(err.message, "err"); }
+      return;
+    }
+  }
+  const play = e.target.closest(".yt-card-play"); if (!play) return;
+  await withLoading(play, () => ytPlayLink(Number(play.closest(".yt-card").dataset.linkId)));
 });
-document.getElementById("r-yt-playonce").addEventListener("click", async (e) => {
-  const url = document.getElementById("r-yt-url").value.trim();
-  if (!url) { toast("Paste a link first", "err"); return; }
-  await withLoading(e.currentTarget, () => ytPlay({ url }));
-});
-document.getElementById("r-yt-prev").addEventListener("click", () => {
-  if (!ytLinks.length) return;
-  const i = ytCurrentIndex <= 0 ? ytLinks.length - 1 : ytCurrentIndex - 1;
-  ytPlay({ linkId: ytLinks[i].id, index: i });
-});
-document.getElementById("r-yt-next").addEventListener("click", () => {
-  if (!ytLinks.length) return;
-  const i = ytCurrentIndex >= ytLinks.length - 1 ? 0 : ytCurrentIndex + 1;
-  ytPlay({ linkId: ytLinks[i].id, index: i });
-});
+renderYtLibrary();
 
 // ---------------------------------------------------------------- Zoom panel
 
