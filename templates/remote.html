@@ -8,8 +8,13 @@
 
   <!-- Program: live preview of :99 + state, elapsed, and the status rail -->
   <section class="card panel-program" aria-labelledby="panel-program-h">
-    <h2 id="panel-program-h" class="visually-hidden">Program</h2>
-    <div class="panel-preview" id="panel-preview">
+    <div class="program-head">
+      <h2 id="panel-program-h" class="remote-section-title">{{ icon("monitor", "icon-sm") }}Program</h2>
+      <span class="program-id" aria-hidden="true">DISPLAY :99</span>
+    </div>
+    <div class="panel-preview" id="panel-preview" data-phase="STOPPED">
+      <!-- Tally: colored by data-phase (remote.js mirrors the encoder phase here) -->
+      <div class="monitor-tally" aria-hidden="true"></div>
       <img id="preview-img" alt="Live preview of display :99" hidden>
       <div class="empty-state p-0" id="preview-placeholder">{{ icon("video") }}<div class="empty-sub">No preview yet</div></div>
       <!-- Interactive layer (interact.js): a live noVNC session in the same
@@ -29,7 +34,7 @@
       <!-- Quick actions for the fiddly targets, shown only while interactive -->
       <div class="rd-quick" id="rd-quick" hidden role="toolbar" aria-label="Quick actions">
         <button class="rd-qbtn" data-q="focus-zoom" aria-label="Focus Zoom window">{{ icon("focus") }}<span>Zoom win</span></button>
-        <button class="rd-qbtn" data-q="focus-browser" aria-label="Focus browser window">{{ icon("globe") }}<span>Browser</span></button>
+        <button class="rd-qbtn rd-qbtn-home" data-q="open-browser" aria-label="Open the browser at Google, signed in">{{ icon("globe") }}<span>Browser</span></button>
         <button class="rd-qbtn" data-q="zoom-join" aria-label="Zoom join">{{ icon("video") }}<span>Join</span></button>
         <button class="rd-qbtn" data-q="zoom-leave" aria-label="Zoom leave">{{ icon("door-open") }}<span>Leave</span></button>
         <button class="rd-qbtn" data-q="zoom-mic" aria-label="Zoom mute or unmute">{{ icon("mic") }}<span>Mute</span></button>
@@ -155,6 +160,10 @@
       <span class="hint" id="browser-conn-detail"></span>
       <button id="browser-conn-restart" class="btn btn-secondary btn-sm" hidden>{{ icon("rotate-cw", "icon-sm") }}Restart browser source</button>
     </div>
+    <div class="browser-actions">
+      <button id="browser-open-google" class="btn btn-secondary btn-touch" data-tooltip="Loads google.com in the browser profile that holds your Google sign-in">{{ icon("globe") }}Open Google</button>
+      <span class="hint m-0" id="browser-identity"></span>
+    </div>
 
     <div class="banner banner-warning mb-3" id="yt-diagnosis" hidden>
       {{ icon("alert-triangle") }}
@@ -175,13 +184,17 @@
       <span class="tnum yt-time" id="yt-dur">0:00</span>
     </div>
     <div class="remote-yt-transport">
-      <button id="r-yt-prev" class="btn btn-secondary btn-touch btn-icon" aria-label="Previous saved link">{{ icon("skip-back") }}</button>
-      <button id="r-yt-play" class="btn btn-primary btn-touch btn-icon" aria-label="Play">{{ icon("play") }}</button>
-      <button id="r-yt-pause" class="btn btn-secondary btn-touch btn-icon" aria-label="Pause">{{ icon("pause") }}</button>
-      <button id="r-yt-next" class="btn btn-secondary btn-touch btn-icon" aria-label="Next saved link">{{ icon("skip-forward") }}</button>
-      <button id="r-yt-mute" class="btn btn-secondary btn-touch btn-icon" aria-label="Mute player" aria-pressed="false">{{ icon("volume-2") }}</button>
-      <button id="r-yt-theater" class="btn btn-secondary btn-touch btn-icon" aria-label="Toggle theater mode">{{ icon("monitor") }}</button>
-      <button id="r-yt-fullscreen" class="btn btn-secondary btn-touch btn-icon" aria-label="Toggle player fullscreen">{{ icon("maximize") }}</button>
+      <div class="yt-transport-main" role="group" aria-label="Transport">
+        <button id="r-yt-prev" class="btn btn-secondary btn-touch btn-icon" aria-label="Previous saved link">{{ icon("skip-back") }}</button>
+        <button id="r-yt-play" class="btn btn-primary btn-touch btn-icon" aria-label="Play">{{ icon("play") }}</button>
+        <button id="r-yt-pause" class="btn btn-secondary btn-touch btn-icon" aria-label="Pause">{{ icon("pause") }}</button>
+        <button id="r-yt-next" class="btn btn-secondary btn-touch btn-icon" aria-label="Next saved link">{{ icon("skip-forward") }}</button>
+      </div>
+      <div class="yt-transport-aux" role="group" aria-label="Player window">
+        <button id="r-yt-mute" class="btn btn-secondary btn-touch btn-icon" aria-label="Mute player" aria-pressed="false">{{ icon("volume-2") }}</button>
+        <button id="r-yt-theater" class="btn btn-secondary btn-touch btn-icon" aria-label="Toggle theater mode">{{ icon("monitor") }}</button>
+        <button id="r-yt-fullscreen" class="btn btn-secondary btn-touch btn-icon" aria-label="Toggle player fullscreen">{{ icon("maximize") }}</button>
+      </div>
     </div>
     <div class="remote-volume-row">
       {{ icon("volume-2", "icon-sm") }}

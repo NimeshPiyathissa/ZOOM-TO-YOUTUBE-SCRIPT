@@ -369,7 +369,9 @@ $("rd-paste").addEventListener("click", async () => {
 
 const QUICK = {
   "focus-zoom": () => post("/api/window/focus", { which: "zoom" }).then((r) => toast("Focused: " + (r.title || "Zoom"))),
-  "focus-browser": () => post("/api/window/focus", { which: "browser" }).then((r) => toast("Focused: " + (r.title || "browser"))),
+  "open-browser": () => (window.zsOpenBrowser
+    ? window.zsOpenBrowser()
+    : post("/api/browser/open", {}).then((r) => toast("Browser opened at Google" + (r.signed_in_as ? " · signed in as " + r.signed_in_as : "")))),
   "zoom-join": () => post("/api/zoom/join").then(() => toast("Zoom join sent")),
   "zoom-leave": async () => {
     if (!(await confirmDialog("Leave the Zoom meeting? The stream keeps running on a plain slate.", { danger: true, confirmText: "Leave" }))) return;

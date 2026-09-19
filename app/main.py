@@ -1144,6 +1144,57 @@ async def api_browser_status(request: Request):
         return diag
 
 
+@app.post("/api/browser/open")
+async def api_browser_open(request: Request):
+    """"Browser" on the touch remote: put Google (or another https page)
+    on :99 in the profile that already holds the operator's Google
+    session, so it comes up signed in. Prefers navigating the kiosk tab
+    over DevTools (one window, YouTube controls keep working); when no
+    controllable kiosk exists, open-browser.sh opens a window in that
+    same profile. Reports which account the page shows, masked."""
+    session = deps.require_session_api(request)
+    deps.require_csrf(request, session)
+    deps.require_rate_limit(session, "browser_open", max_calls=6, window_seconds=20)
+    body = await request.json()
+    raw_url = str(body.get("url") or control.BROWSER_HOME_URL).strip()
+    try:
+        url = await run_in_threadpool(url_security.validate_url, raw_url, "webpage")
+    except URLSecurityError as exc:
+        return _api_error(exc)
+    result: dict
+    try:
+        await cdp.probe()
+        await cdp.navigate(url)
+        try:
+            await run_in_threadpool(control.focus_window, "browser")
+        except control.ControlError:
+            pass
+        result = {"ok": True, "mode": "kiosk"}
+    except cdp.CDPError:
+        try:
+            result = await run_in_threadpool(control.open_browser_window, url)
+        except control.ControlError as exc:
+            return _api_error(exc)
+    # Signed-in identity, best effort: only readable through DevTools
+    # (kiosk) once the page has rendered its account button.
+    result["signed_in_as"] = None
+    if result.get("mode") == "kiosk":
+        for _ in range(8):
+            await asyncio.sleep(0.5)
+            try:
+                res = await cdp.evaluate(cdp.JS_GOOGLE_IDENTITY)
+            except cdp.CDPError:
+                break
+            val = res.get("value")
+            if val is None:
+                continue
+            result["signed_in_as"] = accounts_mod.mask_email(val) if val else "(account, email hidden)"
+            break
+    result["url"] = url
+    db.audit(session["username"], "browser_open", url, deps.client_ip(request))
+    return result
+
+
 @app.post("/api/zoom/dialog")
 async def api_zoom_dialog(request: Request):
     """list: pop-up dialogs Zoom has open; dismiss: close them via their

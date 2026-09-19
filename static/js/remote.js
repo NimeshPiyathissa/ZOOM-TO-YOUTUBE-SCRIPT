@@ -45,6 +45,7 @@ function renderProgram(d) {
   badge.className = "badge panel-state " + phaseBadgeClass(st.phase);
   document.getElementById("panel-state-text").textContent = PHASE_LABEL[st.phase] || st.phase;
   document.getElementById("panel-elapsed").textContent = st.phase === "LIVE" ? fmtUptime(st.uptime_seconds) : "";
+  document.getElementById("panel-preview").dataset.phase = st.phase;  // drives the monitor tally (remote.css)
 }
 
 let previewTimer = null;
@@ -251,6 +252,25 @@ document.getElementById("browser-conn-restart").addEventListener("click", async 
   await withLoading(e.currentTarget, async () => {
     try { await post("/api/units/browser-source/restart"); toast("Browser source restarting"); browserConnected = null; setTimeout(browserStatus, 4000); }
     catch (err) { toast(err.message, "err"); }
+  });
+});
+
+// "Open Google": google.com in the profile that already holds the
+// operator's Google session - navigates the kiosk tab when it's
+// controllable, otherwise opens a window in that same profile. The
+// server reports which account the page shows (masked) when it can.
+window.zsOpenBrowser = async function (url) {
+  const r = await post("/api/browser/open", url ? { url } : {});
+  const who = r.signed_in_as ? " · signed in as " + r.signed_in_as : (r.mode === "kiosk" ? " · no Google sign-in on this profile" : "");
+  const where = r.mode === "kiosk" ? "Google loaded in the browser" : r.mode === "handoff" ? "Google opened in a new browser window" : "Browser opened at Google";
+  toast(where + who);
+  const idEl = document.getElementById("browser-identity");
+  if (idEl) idEl.textContent = r.signed_in_as ? "Signed in as " + r.signed_in_as : (r.mode === "kiosk" ? "Not signed in - sign in once on the remote screen; it persists." : "");
+  return r;
+};
+document.getElementById("browser-open-google").addEventListener("click", async (e) => {
+  await withLoading(e.currentTarget, async () => {
+    try { await window.zsOpenBrowser(); } catch (err) { toast(err.message, "err"); }
   });
 });
 

@@ -699,6 +699,8 @@ def zoom_quit_to_slate() -> list[dict]:
 
 FOCUS_WINDOW_SCRIPT = config.STREAM_SCRIPTS_DIR / "focus-window.sh"
 VNC_RATE_SCRIPT = config.STREAM_SCRIPTS_DIR / "set-vnc-rate.sh"
+OPEN_BROWSER_SCRIPT = config.STREAM_SCRIPTS_DIR / "open-browser.sh"
+BROWSER_HOME_URL = "https://www.google.com/"
 FOCUS_TARGETS = {"zoom", "browser"}
 VNC_RATES = {"fast", "slow"}
 
@@ -715,6 +717,24 @@ def focus_window(which: str) -> dict:
         raise ControlError("focus-window produced no result")
     if not data.get("ok"):
         raise ControlError(data.get("error") or "could not focus that window")
+    return data
+
+
+def open_browser_window(url: str) -> dict:
+    """Open `url` on :99 in the Chrome profile that holds the operator's
+    Google session (scripts/open-browser.sh): handed to the running
+    kiosk when one holds that profile, otherwise an ordinary Chrome
+    window. The caller (main.api_browser_open) tries DevTools navigation
+    first; this is the path for when no controllable kiosk exists."""
+    if not url.startswith(("http://", "https://")):
+        raise ControlError("only http(s) URLs can be opened")
+    proc = run_as_zoombot([SUDO, "-u", config.ZOOMBOT_USER, str(OPEN_BROWSER_SCRIPT), url], timeout=20)
+    try:
+        data = json.loads(proc.stdout.decode(errors="replace").strip().splitlines()[-1])
+    except (json.JSONDecodeError, IndexError):
+        raise ControlError("open-browser produced no result")
+    if not data.get("ok"):
+        raise ControlError(data.get("error") or "could not open the browser")
     return data
 
 

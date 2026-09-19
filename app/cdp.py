@@ -110,6 +110,17 @@ async def evaluate(expression: str, user_gesture: bool = False) -> dict:
 # top-level frame directly to the YouTube URL itself.
 _FIND_VIDEO = "document.querySelector('video')"
 
+# Which Google account a google.com / youtube.com page is showing as
+# signed in: the account button's accessible name ("Google Account: Name
+# (email)"). Read-only DOM text, masked before it leaves the server
+# (accounts.mask_email) - never a cookie or token.
+JS_GOOGLE_IDENTITY = (
+    "(() => { const a = document.querySelector('a[aria-label^=\"Google Account\"], "
+    "button[aria-label^=\"Google Account\"], #avatar-btn'); if (!a) return null; "
+    r"const m = /\(([^()\s]+@[^()\s]+)\)/.exec(a.getAttribute('aria-label') || ''); "
+    "return m ? m[1] : ''; })()"
+)
+
 JS_PLAY = f"(() => {{ const v = {_FIND_VIDEO}; if (!v) return false; v.play(); return true; }})()"
 JS_PAUSE = f"(() => {{ const v = {_FIND_VIDEO}; if (!v) return false; v.pause(); return true; }})()"
 JS_ENSURE_UNMUTED = (
