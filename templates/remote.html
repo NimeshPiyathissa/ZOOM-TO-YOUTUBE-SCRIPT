@@ -18,6 +18,22 @@
         <span class="hint tnum panel-preview-age" id="panel-preview-age"></span>
       </div>
     </div>
+    <!-- Canvas alert: anything sitting on :99 that Zoom won't recover from
+         by itself (expired link, ended, removed, waiting room, passcode...)
+         or a Zoom window covering a non-Zoom source. Shown whatever the
+         active source is - this is about what viewers see. -->
+    <div class="banner banner-warning mt-3 canvas-alert" id="canvas-alert" hidden role="status" aria-live="polite">
+      {{ icon("alert-triangle") }}
+      <div class="canvas-alert-body">
+        <div><strong id="canvas-alert-title"></strong> <span id="canvas-alert-detail"></span></div>
+        <div class="hint mt-1" id="canvas-alert-action"></div>
+        <div class="btn-row mt-2">
+          <button id="canvas-dismiss" class="btn btn-secondary btn-touch" hidden>{{ icon("x") }}Dismiss dialog</button>
+          <button id="canvas-quit-zoom" class="btn btn-secondary btn-touch">{{ icon("door-open") }}Quit Zoom → slate</button>
+          <button id="canvas-rejoin" class="btn btn-ghost btn-touch" hidden>{{ icon("rotate-cw") }}Rejoin</button>
+        </div>
+      </div>
+    </div>
     <div class="remote-action-row mt-3 panel-program-row">
       <button id="r-go-live" class="btn btn-primary btn-touch">{{ icon("play") }}Go Live</button>
       <button id="r-stop" class="btn btn-danger btn-touch" hidden>{{ icon("square") }}Stop</button>
@@ -72,6 +88,14 @@
       <div class="hint mt-1">Takes effect the next time this source is switched to or the browser restarts.</div>
     </div>
 
+    <!-- Browser connection: read from Chrome's DevTools endpoint, with the
+         concrete reason + fix when it isn't reachable (control.browser_diagnosis). -->
+    <div class="browser-conn mb-3" id="browser-conn" aria-live="polite">
+      <span class="badge badge-inactive" id="browser-conn-badge"><span class="dot"></span><span id="browser-conn-text">checking browser…</span></span>
+      <span class="hint" id="browser-conn-detail"></span>
+      <button id="browser-conn-restart" class="btn btn-secondary btn-sm" hidden>{{ icon("rotate-cw", "icon-sm") }}Restart browser source</button>
+    </div>
+
     <div class="banner banner-warning mb-3" id="yt-diagnosis" hidden>
       {{ icon("alert-triangle") }}
       <div>
@@ -97,6 +121,7 @@
       <button id="r-yt-next" class="btn btn-secondary btn-touch btn-icon" aria-label="Next saved link">{{ icon("skip-forward") }}</button>
       <button id="r-yt-mute" class="btn btn-secondary btn-touch btn-icon" aria-label="Mute player" aria-pressed="false">{{ icon("volume-2") }}</button>
       <button id="r-yt-theater" class="btn btn-secondary btn-touch btn-icon" aria-label="Toggle theater mode">{{ icon("monitor") }}</button>
+      <button id="r-yt-fullscreen" class="btn btn-secondary btn-touch btn-icon" aria-label="Toggle player fullscreen">{{ icon("maximize") }}</button>
     </div>
     <div class="remote-volume-row">
       {{ icon("volume-2", "icon-sm") }}
@@ -197,6 +222,7 @@
         <div class="meter-peak" id="stream-meter-peak"></div>
       </div>
       <div class="mixer-readout"><span class="tnum" id="stream-meter-db">— dBFS</span><span class="hint" id="stream-meter-note">meter starts when the panel is open</span></div>
+      <div class="hint mt-1" id="stream-sink-note"></div>
       <div class="remote-volume-row">
         {{ icon("volume-2", "icon-sm") }}
         <input type="range" id="r-stream-volume" class="slider" min="0" max="150" value="100" aria-label="Stream audio volume (percent)">
@@ -211,7 +237,17 @@
         </div>
         <button id="r-zoom-mic" class="btn btn-secondary btn-touch btn-icon" aria-pressed="false" aria-label="Toggle Zoom microphone">{{ icon("mic") }}</button>
       </div>
-      <div class="hint">No microphone hardware exists on this VPS - this toggles Zoom's own reported mic status (what other participants see), so there is no level to meter here.</div>
+      <div class="hint">No microphone hardware exists on this VPS: Zoom's mic is a silent virtual source (<span class="mono">bot_mic</span>), so unmuting is harmless and never echoes the stream. The state shown is read back from Zoom's own toolbar, not assumed.</div>
+    </div>
+    <div class="mixer-channel audio-selftest mt-3">
+      <div class="mixer-head">
+        <div class="audio-card-label">
+          <span class="audio-card-title">Audio self-test</span>
+          <span class="audio-card-hint">Plays a 6 s tone into the stream sink, records it through the encoder graph, measures the file</span>
+        </div>
+        <button id="r-audio-selftest" class="btn btn-secondary btn-touch">{{ icon("music") }}Run</button>
+      </div>
+      <div class="hint mt-1 mono" id="r-audio-selftest-result"></div>
     </div>
   </section>
 

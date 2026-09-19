@@ -116,7 +116,7 @@ async function pollLevel() {
   fill.style.setProperty("--level", rmsPct.toFixed(1) + "%"); fill.style.setProperty("--level-frac", String(Math.max(rmsPct / 100, 0.0001)));
   peak.style.setProperty("--peak", peakPct.toFixed(1) + "%");
   db.textContent = lv.rms_db.toFixed(0) + " dBFS rms · peak " + lv.peak_db.toFixed(0);
-  note.textContent = lv.peak_db > -1 ? "clipping" : lv.rms_db < -50 ? "near silence" : "";
+  note.textContent = lv.peak_db > -1 ? "clipping" : lv.rms_db < -50 ? "near silence (see note below)" : "";
   meter.setAttribute("aria-valuenow", String(Math.round(lv.rms_db)));
 }
 
@@ -152,7 +152,7 @@ function showContextPanel() {
     ytPoll(); ytTimer = setInterval(ytPoll, 2000);
   } else if (s.type === "zoom") {
     document.getElementById("zoom-registration").hidden = !(s.link_kind === "registration");
-    zoomPoll(); zoomTimer = setInterval(zoomPoll, 5000);
+    canvasPoll();  // the always-on canvas poll (below) also feeds this panel
   } else if (s.type === "direct") {
     document.getElementById("direct-url").textContent = s.url;
     const o = s.options || {};
@@ -219,14 +219,51 @@ seek.addEventListener("change", async () => {
 });
 seek.addEventListener("input", () => { document.getElementById("yt-cur").textContent = fmtTime(seek.value); });
 
+// Browser connection line: "connected to Chrome/N - <page>" or the
+// concrete reason it isn't (stale launch without the port, unit down,
+// still starting, ...) plus the one-tap fix, straight from
+// /api/browser/status. Re-queried whenever reachability flips.
+let browserConnected = null;
+async function browserStatus() {
+  let b;
+  try { b = await apiFetch("/api/browser/status"); } catch (err) { return; }
+  const badge = document.getElementById("browser-conn-badge"), text = document.getElementById("browser-conn-text");
+  const detail = document.getElementById("browser-conn-detail"), restart = document.getElementById("browser-conn-restart");
+  if (b.connected) {
+    badge.className = "badge badge-active";
+    text.textContent = "Connected to " + (b.browser || "Chrome");
+    detail.textContent = b.title ? "showing: " + b.title : "";
+    restart.hidden = true;
+  } else {
+    badge.className = "badge " + (b.code === "starting" ? "badge-activating" : "badge-failed");
+    text.textContent = b.code === "starting" ? "Browser starting…" : "Browser not reachable";
+    detail.textContent = (b.reason || "") + (b.fix ? " " + b.fix : "");
+    restart.hidden = !b.can_restart;
+  }
+}
+document.getElementById("browser-conn-restart").addEventListener("click", async (e) => {
+  const live = streamPhase === "LIVE" || streamPhase === "RECONNECTING";
+  if (!(await confirmDialog(live
+      ? "Restart the browser source while LIVE? Viewers see the page reload for a few seconds; the encoder keeps running."
+      : "Restart the browser source? Chrome relaunches with the control port.", { confirmText: "Restart" }))) return;
+  await withLoading(e.currentTarget, async () => {
+    try { await post("/api/units/browser-source/restart"); toast("Browser source restarting"); browserConnected = null; setTimeout(browserStatus, 4000); }
+    catch (err) { toast(err.message, "err"); }
+  });
+});
+
 async function ytPoll() {
   let st;
   try { st = await apiFetch("/api/youtube/state"); } catch (err) { return; }
   const diag = document.getElementById("yt-diagnosis");
+  if (st.available !== browserConnected) { browserConnected = st.available; browserStatus(); }
   if (!st.available) {
-    document.getElementById("yt-title").textContent = "Browser source not reachable: " + (st.reason || "").replace(/\(.*\)$/, "");
+    document.getElementById("yt-title").textContent = "No player - browser not reachable (see above).";
     diag.hidden = true; return;
   }
+  const fsBtn = document.getElementById("r-yt-fullscreen");
+  fsBtn.setAttribute("aria-pressed", String(!!st.fullscreen));
+  fsBtn.classList.toggle("btn-primary", !!st.fullscreen); fsBtn.classList.toggle("btn-secondary", !st.fullscreen);
   document.getElementById("yt-title").textContent = st.has_video ? (st.title || "Playing") : "No player on the current page";
   document.getElementById("yt-quality").textContent = st.quality ? `quality ${st.quality}` : "quality —";
   if (st.has_video) {
@@ -247,7 +284,7 @@ async function ytPoll() {
     diag.hidden = false;
     document.getElementById("yt-diagnosis-msg").textContent = st.diagnosis.message;
     document.getElementById("yt-diagnosis-fix").textContent = st.diagnosis.fix;
-    document.getElementById("yt-diagnosis-link").hidden = st.diagnosis.kind === "playback_error";
+    document.getElementById("yt-diagnosis-link").hidden = st.diagnosis.kind === "playback_error" || st.diagnosis.kind === "bot_check";
   } else diag.hidden = true;
 }
 
@@ -258,6 +295,7 @@ const ytControl = (action, extra) => async (e) => {
 document.getElementById("r-yt-play").addEventListener("click", ytControl("play"));
 document.getElementById("r-yt-pause").addEventListener("click", ytControl("pause"));
 document.getElementById("r-yt-theater").addEventListener("click", ytControl("theater"));
+document.getElementById("r-yt-fullscreen").addEventListener("click", ytControl("fullscreen"));
 document.getElementById("r-yt-mute").addEventListener("click", (e) => {
   const muted = e.currentTarget.getAttribute("aria-pressed") === "true";
   return ytControl(muted ? "unmute" : "mute")(e);
@@ -344,29 +382,85 @@ document.getElementById("r-yt-next").addEventListener("click", () => {
 
 const ZOOM_STATUS_LABEL = {
   not_joined: "Not joined", connecting: "Connecting…", waiting_room: "In waiting room", not_started: "Host hasn't started",
-  in_meeting: "In meeting", ended: "Meeting ended", passcode_required: "Passcode required",
+  in_meeting: "In meeting", ended: "Meeting ended", expired: "Link expired", passcode_required: "Passcode required",
   registration_required: "Registration required", removed: "Removed by host", join_failed: "Could not join", unknown: "Unknown",
 };
 const ZOOM_STATUS_CLASS = { in_meeting: "badge-active", connecting: "badge-activating", waiting_room: "badge-activating", not_started: "badge-activating",
-  ended: "badge-inactive", not_joined: "badge-inactive", unknown: "badge-inactive", passcode_required: "badge-failed", registration_required: "badge-failed", removed: "badge-failed", join_failed: "badge-failed" };
+  ended: "badge-inactive", not_joined: "badge-inactive", unknown: "badge-inactive", expired: "badge-failed", passcode_required: "badge-failed", registration_required: "badge-failed", removed: "badge-failed", join_failed: "badge-failed" };
 
+// Mic/camera buttons show what Zoom *reports* (its own toolbar button,
+// read over AT-SPI): muted / unmuted / no audio / unknown. Never the
+// state we'd expect after a keystroke.
+const MIC_STATE_LABEL = { muted: "Mic muted", unmuted: "Mic live", no_audio: "Mic: no audio joined", unknown: "Mic: unknown" };
+const CAM_STATE_LABEL = { off: "Camera off", on: "Camera on", unknown: "Camera: unknown" };
 function paintZoomReadback(which, verify) {
   const btn = document.getElementById(which === "mic" ? "z-mic" : "z-camera");
-  const iconOn = which === "mic" ? "mic" : "video", iconOff = which === "mic" ? "mic-off" : "eye-off";
-  if (verify && verify.available) {
-    btn.innerHTML = icon(verify.on ? iconOn : iconOff) + `<span>${which === "mic" ? "Mic" : "Camera"} ${verify.on ? "on" : "off"}</span>`;
-    btn.setAttribute("aria-pressed", String(!verify.on));
-    btn.classList.toggle("btn-danger", !verify.on); btn.classList.toggle("btn-secondary", verify.on);
-  } else {
-    btn.innerHTML = icon(iconOn) + `<span>${which === "mic" ? "Mic" : "Camera"} (unverified)</span>`;
-    btn.removeAttribute("aria-pressed");
-    btn.classList.remove("btn-danger"); btn.classList.add("btn-secondary");
-  }
+  const state = (verify && verify.available && verify.state) || "unknown";
+  const labels = which === "mic" ? MIC_STATE_LABEL : CAM_STATE_LABEL;
+  const off = which === "mic" ? (state === "muted" || state === "no_audio") : state === "off";
+  const known = state !== "unknown";
+  btn.innerHTML = icon(which === "mic" ? (off ? "mic-off" : "mic") : (off ? "eye-off" : "video")) + `<span>${labels[state] || labels.unknown}</span>`;
+  if (known) btn.setAttribute("aria-pressed", String(off)); else btn.removeAttribute("aria-pressed");
+  btn.classList.toggle("btn-danger", known && off); btn.classList.toggle("btn-secondary", !(known && off));
 }
 
-async function zoomPoll() {
+// ---- canvas alert: polled for every source type (this is about what
+// is physically on :99, e.g. a dead Zoom dialog on top of the browser).
+let canvasTimer = null, lastZoomStatus = null;
+const CANVAS_TITLE = {
+  expired: "Zoom: link expired.", join_failed: "Zoom could not join.", removed: "Zoom: removed by host.", ended: "Zoom: meeting ended.",
+  passcode_required: "Zoom needs a passcode.", registration_required: "Zoom needs registration.", waiting_room: "Zoom: in the waiting room.",
+  not_started: "Zoom: host hasn't started.",
+};
+function renderCanvasAlert(st) {
+  const box = document.getElementById("canvas-alert");
+  const covering = st.covers_canvas && !(st.status === "not_joined" && st.service === "STOPPED");
+  const show = st.terminal || covering;
+  box.hidden = !show;
+  if (!show) return;
+  const title = st.terminal ? CANVAS_TITLE[st.status] || "Zoom needs attention." : "Zoom is on top of the " + (st.source_type || "active") + " source.";
+  document.getElementById("canvas-alert-title").textContent = title;
+  document.getElementById("canvas-alert-detail").textContent = st.terminal ? (st.detail || "") : "Its window is covering what the active source draws - viewers see Zoom, not the page.";
+  document.getElementById("canvas-alert-action").textContent = st.terminal ? (st.action || "") : "Quit Zoom to clear the canvas, or switch the active source to Zoom.";
+  document.getElementById("canvas-dismiss").hidden = !(st.dialogs && st.dialogs.length);
+  document.getElementById("canvas-rejoin").hidden = !(st.terminal && st.source_type === "zoom");
+}
+async function canvasPoll() {
+  if (document.hidden) return;
   let st;
   try { st = await apiFetch("/api/zoom/status"); } catch (err) { return; }
+  lastZoomStatus = st;
+  renderCanvasAlert(st);
+  if (!document.getElementById("ctx-zoom").hidden) renderZoomPanel(st);
+  if (st.mic) paintZoomMic(st.mic);
+}
+document.getElementById("canvas-dismiss").addEventListener("click", async (e) => {
+  await withLoading(e.currentTarget, async () => {
+    try {
+      const r = await post("/api/zoom/dialog", { action: "dismiss" });
+      const n = (r.dismissed || []).length;
+      toast(n ? `Dismissed: ${r.dismissed.map((d) => d.title).join(", ")}` : "No dialog could be dismissed", n ? "ok" : "err");
+      setTimeout(canvasPoll, 800);
+    } catch (err) { toast(err.message, "err"); }
+  });
+});
+document.getElementById("canvas-quit-zoom").addEventListener("click", async (e) => {
+  if (!(await confirmDialog("Quit Zoom and show the plain slate on the canvas? The encoder keeps running.", { confirmText: "Quit Zoom" }))) return;
+  await withLoading(e.currentTarget, async () => {
+    try { await post("/api/zoom/quit-to-slate"); toast("Zoom stopped - canvas on slate"); setTimeout(canvasPoll, 1500); }
+    catch (err) { toast(err.message, "err"); }
+  });
+});
+document.getElementById("canvas-rejoin").addEventListener("click", async (e) => {
+  if (!(await confirmDialog("Rejoin the meeting? Zoom restarts and joins again."))) return;
+  await withLoading(e.currentTarget, async () => {
+    try { await post("/api/zoom/rejoin"); toast("Rejoin sent"); setTimeout(canvasPoll, 4000); } catch (err) { toast(err.message, "err"); }
+  });
+});
+
+async function zoomPoll() { return canvasPoll(); }
+
+function renderZoomPanel(st) {
   const badge = document.getElementById("zoom-status-badge");
   badge.className = "badge " + (ZOOM_STATUS_CLASS[st.status] || "badge-inactive");
   document.getElementById("zoom-status-text").textContent = ZOOM_STATUS_LABEL[st.status] || st.status;
@@ -378,8 +472,8 @@ async function zoomPoll() {
   if (!(st.mic && st.mic.available)) unverified.push("mic");
   if (!(st.camera && st.camera.available)) unverified.push("camera");
   document.getElementById("zoom-readback").textContent = unverified.length
-    ? `Readback unavailable for ${unverified.join(" and ")}: ${(st.mic && st.mic.reason) || ""} - buttons still send the shortcut.`
-    : "Mic/camera state read from Zoom's accessibility labels (best-effort).";
+    ? `State unknown for ${unverified.join(" and ")} (${(st.mic && st.mic.reason) || (st.camera && st.camera.reason) || ""}) - buttons still send Zoom's shortcut.`
+    : `Read back from Zoom's own toolbar buttons: "${st.mic.name || ""}" / "${st.camera.name || ""}".`;
 }
 
 const zoomShortcut = (action) => async (e) => {
@@ -478,28 +572,72 @@ streamAudioBtn.addEventListener("click", async () => {
 });
 
 const zoomMicBtn = document.getElementById("r-zoom-mic"), zoomMicHint = document.getElementById("r-zoom-mic-hint");
+// Muted / Unmuted / No audio / Unknown - exactly what Zoom's own toolbar
+// button says (read over AT-SPI after the shortcut), never an assumption
+// that the keystroke landed.
 function paintZoomMic(verify) {
-  if (verify && verify.available) {
-    zoomMicBtn.innerHTML = icon(verify.muted ? "mic-off" : "mic"); zoomMicBtn.setAttribute("aria-pressed", String(verify.muted));
-    zoomMicHint.textContent = verify.muted ? "Confirmed muted (accessibility check)" : "Confirmed unmuted (accessibility check)";
-  } else {
-    zoomMicBtn.innerHTML = icon("mic"); zoomMicBtn.removeAttribute("aria-pressed");
-    zoomMicHint.textContent = "Sent - can't confirm the resulting state yet";
-  }
+  const state = (verify && verify.available && verify.state) || "unknown";
+  const muted = state === "muted" || state === "no_audio";
+  zoomMicBtn.innerHTML = icon(muted ? "mic-off" : "mic");
+  zoomMicBtn.classList.toggle("btn-danger", state === "unmuted"); zoomMicBtn.classList.toggle("btn-secondary", state !== "unmuted");
+  if (state === "unknown") zoomMicBtn.removeAttribute("aria-pressed"); else zoomMicBtn.setAttribute("aria-pressed", String(muted));
+  zoomMicHint.textContent = {
+    muted: "Muted - read back from Zoom (\"" + (verify.name || "Unmute") + "\" button showing)",
+    unmuted: "UNMUTED - read back from Zoom (\"" + (verify.name || "Mute") + "\" button showing)",
+    no_audio: "No audio joined - Zoom shows \"Join Audio\", so the mic can't be live",
+    unknown: "Unknown - " + ((verify && verify.reason) || "Zoom's toolbar isn't readable right now"),
+  }[state];
 }
 zoomMicBtn.addEventListener("click", async () => {
   await withLoading(zoomMicBtn, async () => {
-    try { const d = await post("/api/audio/zoom-mic/toggle"); paintZoomMic(d.verify); toast("Sent mute/unmute to Zoom"); announce("Toggled Zoom mic"); }
-    catch (err) { toast(err.message, "err"); }
+    try {
+      const d = await post("/api/audio/zoom-mic/toggle"); paintZoomMic(d.verify);
+      const s = d.verify && d.verify.available ? d.verify.state : "unknown";
+      toast(s === "unknown" ? "Sent Alt+A to Zoom - state couldn't be read back" : "Zoom mic now: " + s.replace("_", " "), s === "unknown" ? "err" : "ok");
+      announce("Zoom mic " + s.replace("_", " "));
+    } catch (err) { toast(err.message, "err"); }
+  });
+});
+
+// Sink note: whether anything is actually playing into the stream sink -
+// the difference between "silent because nothing is playing" and
+// "silent although a source is connected" (or "muted").
+let sinkTimer = null;
+async function pollSink() {
+  if (document.hidden) return;
+  let d; try { d = await apiFetch("/api/audio/stream"); } catch (err) { return; }
+  paintStreamAudio(d.muted, d.volume);
+  const note = document.getElementById("stream-sink-note");
+  if (d.muted) note.textContent = "Stream audio is MUTED - viewers hear nothing regardless of the source.";
+  else if (!d.input_streams) note.textContent = "Nothing is playing into the stream sink right now (zoom_out has no active input) - a silent meter here is expected, not a fault.";
+  else note.textContent = `${d.input_streams} app${d.input_streams === 1 ? "" : "s"} feeding the stream sink (${(d.sink_state || "").toLowerCase()}).`;
+}
+
+document.getElementById("r-audio-selftest").addEventListener("click", async (e) => {
+  const live = streamPhase === "LIVE" || streamPhase === "RECONNECTING";
+  if (live) { toast("Not while live - the test tone would go out to viewers. Stop the stream first.", "err"); return; }
+  if (!(await confirmDialog("Run the audio self-test? A 6-second 440 Hz tone is played into the stream sink and recorded through the encoder graph (~12 s).", { confirmText: "Run test" }))) return;
+  const out = document.getElementById("r-audio-selftest-result");
+  out.textContent = "running…";
+  await withLoading(e.currentTarget, async () => {
+    try {
+      const r = await post("/api/audio/selftest");
+      if (r.error) { out.textContent = r.error; toast(r.error, "err"); return; }
+      out.textContent = `${r.ok ? "PASS" : "FAIL"} - meter peak ${r.meter_peak_db} dBFS · recorded file mean ${r.file_mean_volume_db} dB / max ${r.file_max_volume_db} dB (${r.file_audio_codec})`;
+      toast(r.ok ? "Audio path OK: tone reached the meter and the recording" : "Audio self-test failed - see result", r.ok ? "ok" : "err");
+    } catch (err) { out.textContent = err.message; toast(err.message, "err"); }
   });
 });
 
 // ---------------------------------------------------------------- init
 
-apiFetch("/api/audio/stream").then((d) => paintStreamAudio(d.muted, d.volume)).catch(() => {});
+pollSink(); sinkTimer = setInterval(pollSink, 5000);
 pollPreview(); previewTimer = setInterval(pollPreview, 3000);
 pollLevel(); levelTimer = setInterval(pollLevel, 1000);
-apiFetch("/api/audio/zoom-mic").then(paintZoomMic).catch(() => {});
+// Zoom status is polled whatever the active source is: it drives the
+// canvas alert (a Zoom dialog on top of the browser is a program-panel
+// problem, not a Zoom-panel one) and the mixer's mic readback.
+canvasPoll(); canvasTimer = setInterval(canvasPoll, 5000);
 paintTiles();
 showContextPanel();
-document.addEventListener("visibilitychange", () => { if (document.hidden) stopPanelPolls(); else showContextPanel(); });
+document.addEventListener("visibilitychange", () => { if (document.hidden) stopPanelPolls(); else { showContextPanel(); canvasPoll(); pollSink(); } });

@@ -521,8 +521,6 @@ def account_profile_action(action: str, profile_id: str, timeout: int = 20) -> s
 # ---------------------------------------------------------------- touch remote / media control (Part 3)
 
 STREAM_AUDIO_SCRIPT = config.STREAM_SCRIPTS_DIR / "set-stream-audio.sh"
-ZOOM_MIC_TOGGLE_SCRIPT = config.STREAM_SCRIPTS_DIR / "toggle-zoom-mic.sh"
-ZOOM_MIC_ATSPI_SCRIPT = config.STREAM_SCRIPTS_DIR / "zoom-mic-atspi-check.py"
 PYTHON3_BIN = "/usr/bin/python3"
 XSETROOT_BIN = "/usr/bin/xsetroot"
 SLATE_COLOR = "#0b0f14"  # matches the dashboard's own dark background token
@@ -533,7 +531,10 @@ def stream_audio_action(action: str, volume: int | None = None) -> dict:
     zoom_out sink ffmpeg captures from - never touches ffmpeg or the RTMP
     connection. Always returns the real state read back from pactl, not
     the state the caller asked for, in case the write silently didn't
-    take. Returns {"muted": bool, "volume": 0-150}."""
+    take. Returns {"muted": bool, "volume": 0-150, "sink_state":
+    RUNNING|IDLE|SUSPENDED, "input_streams": n} - the last two are how
+    the mixer tells "nothing is playing into the sink" (SUSPENDED / 0)
+    apart from "something is playing but it's quiet"."""
     if action not in ("mute", "unmute", "status", "volume"):
         raise ControlError(f"invalid stream-audio action: {action}")
     argv = [SUDO, "-u", config.ZOOMBOT_USER, str(STREAM_AUDIO_SCRIPT), action]
@@ -546,98 +547,248 @@ def stream_audio_action(action: str, volume: int | None = None) -> dict:
     if proc.returncode != 0 or not out or out[0] not in ("muted", "unmuted"):
         raise ControlError("failed to read/set stream audio: " + proc.stderr.decode(errors="replace").strip())
     vol = int(out[1]) if len(out) > 1 and out[1].isdigit() else 100
-    return {"muted": out[0] == "muted", "volume": vol}
+    sink_state = out[2] if len(out) > 2 else "UNKNOWN"
+    streams = int(out[3]) if len(out) > 3 and out[3].isdigit() else 0
+    return {"muted": out[0] == "muted", "volume": vol, "sink_state": sink_state, "input_streams": streams}
 
 
-def zoom_mic_state_heuristic() -> dict:
-    """Best-effort, NON-authoritative read of Zoom's own reported mic
-    mute state via AT-SPI - same spirit and same honesty as
-    zoom_session_heuristic() above, for the same reason: Zoom doesn't
-    expose a documented, reliable "am I muted" query. Zoom's Qt client
-    only exposes an AT-SPI tree at all when launched with
-    QT_LINUX_ACCESSIBILITY_ALWAYS_ON=1 (see systemd/zoom.service) - until
-    that unit is next restarted with this env var, this always reports
-    unavailable, honestly, rather than guessing."""
-    argv = [SUDO, "-u", config.ZOOMBOT_USER, PYTHON3_BIN, str(ZOOM_MIC_ATSPI_SCRIPT)]
+AUDIO_SELFTEST_SCRIPT = config.STREAM_SCRIPTS_DIR / "audio-selftest.sh"
+
+
+def audio_selftest() -> dict:
+    """Tone -> zoom_out -> meter + ffmpeg capture -> file -> volumedetect.
+    The script itself refuses to run while ffmpeg-stream is active (the
+    tone would go out to viewers), so this never needs a force path."""
+    proc = run_as_zoombot([SUDO, "-u", config.ZOOMBOT_USER, str(AUDIO_SELFTEST_SCRIPT)], timeout=60)
     try:
-        proc = run_as_zoombot(argv, timeout=10)
-    except ControlError:
-        return {"available": False, "reason": "check did not run"}
-    out = proc.stdout.decode(errors="replace").strip()
-    if out.startswith("label:"):
-        label = out[len("label:"):].lower()
-        # UI convention (unverified for Zoom specifically): a button
-        # labeled "unmute ..." offers to unmute, meaning current state is
-        # muted, and vice versa.
-        if "unmute" in label:
-            return {"available": True, "authoritative": False, "muted": True, "raw_label": label}
-        if "mute" in label:
-            return {"available": True, "authoritative": False, "muted": False, "raw_label": label}
-    return {"available": False, "reason": out or "no output from check"}
+        data = json.loads(proc.stdout.decode(errors="replace").strip().splitlines()[-1])
+    except (json.JSONDecodeError, IndexError):
+        raise ControlError("audio self-test produced no result: " + proc.stderr.decode(errors="replace")[-300:])
+    return data
 
+
+# --- Zoom readback: AT-SPI, and honest about it. --------------------------
+#
+# Zoom's Linux client has no local API; the accessibility tree (exposed
+# because systemd/zoom.service sets QT_LINUX_ACCESSIBILITY_ALWAYS_ON=1,
+# confirmed live on this box 2026-09-19) is the only way to read Zoom's
+# *own* idea of its state instead of assuming a keystroke landed. Every
+# function here returns state="unknown" with a reason rather than a
+# guess when the control can't be found.
 
 ZOOM_SHORTCUT_SCRIPT = config.STREAM_SCRIPTS_DIR / "zoom-shortcut.sh"
 ZOOM_ATSPI_SCRIPT = config.STREAM_SCRIPTS_DIR / "zoom-atspi.py"
 ZOOM_STATUS_SCRIPT = config.STREAM_SCRIPTS_DIR / "zoom-status.py"
+ZOOM_DIALOG_SCRIPT = config.STREAM_SCRIPTS_DIR / "zoom-dialog.py"
 ZOOM_SHORTCUT_ACTIONS = {"mic", "camera", "view-speaker", "view-gallery"}
+ZOOM_ATSPI_QUERIES = {"mic", "camera", "buttons"}
 
 
 def _zoom_atspi(query: str) -> dict:
-    """Best-effort AT-SPI read (mic/camera button labels). Same honesty
-    contract as zoom_mic_state_heuristic(): available=False until
-    zoom.service runs with QT_LINUX_ACCESSIBILITY_ALWAYS_ON=1, and even
-    then Zoom's label wording is unverified."""
+    """{"available": bool, "state": muted|unmuted|no_audio|on|off|unknown,
+    "name": <Zoom's own button label>, "reason": <why unavailable>}."""
+    if query not in ZOOM_ATSPI_QUERIES:
+        raise ControlError(f"invalid atspi query: {query}")
     argv = [SUDO, "-u", config.ZOOMBOT_USER, PYTHON3_BIN, str(ZOOM_ATSPI_SCRIPT), query]
     try:
-        proc = run_as_zoombot(argv, timeout=10)
-    except ControlError:
-        return {"available": False, "reason": "check did not run"}
-    out = proc.stdout.decode(errors="replace").strip()
-    if out.startswith("label:"):
-        label = out[len("label:"):].lower()
-        if query == "mic":
-            on = not ("unmute" in label)
-        else:  # camera: "start video" means it's currently off
-            on = not ("start" in label)
-        return {"available": True, "authoritative": False, "on": on, "raw_label": label}
-    return {"available": False, "reason": out or "no output"}
+        proc = run_as_zoombot(argv, timeout=12)
+        data = json.loads(proc.stdout.decode(errors="replace").strip().splitlines()[-1])
+    except (ControlError, json.JSONDecodeError, IndexError):
+        return {"available": False, "state": "unknown", "reason": "check did not run"}
+    data.setdefault("available", False)
+    data.setdefault("state", "unknown")
+    data["authoritative"] = False
+    return data
+
+
+def zoom_mic_state() -> dict:
+    """Zoom's reported mic state: muted / unmuted / no_audio (bot hasn't
+    joined audio, so it can't be unmuted) / unknown."""
+    return _zoom_atspi("mic")
 
 
 def zoom_shortcut(action: str) -> dict:
     """Sends one of Zoom's own keyboard shortcuts to the meeting window
-    (Alt+A mic, Alt+V camera, Alt+F1/F2 view), then reads back what can
-    be read back. `verify.available` says whether that readback means
-    anything right now."""
+    (Alt+A mic, Alt+V camera, Alt+F1/F2 view), then reads the resulting
+    state back from Zoom's accessibility tree. `verify.available` says
+    whether that readback means anything right now; `verify.state` is
+    what Zoom reports, never what we assume."""
     if action not in ZOOM_SHORTCUT_ACTIONS:
         raise ControlError(f"invalid zoom action: {action}")
     argv = [SUDO, "-u", config.ZOOMBOT_USER, str(ZOOM_SHORTCUT_SCRIPT), action]
     proc = run_as_zoombot(argv, timeout=10)
     if proc.returncode != 0:
         raise ControlError(proc.stderr.decode(errors="replace").strip() or "zoom shortcut failed")
-    time.sleep(0.4)
-    verify = _zoom_atspi("mic") if action == "mic" else (_zoom_atspi("camera") if action == "camera" else {"available": False, "reason": "view mode has no readable state"})
+    time.sleep(0.5)
+    if action == "mic":
+        verify = _zoom_atspi("mic")
+    elif action == "camera":
+        verify = _zoom_atspi("camera")
+    else:
+        verify = {"available": False, "state": "unknown", "reason": "view mode has no readable state"}
     return {"sent": True, "action": action, "verify": verify}
 
 
+def zoom_mic_toggle() -> dict:
+    """Mixer-strip mic button: Alt+A to the Zoom window, then Zoom's own
+    reported state. Returns {"sent": True, "verify": {...state...}}."""
+    return zoom_shortcut("mic")
+
+
 def zoom_meeting_status() -> dict:
-    """Window-title + (when available) AT-SPI text heuristics for:
-    not_joined / connecting / waiting_room / in_meeting / ended /
-    passcode_required / registration_required / removed / unknown.
-    Explicitly non-authoritative - see scripts/zoom-status.py."""
+    """Window-title + AT-SPI text heuristics for not_joined / connecting /
+    waiting_room / in_meeting / ended / expired / passcode_required /
+    registration_required / removed / join_failed / unknown, plus
+    `terminal` (Zoom won't recover on its own), the pop-up `dialogs`
+    on screen, and `covers_canvas` when Zoom is up while the active
+    source isn't a Zoom source - i.e. it's sitting on top of the browser
+    (this exact situation went unnoticed for a day: the Zoom panel only
+    shows for Zoom sources). Explicitly non-authoritative."""
     argv = [SUDO, "-u", config.ZOOMBOT_USER, PYTHON3_BIN, str(ZOOM_STATUS_SCRIPT)]
     try:
         proc = run_as_zoombot(argv, timeout=15)
         data = json.loads(proc.stdout.decode(errors="replace").strip().splitlines()[-1])
     except (ControlError, json.JSONDecodeError, IndexError):
-        data = {"status": "unknown", "detail": "status check did not run"}
+        data = {"status": "unknown", "detail": "status check did not run", "dialogs": [], "terminal": False}
     data.setdefault("authoritative", False)
+    data.setdefault("dialogs", [])
+    data.setdefault("terminal", False)
     try:
         data["service"] = unit_show("zoom")["phase"]
     except ControlError:
         data["service"] = "unknown"
-    data["mic"] = _zoom_atspi("mic")
-    data["camera"] = _zoom_atspi("camera")
+    source_type = read_current_source().get("SOURCE_TYPE", "")
+    data["source_type"] = source_type
+    zoom_running = data["status"] != "not_joined" or data["service"] in (PHASE_LIVE, PHASE_STARTING)
+    data["covers_canvas"] = bool(zoom_running and source_type and source_type != "zoom"
+                                 and not (data["status"] == "not_joined" and data["service"] == PHASE_STOPPED))
+    if data["status"] in ("in_meeting", "waiting_room", "not_started", "connecting"):
+        data["mic"] = _zoom_atspi("mic")
+        data["camera"] = _zoom_atspi("camera")
+    else:
+        # No meeting window -> no toolbar -> nothing to read; say so
+        # without spending two AT-SPI walks on it.
+        data["mic"] = {"available": False, "state": "unknown", "reason": "not in a meeting"}
+        data["camera"] = {"available": False, "state": "unknown", "reason": "not in a meeting"}
     return data
+
+
+def zoom_dialog(action: str) -> dict:
+    """list: the Zoom pop-up dialogs on screen; dismiss: close them via
+    their own OK/Close button (AT-SPI action), Escape, then WM close -
+    see scripts/zoom-dialog.py for the safety rules on which buttons it
+    will and won't press."""
+    if action not in ("list", "dismiss"):
+        raise ControlError(f"invalid dialog action: {action}")
+    argv = [SUDO, "-u", config.ZOOMBOT_USER, PYTHON3_BIN, str(ZOOM_DIALOG_SCRIPT), action]
+    proc = run_as_zoombot(argv, timeout=20)
+    try:
+        return json.loads(proc.stdout.decode(errors="replace").strip().splitlines()[-1])
+    except (json.JSONDecodeError, IndexError):
+        raise ControlError("zoom-dialog produced no result: " + proc.stderr.decode(errors="replace")[-300:])
+
+
+def zoom_quit_to_slate() -> list[dict]:
+    """"Reset Zoom window": leave whatever Zoom is doing (stop
+    zoom.service - a clean leave) and put the plain slate on :99 so the
+    canvas is calm. Never touches ffmpeg."""
+    return zoom_leave("slate")
+
+
+# --- window focus / VNC rate (interactive preview support) ---------------
+
+FOCUS_WINDOW_SCRIPT = config.STREAM_SCRIPTS_DIR / "focus-window.sh"
+VNC_RATE_SCRIPT = config.STREAM_SCRIPTS_DIR / "set-vnc-rate.sh"
+FOCUS_TARGETS = {"zoom", "browser"}
+VNC_RATES = {"fast", "slow"}
+
+
+def focus_window(which: str) -> dict:
+    """Raise + focus the Zoom or browser window on :99 so subsequent input
+    from the interactive preview lands where the operator expects."""
+    if which not in FOCUS_TARGETS:
+        raise ControlError(f"invalid focus target: {which}")
+    proc = run_as_zoombot([SUDO, "-u", config.ZOOMBOT_USER, str(FOCUS_WINDOW_SCRIPT), which], timeout=10)
+    try:
+        data = json.loads(proc.stdout.decode(errors="replace").strip().splitlines()[-1])
+    except (json.JSONDecodeError, IndexError):
+        raise ControlError("focus-window produced no result")
+    if not data.get("ok"):
+        raise ControlError(data.get("error") or "could not focus that window")
+    return data
+
+
+def set_vnc_rate(mode: str) -> dict:
+    """x11vnc poll rate: fast while the preview is interactive, slow
+    otherwise. Read back from x11vnc, not assumed."""
+    if mode not in VNC_RATES:
+        raise ControlError(f"invalid vnc rate: {mode}")
+    proc = run_as_zoombot([SUDO, "-u", config.ZOOMBOT_USER, str(VNC_RATE_SCRIPT), mode], timeout=10)
+    try:
+        data = json.loads(proc.stdout.decode(errors="replace").strip().splitlines()[-1])
+    except (json.JSONDecodeError, IndexError):
+        raise ControlError("set-vnc-rate produced no result")
+    if not data.get("ok"):
+        raise ControlError(data.get("error") or "could not change the VNC rate")
+    return data
+
+
+# --- browser (DevTools) reachability diagnosis ---------------------------
+
+def _kiosk_chrome_cmdline() -> str | None:
+    """The main kiosk Chrome process's command line (Chrome rewrites its
+    argv into one space-joined string, so this is a substring search),
+    or None when no kiosk Chrome is running. /proc/<pid>/cmdline is
+    world-readable here (no hidepid), so this needs no sudo."""
+    import psutil
+    for p in psutil.process_iter(["username", "cmdline", "name"]):
+        try:
+            if p.info["username"] != config.ZOOMBOT_USER or not p.info["cmdline"]:
+                continue
+            cmd = " ".join(p.info["cmdline"])
+            if "/chrome" in cmd.split(" ", 1)[0] and "--type=" not in cmd and "--user-data-dir=" in cmd:
+                return cmd
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+    return None
+
+
+def browser_diagnosis() -> dict:
+    """Why the kiosk browser isn't reachable over DevTools, as something
+    the operator can act on. Called only after cdp.probe() failed."""
+    source_type = read_current_source().get("SOURCE_TYPE", "")
+    if source_type != "webpage":
+        return {"connected": False, "code": "source_not_webpage",
+                "reason": f"The active source is a {source_type or 'unset'} source, so the kiosk browser isn't running.",
+                "fix": "Switch to a web page source to use these controls."}
+    try:
+        unit = unit_show("browser-source")
+    except ControlError as exc:
+        return {"connected": False, "code": "unit_unknown", "reason": f"Couldn't query browser-source.service: {exc}", "fix": ""}
+    phase = unit["phase"]
+    if phase in (PHASE_STOPPED, PHASE_FAILED):
+        last_err = unit_last_error("browser-source") if phase == PHASE_FAILED else None
+        return {"connected": False, "code": "unit_down",
+                "reason": f"browser-source.service is {phase.lower()}" + (f" (last error: {last_err})" if last_err else "") + ".",
+                "fix": "Start the browser source (tap the web source tile again), then check its log if it fails again.",
+                "can_restart": True}
+    if phase in (PHASE_STARTING, PHASE_RECONNECTING) or (unit.get("uptime_seconds") or 0) < 40:
+        return {"connected": False, "code": "starting",
+                "reason": "Chrome is still starting - the DevTools port comes up a few seconds after launch.",
+                "fix": "Wait a few seconds."}
+    cmd = _kiosk_chrome_cmdline()
+    if cmd is None:
+        return {"connected": False, "code": "chrome_missing",
+                "reason": "browser-source.service is running but no kiosk Chrome process exists.",
+                "fix": "Restart the browser source.", "can_restart": True}
+    if "--remote-debugging-port" not in cmd:
+        return {"connected": False, "code": "stale_launch",
+                "reason": "Chrome is running but was started without the DevTools port (by an older browser-source.sh), so it can't be controlled.",
+                "fix": "Restart the browser source - it relaunches Chrome with the port. Viewers see the page reload for a few seconds.",
+                "can_restart": True}
+    return {"connected": False, "code": "port_closed",
+            "reason": f"Chrome should be listening on 127.0.0.1:{config.CHROME_DEBUG_PORT} but isn't answering.",
+            "fix": "Restart the browser source.", "can_restart": True}
 
 
 def open_url_in_account_profile(profile_id: str, url: str) -> None:
@@ -652,17 +803,6 @@ def open_url_in_account_profile(profile_id: str, url: str) -> None:
         raise ControlError(proc.stderr.decode(errors="replace").strip() or "could not open the page")
 
 
-def zoom_mic_toggle() -> dict:
-    """Sends Zoom's own Alt+A mute/unmute shortcut to the Zoom meeting
-    window specifically (never a blind global keypress). Then attempts
-    the best-effort AT-SPI verification above - `verify.available` tells
-    the caller whether that verification actually means anything right
-    now."""
-    argv = [SUDO, "-u", config.ZOOMBOT_USER, str(ZOOM_MIC_TOGGLE_SCRIPT)]
-    proc = run_as_zoombot(argv, timeout=10)
-    if proc.returncode != 0:
-        raise ControlError("failed to toggle Zoom mic: " + proc.stderr.decode(errors="replace").strip())
-    return {"sent": True, "verify": zoom_mic_state_heuristic()}
 
 
 def zoom_leave(then: str) -> list[dict]:

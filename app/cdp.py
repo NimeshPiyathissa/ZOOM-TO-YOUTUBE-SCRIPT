@@ -20,22 +20,53 @@ class CDPError(Exception):
     pass
 
 
+async def _get_json(path: str) -> object:
+    """GET http://127.0.0.1:<port>/json<path>, with one quick retry: Chrome
+    re-binds the port within a second or two after a restart, and this is
+    also what makes every control call "reconnect automatically" - there
+    is no long-lived connection to lose, each call discovers the current
+    tab afresh."""
+    url = f"http://127.0.0.1:{config.CHROME_DEBUG_PORT}/json{path}"
+    last: Exception | None = None
+    for attempt in range(2):
+        try:
+            async with httpx.AsyncClient(timeout=3) as client:
+                resp = await client.get(url)
+                resp.raise_for_status()
+                return resp.json()
+        except httpx.HTTPError as exc:
+            last = exc
+            if attempt == 0:
+                await asyncio.sleep(0.4)
+    raise CDPError(
+        "Chrome's DevTools port isn't reachable - is the active source a "
+        f"webpage source with browser-source.sh running? ({last})"
+    ) from last
+
+
 async def _get_page_target() -> dict:
-    url = f"http://127.0.0.1:{config.CHROME_DEBUG_PORT}/json"
-    try:
-        async with httpx.AsyncClient(timeout=5) as client:
-            resp = await client.get(url)
-            resp.raise_for_status()
-            targets = resp.json()
-    except httpx.HTTPError as exc:
-        raise CDPError(
-            "Chrome's DevTools port isn't reachable - is the active source a "
-            f"webpage source with browser-source.sh running? ({exc})"
-        ) from exc
+    targets = await _get_json("")
     pages = [t for t in targets if t.get("type") == "page"]
     if not pages:
         raise CDPError("No Chrome page target found - is the active source a webpage source?")
     return pages[0]
+
+
+async def probe() -> dict:
+    """Is the kiosk Chrome reachable right now, and what is it showing?
+    Raises CDPError (with the reason) when it isn't; control.py's
+    browser_diagnosis() then works out *why* for the panel."""
+    version = await _get_json("/version")
+    targets = await _get_json("")
+    pages = [t for t in targets if t.get("type") == "page"]
+    first = pages[0] if pages else {}
+    return {
+        "connected": True,
+        "browser": version.get("Browser", ""),
+        "pages": len(pages),
+        "title": (first.get("title") or "")[:160],
+        "url": (first.get("url") or "")[:300],
+    }
 
 
 async def _call(ws, msg_id: int, method: str, params: dict | None = None) -> dict:
@@ -57,14 +88,17 @@ async def navigate(url: str) -> None:
         await _call(ws, 1, "Page.navigate", {"url": url})
 
 
-async def evaluate(expression: str) -> dict:
+async def evaluate(expression: str, user_gesture: bool = False) -> dict:
     """Runs `expression` in the page's top-level JS context and returns
     Runtime.evaluate's `result` object (.value for JSON-serializable
-    results)."""
+    results). `user_gesture=True` lets the page call APIs that need a
+    user activation (requestFullscreen, play() under a strict autoplay
+    policy) - the panel button *is* the user's gesture."""
     target = await _get_page_target()
     async with websockets.connect(target["webSocketDebuggerUrl"], max_size=2**20, open_timeout=5) as ws:
         result = await _call(ws, 1, "Runtime.evaluate", {
             "expression": expression, "returnByValue": True, "awaitPromise": False,
+            "userGesture": bool(user_gesture),
         })
         return result.get("result", {})
 
@@ -103,11 +137,21 @@ JS_STATE = """(() => {
   const v = document.querySelector('video');
   const txt = (sel) => { const el = document.querySelector(sel); return el ? (el.innerText || '').trim() : ''; };
   const errorText = txt('.ytp-error-content-wrap-reason') || txt('.ytp-error') || '';
+  // YouTube's in-player "playability" overlay: the bot-check wall
+  // ("Sign in to confirm you're not a bot"), sign-in-required and
+  // age-gate all render here while a <video> element still exists
+  // (readyState 0) - so it must be read explicitly, not inferred from
+  // the absence of a video element.
+  const playability = txt('yt-playability-error-supported-renderers') || txt('#player-error-message-container') || '';
   const bodyText = (document.body && document.body.innerText || '').slice(0, 4000);
   const out = {
     has_video: !!v, url: location.href, title: document.title,
     error_text: errorText.slice(0, 300),
-    body_hint: /sign in to confirm your age/i.test(bodyText) ? 'age'
+    playability_text: playability.slice(0, 300),
+    fullscreen: !!document.fullscreenElement,
+    body_hint: /not a bot/i.test(playability) ? 'bot'
+             : /sign in to confirm your age/i.test(playability + ' ' + bodyText) ? 'age'
+             : /sign in/i.test(playability) ? 'signin'
              : /sign in/i.test(errorText + ' ' + bodyText.slice(0, 600)) && !v ? 'signin'
              : /video unavailable|an error occurred|playback error|this video is private/i.test(errorText + ' ' + bodyText.slice(0, 600)) ? 'error' : '',
   };
@@ -130,6 +174,22 @@ JS_THEATER = """(() => {
 })()"""
 
 
+# Player fullscreen (needs evaluate(..., user_gesture=True)). Prefers
+# YouTube's own fullscreen button so the player UI follows; falls back
+# to the Fullscreen API on the player element. The kiosk window is
+# already fullscreen, so this only matters on a watch page where the
+# player is boxed - on /embed/ it already fills the viewport.
+JS_FULLSCREEN = """(() => {
+  if (document.fullscreenElement) { document.exitFullscreen(); return 'exited'; }
+  const btn = document.querySelector('.ytp-fullscreen-button');
+  if (btn) { btn.click(); return 'clicked-yt-button'; }
+  const v = document.querySelector('video'); if (!v) return 'no-video';
+  const el = v.closest('#movie_player') || v;
+  if (el.requestFullscreen) { el.requestFullscreen().catch(() => {}); return 'requested'; }
+  return 'unsupported';
+})()"""
+
+
 def js_seek(seconds: float) -> str:
     s = max(0.0, float(seconds))
     return f"(() => {{ const v = {_FIND_VIDEO}; if (!v) return false; v.currentTime = {s}; return true; }})()"
@@ -142,6 +202,10 @@ def diagnose(state: dict) -> dict | None:
         return None
     hint = state.get("body_hint") or ""
     err = (state.get("error_text") or "").lower()
+    if hint == "bot":
+        return {"kind": "bot_check",
+                "message": "YouTube is showing \"Sign in to confirm you're not a bot\" - it won't play from this datacenter IP without a signed-in session.",
+                "fix": "Turn on Interact on the preview (or open the remote desktop), tap Sign in and sign into a Google account in this browser profile once - Chrome remembers it. Or bind this source to an already signed-in account on the Accounts page."}
     if hint == "age" or "confirm your age" in err:
         return {"kind": "age_restricted",
                 "message": "YouTube wants a signed-in, age-verified account for this video.",

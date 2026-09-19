@@ -937,7 +937,7 @@ async def api_audio_level(request: Request):
 @app.get("/api/audio/zoom-mic")
 async def api_zoom_mic_state(request: Request):
     deps.require_session_api(request)
-    return await run_in_threadpool(control.zoom_mic_state_heuristic)
+    return await run_in_threadpool(control.zoom_mic_state)
 
 
 @app.post("/api/audio/zoom-mic/toggle")
@@ -1077,7 +1077,7 @@ async def api_youtube_control(request: Request):
     action = str(body.get("action", ""))
     try:
         if action == "play":
-            await cdp.evaluate(cdp.JS_PLAY)
+            await cdp.evaluate(cdp.JS_PLAY, user_gesture=True)
         elif action == "pause":
             await cdp.evaluate(cdp.JS_PAUSE)
         elif action == "volume":
@@ -1091,6 +1091,8 @@ async def api_youtube_control(request: Request):
             await cdp.evaluate(cdp.js_seek(float(body.get("seconds", 0))))
         elif action == "theater":
             await cdp.evaluate(cdp.JS_THEATER)
+        elif action == "fullscreen":
+            await cdp.evaluate(cdp.JS_FULLSCREEN, user_gesture=True)
         else:
             raise HTTPException(status_code=400, detail="invalid action")
     except (cdp.CDPError, ValueError) as exc:
@@ -1121,6 +1123,111 @@ async def api_zoom_control(request: Request):
     except control.ControlError as exc:
         return _api_error(exc)
     db.audit(session["username"], "zoom_control_" + action, ip=deps.client_ip(request))
+    return result
+
+
+@app.get("/api/browser/status")
+async def api_browser_status(request: Request):
+    """Is the kiosk Chrome controllable right now? connected=True with
+    the Chrome version and current page, or connected=False with a
+    concrete reason code + what to do about it (see
+    control.browser_diagnosis). Polled by the panel while a web source
+    is active."""
+    deps.require_session_api(request)
+    try:
+        return await cdp.probe()
+    except cdp.CDPError as exc:
+        diag = await run_in_threadpool(control.browser_diagnosis)
+        diag["detail"] = str(exc)
+        return diag
+
+
+@app.post("/api/zoom/dialog")
+async def api_zoom_dialog(request: Request):
+    """list: pop-up dialogs Zoom has open; dismiss: close them via their
+    own OK/Close button. Used by the program panel's canvas alert."""
+    session = deps.require_session_api(request)
+    deps.require_csrf(request, session)
+    body = await request.json()
+    action = str(body.get("action", "list"))
+    if action not in ("list", "dismiss"):
+        raise HTTPException(status_code=400, detail="action must be list or dismiss")
+    if action == "dismiss":
+        deps.require_rate_limit(session, "zoom_dialog_dismiss", max_calls=6, window_seconds=30)
+    try:
+        result = await run_in_threadpool(control.zoom_dialog, action)
+    except control.ControlError as exc:
+        return _api_error(exc)
+    if action == "dismiss":
+        db.audit(session["username"], "zoom_dialog_dismiss",
+                 ", ".join(d.get("title", "") for d in result.get("dismissed", [])), deps.client_ip(request))
+    return result
+
+
+@app.post("/api/zoom/quit-to-slate")
+async def api_zoom_quit_to_slate(request: Request):
+    """"Reset Zoom window": stop zoom.service and put the slate on the
+    canvas. The encoder is never touched."""
+    session = deps.require_session_api(request)
+    deps.require_csrf(request, session)
+    deps.require_rate_limit(session, "zoom_quit", max_calls=3, window_seconds=30)
+    try:
+        results = await run_in_threadpool(control.zoom_quit_to_slate)
+    except control.ControlError as exc:
+        return _api_error(exc)
+    db.audit(session["username"], "zoom_quit_to_slate", ip=deps.client_ip(request))
+    return {"results": results}
+
+
+@app.post("/api/window/focus")
+async def api_window_focus(request: Request):
+    session = deps.require_session_api(request)
+    deps.require_csrf(request, session)
+    deps.require_rate_limit(session, "window_focus", max_calls=12, window_seconds=10)
+    body = await request.json()
+    which = str(body.get("which", ""))
+    if which not in control.FOCUS_TARGETS:
+        raise HTTPException(status_code=400, detail="which must be zoom or browser")
+    try:
+        result = await run_in_threadpool(control.focus_window, which)
+    except control.ControlError as exc:
+        return _api_error(exc)
+    db.audit(session["username"], "window_focus", which, deps.client_ip(request))
+    return result
+
+
+@app.post("/api/vnc/rate")
+async def api_vnc_rate(request: Request):
+    """fast while the preview is interactive, slow otherwise. The page
+    calls this on toggle / visibility change; x11vnc keeps whatever was
+    last set, so the client also sends `slow` on unload."""
+    session = deps.require_session_api(request)
+    deps.require_csrf(request, session)
+    deps.require_rate_limit(session, "vnc_rate", max_calls=12, window_seconds=10)
+    body = await request.json()
+    mode = str(body.get("mode", "slow"))
+    if mode not in control.VNC_RATES:
+        raise HTTPException(status_code=400, detail="mode must be fast or slow")
+    try:
+        result = await run_in_threadpool(control.set_vnc_rate, mode)
+    except control.ControlError as exc:
+        return _api_error(exc)
+    db.audit(session["username"], "vnc_rate", mode, deps.client_ip(request))
+    return result
+
+
+@app.post("/api/audio/selftest")
+async def api_audio_selftest(request: Request):
+    """End-to-end audio proof (tone -> sink -> meter + capture -> file).
+    The script refuses to run while ffmpeg-stream is active; ~12s."""
+    session = deps.require_session_api(request)
+    deps.require_csrf(request, session)
+    deps.require_rate_limit(session, "audio_selftest", max_calls=2, window_seconds=60)
+    try:
+        result = await run_in_threadpool(control.audio_selftest)
+    except control.ControlError as exc:
+        return _api_error(exc)
+    db.audit(session["username"], "audio_selftest", "ok" if result.get("ok") else "failed", deps.client_ip(request))
     return result
 
 
