@@ -240,10 +240,17 @@ document.getElementById("source-tiles").addEventListener("click", async (e) => {
 document.getElementById("ctx-account").addEventListener("change", async (e) => {
   const s = sourceById(activeSourceId); if (!s) return;
   const prevVal = s.account_id || "";
+  const who = e.target.selectedOptions[0] ? e.target.selectedOptions[0].textContent.split(" · ")[0] : "the shared profile";
+  // Chrome can't switch profile in place: applying now relaunches only
+  // the browser; the encoder keeps running and RTMP stays up.
+  const live = streamPhase === "LIVE" || streamPhase === "RECONNECTING";
+  let applyNow = true;
+  if (live) applyNow = await confirmDialog(`Play as ${who} now? The browser relaunches on that profile - viewers see the page reload for a few seconds; the encoder keeps running. Choose "Later" to apply on the next switch instead.`, { confirmText: "Relaunch now" });
   try {
-    await post(`/api/sources/${s.id}/account`, { account_id: e.target.value || null });
+    const r = await post(`/api/sources/${s.id}/account`, { account_id: e.target.value || null, apply_now: applyNow });
     s.account_id = e.target.value ? Number(e.target.value) : null;
-    toast("Account bound - applies on the next switch to this source");
+    toast(r.applied ? `Now playing as ${who} - browser relaunching` : `Bound to ${who} - applies on the next switch to this source`);
+    if (r.applied) { browserConnected = null; setTimeout(browserStatus, 5000); }
   } catch (err) { e.target.value = prevVal; toast(err.message, "err"); }
 });
 

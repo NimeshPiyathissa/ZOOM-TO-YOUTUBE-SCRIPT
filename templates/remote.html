@@ -147,10 +147,12 @@
     <div class="field">
       <label class="label" for="ctx-account">Play as</label>
       <select id="ctx-account" class="input">
-        <option value="">Shared profile (no account)</option>
-        {% for a in accounts %}<option value="{{ a.id }}">{{ a.label }}{% if a.identity_masked %} - {{ a.identity_masked }}{% endif %} ({{ a.state }})</option>{% endfor %}
+        <option value="">Shared stream profile</option>
+        {% set signed = accounts | selectattr("state", "equalto", "signed_in") | list %}
+        {% for a in accounts %}<option value="{{ a.id }}" {% if a.state != "signed_in" %}disabled{% endif %}>{{ a.label }}{% if a.identity_masked %} · {{ a.identity_masked }}{% endif %} · {{ "signed in" if a.state == "signed_in" else ("needs re-authentication" if a.needs_reauth else "not signed in") }}</option>{% endfor %}
+        {% if not signed %}<option value="" disabled>No signed-in account yet - sign in on the Accounts page</option>{% endif %}
       </select>
-      <div class="hint mt-1">Takes effect the next time this source is switched to or the browser restarts.</div>
+      <div class="hint mt-1" id="ctx-account-hint">Which Chrome profile plays this source. Changing it relaunches only the browser (the stream stays connected); you'll be asked first while live. <a href="/accounts">Accounts</a></div>
     </div>
 
     <!-- Browser connection: read from Chrome's DevTools endpoint, with the
