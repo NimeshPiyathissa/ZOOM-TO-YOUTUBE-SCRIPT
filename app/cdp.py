@@ -155,11 +155,25 @@ JS_STATE = """(() => {
   // the absence of a video element.
   const playability = txt('yt-playability-error-supported-renderers') || txt('#player-error-message-container') || '';
   const bodyText = (document.body && document.body.innerText || '').slice(0, 4000);
+  // Ads and YouTube's inactivity prompt ("Video paused. Continue
+  // watching?") are read explicitly too - both stall a 24/7 stream.
+  const player = document.querySelector('#movie_player, .html5-video-player');
+  const adShowing = !!(player && (player.classList.contains('ad-showing') || player.classList.contains('ad-interrupting')));
+  const skipBtn = document.querySelector('.ytp-skip-ad-button, .ytp-ad-skip-button, .ytp-ad-skip-button-modern, button[class*="ytp-ad-skip"]');
+  const promptEl = Array.from(document.querySelectorAll('yt-confirm-dialog-renderer, tp-yt-paper-dialog, .ytp-popup'))
+    .find((el) => /continue watching|video paused/i.test(el.innerText || ''));
+  const ccBtn = document.querySelector('.ytp-subtitles-button');
+  const liveBadge = document.querySelector('.ytp-live-badge, .ytp-live');
   const out = {
     has_video: !!v, url: location.href, title: document.title,
     error_text: errorText.slice(0, 300),
     playability_text: playability.slice(0, 300),
     fullscreen: !!document.fullscreenElement,
+    ad_showing: adShowing,
+    skippable: !!(skipBtn && skipBtn.offsetParent !== null),
+    continue_prompt: !!promptEl,
+    captions: !!(ccBtn && ccBtn.getAttribute('aria-pressed') === 'true'),
+    live: !!(liveBadge && liveBadge.offsetParent !== null && !/^\s*$/.test(liveBadge.innerText || 'live')),
     body_hint: /not a bot/i.test(playability) ? 'bot'
              : /sign in to confirm your age/i.test(playability + ' ' + bodyText) ? 'age'
              : /sign in/i.test(playability) ? 'signin'
@@ -170,6 +184,7 @@ JS_STATE = """(() => {
     paused: v.paused, ended: v.ended, muted: v.muted, volume: Math.round(v.volume * 100),
     current_time: v.currentTime || 0, duration: isFinite(v.duration) ? v.duration : null,
     quality: v.videoHeight ? v.videoHeight + 'p' : null, ready_state: v.readyState,
+    speed: v.playbackRate || 1,
   });
   return out;
 })()"""
@@ -199,6 +214,50 @@ JS_FULLSCREEN = """(() => {
   if (el.requestFullscreen) { el.requestFullscreen().catch(() => {}); return 'requested'; }
   return 'unsupported';
 })()"""
+
+
+# Skip a skippable ad via YouTube's own button (never a synthetic
+# seek); dismiss the inactivity prompt via its own confirm button.
+JS_SKIP_AD = """(() => {
+  const b = document.querySelector('.ytp-skip-ad-button, .ytp-ad-skip-button, .ytp-ad-skip-button-modern, button[class*="ytp-ad-skip"]');
+  if (!b || b.offsetParent === null) return false; b.click(); return true;
+})()"""
+JS_DISMISS_PROMPT = """(() => {
+  const dlg = Array.from(document.querySelectorAll('yt-confirm-dialog-renderer, tp-yt-paper-dialog, .ytp-popup'))
+    .find((el) => /continue watching|video paused/i.test(el.innerText || ''));
+  if (!dlg) return false;
+  const btn = dlg.querySelector('#confirm-button, button, yt-button-renderer');
+  if (btn) { btn.click(); }
+  const v = document.querySelector('video'); if (v && v.paused) v.play();
+  return true;
+})()"""
+JS_TOGGLE_CAPTIONS = """(() => {
+  const b = document.querySelector('.ytp-subtitles-button');
+  if (!b) return 'no-captions';
+  b.click(); return b.getAttribute('aria-pressed') === 'true' ? 'on' : 'off';
+})()"""
+JS_REPLAY = f"(() => {{ const v = {_FIND_VIDEO}; if (!v) return false; v.currentTime = 0; v.play(); return true; }})()"
+
+
+def js_apply_options(loop: bool, captions: bool, speed: float) -> str:
+    """After a watch page has its <video>: loop flag, captions to the
+    wanted state (YouTube's own button, only when it differs), speed.
+    Returns what was applied."""
+    r = max(0.25, min(2.0, float(speed)))
+    want_loop = "true" if loop else "false"
+    want_cc = "true" if captions else "false"
+    return (
+        f"(() => {{ const v = {_FIND_VIDEO}; if (!v) return null; "
+        f"v.loop = {want_loop}; v.playbackRate = {r}; v.muted = false; if (!v.volume) v.volume = 1; "
+        "const cc = document.querySelector('.ytp-subtitles-button'); let ccState = 'none'; "
+        f"if (cc) {{ const on = cc.getAttribute('aria-pressed') === 'true'; if (on !== {want_cc}) cc.click(); ccState = cc.getAttribute('aria-pressed'); }} "
+        "return { loop: v.loop, speed: v.playbackRate, captions: ccState }; })()"
+    )
+
+
+def js_set_speed(rate: float) -> str:
+    r = max(0.25, min(2.0, float(rate)))
+    return f"(() => {{ const v = {_FIND_VIDEO}; if (!v) return false; v.playbackRate = {r}; return v.playbackRate; }})()"
 
 
 def js_seek(seconds: float) -> str:

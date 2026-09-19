@@ -123,6 +123,15 @@ _MIGRATIONS: list[tuple[str, str, str]] = [
     ("sources", "account_id", "ALTER TABLE sources ADD COLUMN account_id INTEGER"),
     # Zoom page: when this source was last switched to / joined.
     ("sources", "last_joined_at", "ALTER TABLE sources ADD COLUMN last_joined_at REAL"),
+    # YouTube deck on /remote: what kind of link it is, oEmbed metadata
+    # cached at save time, per-link playback options, play history.
+    ("youtube_links", "kind", "ALTER TABLE youtube_links ADD COLUMN kind TEXT"),
+    ("youtube_links", "title", "ALTER TABLE youtube_links ADD COLUMN title TEXT"),
+    ("youtube_links", "author", "ALTER TABLE youtube_links ADD COLUMN author TEXT"),
+    ("youtube_links", "thumbnail_url", "ALTER TABLE youtube_links ADD COLUMN thumbnail_url TEXT"),
+    ("youtube_links", "options", "ALTER TABLE youtube_links ADD COLUMN options TEXT"),
+    ("youtube_links", "last_played_at", "ALTER TABLE youtube_links ADD COLUMN last_played_at REAL"),
+    ("youtube_links", "plays", "ALTER TABLE youtube_links ADD COLUMN plays INTEGER NOT NULL DEFAULT 0"),
 ]
 
 

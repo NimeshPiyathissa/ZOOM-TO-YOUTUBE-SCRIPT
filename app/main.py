@@ -22,7 +22,7 @@ from . import probe as probe_mod
 from . import url_security
 from .url_security import URLSecurityError
 from . import zoomlink
-from . import cdp, youtube
+from . import cdp, youtube, youtube_watch
 from .youtube import YouTubeURLError
 from . import accounts as accounts_mod
 from .accounts import AccountError
@@ -182,13 +182,12 @@ async def remote_page(request: Request):
     session = _require_page(request)
     if isinstance(session, RedirectResponse):
         return session
-    with db.get_conn() as conn:
-        links = [dict(r, thumbnail_url=youtube.thumbnail_url(r["url"]))
-                 for r in conn.execute("SELECT * FROM youtube_links ORDER BY sort_order, id").fetchall()]
+    links = youtube_watch.list_links()
     active = sources_mod.get_active_source()
     return templates.TemplateResponse("remote.html", {
         "request": request, "csrf_token": session["csrf_token"], "username": session["username"],
-        "youtube_links": links, "sources": sources_mod.list_sources_public(),
+        "youtube_links": links, "youtube_settings": youtube_watch.get_settings(),
+        "sources": sources_mod.list_sources_public(),
         "active_source_id": active["id"] if active else None,
         "sources_rev": sources_mod.sources_rev(),
         "accounts": accounts_mod.list_accounts(),
@@ -1245,9 +1244,109 @@ async def api_zoom_leave_with_choice(request: Request):
 @app.get("/api/youtube-links")
 async def api_youtube_links_list(request: Request):
     deps.require_session_api(request)
-    with db.get_conn() as conn:
-        rows = conn.execute("SELECT * FROM youtube_links ORDER BY sort_order, id").fetchall()
-        return [dict(r, thumbnail_url=youtube.thumbnail_url(r["url"])) for r in rows]
+    return youtube_watch.list_links()
+
+
+@app.post("/api/youtube/parse")
+async def api_youtube_parse(request: Request):
+    """Smart paste: any YouTube link form (or share text / bare id) ->
+    what it is, normalized, plus title/channel/thumbnail from YouTube's
+    public oEmbed, for the operator to confirm before saving."""
+    session = deps.require_session_api(request)
+    deps.require_csrf(request, session)
+    deps.require_rate_limit(session, "youtube_parse", max_calls=20, window_seconds=30)
+    body = await request.json()
+    parsed = youtube.parse_any(str(body.get("text", ""))[:20000])
+    if parsed.get("ok"):
+        try:
+            await run_in_threadpool(url_security.validate_url, parsed["url"], "webpage")
+        except URLSecurityError as exc:
+            parsed["ok"] = False; parsed["errors"].append(str(exc))
+            return parsed
+        meta = await run_in_threadpool(youtube.lookup, parsed["url"])
+        if meta.get("unavailable"):
+            parsed["warnings"].append("YouTube has no public details for this (private, removed, or members-only?) - it may not play.")
+        else:
+            parsed.update({k: v for k, v in meta.items() if v})
+        if parsed["kind"] == "live_channel":
+            try:
+                r = await run_in_threadpool(youtube.resolve_live, parsed["url"])
+                if r["video_id"]:
+                    parsed["live_now"] = True; parsed["thumbnail_url"] = f"https://i.ytimg.com/vi/{r['video_id']}/hqdefault.jpg"
+                    live_meta = await run_in_threadpool(youtube.lookup, f"https://www.youtube.com/watch?v={r['video_id']}")
+                    parsed.update({k: v for k, v in live_meta.items() if v})
+                else:
+                    parsed["live_now"] = False; parsed["warnings"].append("This channel is not live right now.")
+            except youtube.YouTubeURLError as exc:
+                parsed["warnings"].append(str(exc))
+    return parsed
+
+
+@app.get("/api/youtube/settings")
+async def api_youtube_settings(request: Request):
+    deps.require_session_api(request)
+    return youtube_watch.get_settings()
+
+
+@app.put("/api/youtube/settings")
+async def api_youtube_settings_set(request: Request):
+    session = deps.require_session_api(request)
+    deps.require_csrf(request, session)
+    body = await request.json()
+    result = youtube_watch.set_settings({k: bool(body.get(k)) for k in youtube_watch.SETTING_KEYS if k in body})
+    db.audit(session["username"], "youtube_settings", ",".join(f"{k}={int(v)}" for k, v in result.items()), deps.client_ip(request))
+    return result
+
+
+def _link_row(link_id: int) -> dict | None:
+    for l in youtube_watch.list_links():
+        if l["id"] == link_id:
+            return l
+    return None
+
+
+async def play_youtube_link(link: dict | None = None, url: str | None = None, options: dict | None = None) -> str:
+    """Navigate the kiosk to a saved link (with its options) or a raw
+    URL. The single path every play goes through - taps, next/prev,
+    auto-advance. Returns the embed URL."""
+    raw_url = link["url"] if link else (url or "")
+    opts = youtube.validate_options(link["options"] if link else (options or {}))
+    embed_url = await run_in_threadpool(youtube.to_play_url, raw_url, opts)
+    await cdp.navigate(embed_url)
+    youtube_watch.current.update({"link_id": link["id"] if link else None, "url": raw_url, "since": time.time()})
+    if link:
+        with db.get_conn() as conn:
+            conn.execute("UPDATE youtube_links SET last_played_at=?, plays=plays+1 WHERE id=?", (time.time(), link["id"]))
+    # The watch page needs a moment before a <video> exists - poll rather
+    # than blind-sleep, then apply what the URL can't carry (loop,
+    # captions, speed) and fullscreen the player so it fills the canvas
+    # like the old embed did (the kiosk window is already fullscreen).
+    for _ in range(16):
+        await asyncio.sleep(0.5)
+        try:
+            res = await cdp.evaluate(cdp.JS_ENSURE_UNMUTED)
+        except cdp.CDPError:
+            continue
+        if res.get("value"):
+            try:
+                await cdp.evaluate(cdp.js_apply_options(bool(opts.get("loop")), bool(opts.get("captions")), float(opts.get("speed") or 1.0)))
+                await cdp.evaluate(cdp.JS_PLAY, user_gesture=True)
+            except cdp.CDPError:
+                pass
+            # Fullscreen the player once the page reports it isn't; the
+            # button exists before it works, so retry a few times.
+            if youtube_watch.get_settings().get("yt_keep_fullscreen", True):
+                for _ in range(6):
+                    try:
+                        st = (await cdp.evaluate(cdp.JS_STATE)).get("value") or {}
+                        if st.get("fullscreen"):
+                            break
+                        await cdp.evaluate(cdp.JS_FULLSCREEN, user_gesture=True)
+                    except cdp.CDPError:
+                        break
+                    await asyncio.sleep(1.0)
+            break
+    return embed_url
 
 
 @app.get("/api/youtube/state")
@@ -1263,6 +1362,10 @@ async def api_youtube_state(request: Request):
     state = res.get("value") or {}
     state["available"] = True
     state["diagnosis"] = cdp.diagnose(state)
+    state.update(youtube_watch.phase(state))
+    state["current_link_id"] = youtube_watch.current["link_id"]
+    state["auto"] = youtube_watch.last.get("auto", [])[:3]
+    state["settings"] = youtube_watch.get_settings()
     return state
 
 
@@ -1271,22 +1374,93 @@ async def api_youtube_links_create(request: Request):
     session = deps.require_session_api(request)
     deps.require_csrf(request, session)
     body = await request.json()
-    name = str(body.get("name", "")).strip()[:120]
-    url = str(body.get("url", "")).strip()
-    if not name or not url:
-        raise HTTPException(status_code=400, detail="name and url are required")
     try:
-        await run_in_threadpool(youtube.to_embed_url, url)  # validate it's usable before saving
+        row = await _youtube_link_from_body(body)
     except (YouTubeURLError, URLSecurityError) as exc:
         return _api_error(exc)
     with db.get_conn() as conn:
+        order = conn.execute("SELECT COALESCE(MAX(sort_order), 0) + 1 FROM youtube_links").fetchone()[0]
         cur = conn.execute(
-            "INSERT INTO youtube_links (name, url, created_at, sort_order) VALUES (?,?,?,?)",
-            (name, url, time.time(), int(body.get("sort_order", 0))),
+            "INSERT INTO youtube_links (name, url, created_at, sort_order, kind, title, author, thumbnail_url, options) VALUES (?,?,?,?,?,?,?,?,?)",
+            (row["name"], row["url"], time.time(), order, row["kind"], row["title"], row["author"], row["thumbnail_url"], json.dumps(row["options"])),
         )
         lid = cur.lastrowid
-    db.audit(session["username"], "youtube_link_create", name, deps.client_ip(request))
-    return {"id": lid}
+    db.audit(session["username"], "youtube_link_create", row["name"], deps.client_ip(request))
+    return {"id": lid, "link": _link_row(lid)}
+
+
+async def _youtube_link_from_body(body: dict, existing: dict | None = None) -> dict:
+    """Validate a create/edit payload: the URL is parsed and normalized,
+    options validated, metadata looked up when the URL changed."""
+    url = str(body.get("url", "") or "").strip() or (existing["url"] if existing else "")
+    parsed = youtube.parse_any(url)
+    if not parsed["ok"]:
+        raise YouTubeURLError(parsed["errors"][0] if parsed["errors"] else "Not a playable YouTube link")
+    url = parsed["url"]
+    await run_in_threadpool(url_security.validate_url, url, "webpage")
+    options = youtube.validate_options(body.get("options") if body.get("options") is not None else (existing["options"] if existing else {}))
+    if options["start"] is None and parsed.get("start"):
+        options["start"] = parsed["start"]
+    name = str(body.get("name", "") or "").strip()[:120]
+    meta = {}
+    if not existing or existing["url"] != url:
+        meta = await run_in_threadpool(youtube.lookup, url)
+    title = meta.get("title") or (existing["title"] if existing else None)
+    author = meta.get("author") or (existing["author"] if existing else None)
+    thumb = meta.get("thumbnail_url") or parsed.get("thumbnail_url") or (existing["thumbnail_url"] if existing else None)
+    if not name:
+        name = (title or (existing["name"] if existing else "") or {"playlist": "Playlist", "live_channel": (parsed.get("channel") or "Channel") + " live"}.get(parsed["kind"], "Video " + (parsed.get("video_id") or "")))[:120]
+    return {"name": name, "url": url, "kind": parsed["kind"], "title": title, "author": author, "thumbnail_url": thumb, "options": options}
+
+
+@app.put("/api/youtube-links/{link_id}")
+async def api_youtube_links_update(link_id: int, request: Request):
+    session = deps.require_session_api(request)
+    deps.require_csrf(request, session)
+    existing = _link_row(link_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="saved link not found")
+    body = await request.json()
+    try:
+        row = await _youtube_link_from_body(body, existing)
+    except (YouTubeURLError, URLSecurityError) as exc:
+        return _api_error(exc)
+    with db.get_conn() as conn:
+        conn.execute("UPDATE youtube_links SET name=?, url=?, kind=?, title=?, author=?, thumbnail_url=?, options=? WHERE id=?",
+                     (row["name"], row["url"], row["kind"], row["title"], row["author"], row["thumbnail_url"], json.dumps(row["options"]), link_id))
+    db.audit(session["username"], "youtube_link_update", str(link_id), deps.client_ip(request))
+    return {"ok": True, "link": _link_row(link_id)}
+
+
+@app.post("/api/youtube-links/{link_id}/duplicate")
+async def api_youtube_links_duplicate(link_id: int, request: Request):
+    session = deps.require_session_api(request)
+    deps.require_csrf(request, session)
+    l = _link_row(link_id)
+    if not l:
+        raise HTTPException(status_code=404, detail="saved link not found")
+    with db.get_conn() as conn:
+        order = conn.execute("SELECT COALESCE(MAX(sort_order), 0) + 1 FROM youtube_links").fetchone()[0]
+        cur = conn.execute(
+            "INSERT INTO youtube_links (name, url, created_at, sort_order, kind, title, author, thumbnail_url, options) VALUES (?,?,?,?,?,?,?,?,?)",
+            ((l["name"] + " (copy)")[:120], l["url"], time.time(), order, l["kind"], l["title"], l["author"], l["thumbnail_url"], json.dumps(l["options"])),
+        )
+        lid = cur.lastrowid
+    db.audit(session["username"], "youtube_link_duplicate", f"{link_id}->{lid}", deps.client_ip(request))
+    return {"id": lid, "link": _link_row(lid)}
+
+
+@app.post("/api/youtube-links/reorder")
+async def api_youtube_links_reorder(request: Request):
+    session = deps.require_session_api(request)
+    deps.require_csrf(request, session)
+    body = await request.json()
+    ids = [int(x) for x in (body.get("ids") or []) if str(x).isdigit()]
+    with db.get_conn() as conn:
+        for i, lid in enumerate(ids):
+            conn.execute("UPDATE youtube_links SET sort_order=? WHERE id=?", (i + 1, lid))
+    db.audit(session["username"], "youtube_links_reorder", str(len(ids)), deps.client_ip(request))
+    return {"ok": True}
 
 
 @app.delete("/api/youtube-links/{link_id}")
@@ -1315,25 +1489,19 @@ async def api_youtube_play(request: Request):
         raw_url = row["url"]
     if not raw_url:
         raise HTTPException(status_code=400, detail="url or link_id is required")
+    link = _link_row(int(link_id)) if link_id and not str(body.get("url", "")).strip() else None
     try:
-        embed_url = await run_in_threadpool(youtube.to_embed_url, raw_url)
-        await cdp.navigate(embed_url)
-        # The player's JS needs a moment to initialize before a <video>
-        # element exists - poll briefly rather than a fixed blind sleep,
-        # give up quietly after ~5s (the play button still works from
-        # there once the page finishes loading on its own).
-        for _ in range(10):
-            await asyncio.sleep(0.5)
-            try:
-                res = await cdp.evaluate(cdp.JS_ENSURE_UNMUTED)
-            except cdp.CDPError:
-                continue
-            if res.get("value"):
-                break
+        if link:
+            embed_url = await play_youtube_link(link)
+        else:
+            parsed = youtube.parse_any(raw_url)
+            if not parsed["ok"]:
+                raise YouTubeURLError(parsed["errors"][0] if parsed["errors"] else "Not a playable YouTube link")
+            embed_url = await play_youtube_link(url=parsed["url"], options=body.get("options") or {})
     except (YouTubeURLError, URLSecurityError, cdp.CDPError) as exc:
         return _api_error(exc)
-    db.audit(session["username"], "youtube_play", raw_url, deps.client_ip(request))
-    return {"ok": True, "embed_url": embed_url}
+    db.audit(session["username"], "youtube_play", raw_url[:200], deps.client_ip(request))
+    return {"ok": True, "embed_url": embed_url, "current_link_id": youtube_watch.current["link_id"]}
 
 
 @app.post("/api/youtube/control")
@@ -1361,9 +1529,40 @@ async def api_youtube_control(request: Request):
             await cdp.evaluate(cdp.JS_THEATER)
         elif action == "fullscreen":
             await cdp.evaluate(cdp.JS_FULLSCREEN, user_gesture=True)
+        elif action == "speed":
+            rate = float(body.get("rate", 1.0))
+            if rate not in youtube.SPEEDS:
+                raise HTTPException(status_code=400, detail="invalid speed")
+            res = await cdp.evaluate(cdp.js_set_speed(rate))
+            return {"ok": True, "speed": res.get("value")}
+        elif action == "captions":
+            res = await cdp.evaluate(cdp.JS_TOGGLE_CAPTIONS, user_gesture=True)
+            return {"ok": True, "captions": res.get("value")}
+        elif action == "skip-ad":
+            res = await cdp.evaluate(cdp.JS_SKIP_AD, user_gesture=True)
+            return {"ok": True, "skipped": bool(res.get("value"))}
+        elif action == "dismiss-prompt":
+            res = await cdp.evaluate(cdp.JS_DISMISS_PROMPT, user_gesture=True)
+            return {"ok": True, "dismissed": bool(res.get("value"))}
+        elif action == "replay":
+            await cdp.evaluate(cdp.JS_REPLAY, user_gesture=True)
+        elif action in ("next", "prev"):
+            nxt = youtube_watch.neighbour(1 if action == "next" else -1)
+            if not nxt:
+                raise HTTPException(status_code=400, detail="no saved links")
+            await play_youtube_link(nxt)
+            return {"ok": True, "current_link_id": nxt["id"], "name": nxt["name"]}
+        elif action == "retry":
+            cur = youtube_watch.current
+            if cur.get("link_id") and _link_row(cur["link_id"]):
+                await play_youtube_link(_link_row(cur["link_id"]))
+            elif cur.get("url"):
+                await play_youtube_link(url=cur["url"])
+            else:
+                raise HTTPException(status_code=400, detail="nothing to retry")
         else:
             raise HTTPException(status_code=400, detail="invalid action")
-    except (cdp.CDPError, ValueError) as exc:
+    except (cdp.CDPError, ValueError, YouTubeURLError, URLSecurityError) as exc:
         return _api_error(exc)
     db.audit(session["username"], "youtube_control_" + action, ip=deps.client_ip(request))
     return {"ok": True}

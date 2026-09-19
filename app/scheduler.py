@@ -102,7 +102,7 @@ def load_schedules() -> None:
     from apscheduler.triggers.date import DateTrigger
     from datetime import datetime
     for job in list(scheduler.get_jobs()):
-        if job.id not in ("watchdog", "verify-accounts"):
+        if job.id not in ("watchdog", "verify-accounts", "youtube-watch"):
             scheduler.remove_job(job.id)
     for s in sources_mod.list_sources():
         join_at = (s.get("options") or {}).get("join_at") if s["type"] == "zoom" else None
@@ -144,10 +144,24 @@ async def _verify_accounts() -> None:
         pass
 
 
+YT_WATCH_INTERVAL_SECONDS = 4
+
+
+async def _youtube_watch() -> None:
+    from . import youtube_watch
+    from .main import play_youtube_link
+    try:
+        await youtube_watch.tick(play_youtube_link)
+    except Exception:  # noqa: BLE001 - never let a tick kill the loop
+        pass
+
+
 def start() -> None:
     from datetime import datetime, timedelta
     scheduler.add_job(_watchdog, "interval", seconds=WATCHDOG_INTERVAL_SECONDS, id="watchdog")
     scheduler.add_job(_verify_accounts, "interval", hours=ACCOUNT_VERIFY_INTERVAL_HOURS, id="verify-accounts",
                       next_run_time=datetime.now(ZoneInfo(config.TIMEZONE)) + timedelta(minutes=3))
+    scheduler.add_job(_youtube_watch, "interval", seconds=YT_WATCH_INTERVAL_SECONDS, id="youtube-watch",
+                      max_instances=1, coalesce=True)
     load_schedules()
     scheduler.start()
