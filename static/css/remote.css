@@ -288,3 +288,12 @@ body.vnc-overlay-open { overflow: hidden; }
 .rd-mod.is-on { background: var(--accent); color: #fff; border-color: var(--accent); }
 .rd-text-row { margin-top: var(--space-3); }
 .rd-text-actions { margin: var(--space-2) 0; flex-wrap: wrap; }
+
+/* ---- Part 5: preview fullscreen (fills this device's screen) */
+.panel-preview:fullscreen, .panel-preview:-webkit-full-screen {
+  width: 100vw; height: 100vh; aspect-ratio: auto; border: 0; border-radius: 0; background: #000;
+}
+.panel-preview:fullscreen #preview-img { width: 100%; height: 100%; object-fit: contain; }
+.panel-preview:fullscreen.is-interactive { box-shadow: inset 0 0 0 3px var(--live); }
+/* Keep the quick-action bar clear of the phone's gesture/home area in fullscreen */
+.panel-preview:fullscreen .rd-quick { padding-bottom: max(var(--space-2), env(safe-area-inset-bottom)); }

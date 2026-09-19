@@ -265,6 +265,35 @@ function turnOff(reason) {
 }
 
 toggleBtn.addEventListener("click", () => (state.active ? turnOff("user") : turnOn()));
+
+// ---------------------------------------------------------------- preview fullscreen (fills the phone)
+// Distinct from the YouTube "Full" quick action (which fullscreens the
+// *player on the remote* for viewers): this expands the *preview element*
+// on THIS device, so the video / interactive canvas fills the phone. Works
+// in both passive and interactive mode.
+const fsBtn = $("rd-fs-toggle");
+function previewFsElement() { return document.fullscreenElement || document.webkitFullscreenElement; }
+async function togglePreviewFullscreen() {
+  try {
+    if (previewFsElement()) {
+      await (document.exitFullscreen ? document.exitFullscreen() : document.webkitExitFullscreen());
+    } else {
+      await (box.requestFullscreen ? box.requestFullscreen({ navigationUI: "hide" }) : box.webkitRequestFullscreen());
+    }
+  } catch (err) { toast("Fullscreen not available: " + err.message, "err"); }
+}
+fsBtn.addEventListener("click", togglePreviewFullscreen);
+function onFsChange() {
+  const on = previewFsElement() === box;
+  box.classList.toggle("is-fullscreen", on);
+  fsBtn.setAttribute("aria-pressed", String(on));
+  fsBtn.classList.toggle("btn-primary", on); fsBtn.classList.toggle("btn-secondary", !on);
+  // The preview box just changed size - keep noVNC's geometry exact.
+  if (state.active) layoutStage();
+}
+document.addEventListener("fullscreenchange", onFsChange);
+document.addEventListener("webkitfullscreenchange", onFsChange);
+
 document.addEventListener("visibilitychange", () => { if (document.hidden && state.active) turnOff("tab hidden"); });
 window.addEventListener("pagehide", () => { if (state.rfb) { try { state.rfb.disconnect(); } catch (err) { /* leaving */ } } });
 
