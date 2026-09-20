@@ -20,6 +20,7 @@
       </div>
       <div class="zm-status-side">
         <span class="badge" id="zm-service-badge"><span class="dot"></span><span id="zm-service-text">zoom.service</span></span>
+        <span class="badge" id="zm-via-badge" hidden><span id="zm-via-text"></span></span>
       </div>
     </div>
 
@@ -29,6 +30,7 @@
       <span class="zm-active-name" id="zm-active-name"></span>
       <span class="readout zm-active-id" id="zm-active-id"></span>
       <span class="hint m-0" id="zm-active-meta"></span>
+      <div class="zm-card-warning" id="zm-active-warning" hidden></div>
     </div>
     <div class="zm-active zm-active-empty" id="zm-active-empty">
       {{ icon("info", "icon-sm") }}<span>No Zoom meeting is the active source. Pick one from the library below, or add one.</span>
@@ -177,6 +179,26 @@
           </select>
           <a href="/accounts" class="hint m-0" id="zm-account-hint" hidden>{{ "Manage or add accounts on the Accounts page" if signed else "No signed-in account yet - sign in on the Accounts page first" }}</a>
         </div>
+      </div>
+
+      <div class="field">
+        <span class="label">Join via</span>
+        <div class="segmented zm-seg" id="zm-joinvia-seg" role="group" aria-label="Join via">
+          <button class="seg-btn is-active" data-value="client">Desktop client</button>
+          <button class="seg-btn" data-value="web">Web client</button>
+          <button class="seg-btn" data-value="auto">Auto</button>
+        </div>
+        <div class="hint mt-1">Auto tries the desktop client first and falls back to the web client only if the
+          client itself fails to launch - not if the meeting rejects the join (wrong passcode, locked, etc.),
+          since the web client would hit the same wall.</div>
+      </div>
+
+      <div class="field" id="zm-registrant-field">
+        <label class="label" for="zm-registrant-email">Registered with (Gmail address)</label>
+        <input id="zm-registrant-email" class="input" type="email" maxlength="254" autocomplete="off"
+          placeholder="Only for a per-registrant (tk=) link - leave blank otherwise">
+        <div class="hint mt-1">Used only to warn if the Google account bound to this source doesn't match - Zoom
+          doesn't expose a way to verify this token actually belongs to that address.</div>
       </div>
 
       <div class="zm-options">

@@ -197,12 +197,19 @@ def pipeline_start() -> list[dict]:
     start_source below for the normal switch-time path; this is the
     "restart whole pipeline" button, which re-derives the same shape from
     whatever's already in current-source.env rather than assuming zoom)."""
-    source_type = read_current_source().get("SOURCE_TYPE", "zoom")
+    env = read_current_source()
+    source_type = env.get("SOURCE_TYPE", "zoom")
+    if source_type == "webpage":
+        wanted_unit = "browser-source"
+    elif source_type == "zoom":
+        wanted_unit = "browser-source" if env.get("ZOOM_JOIN_VIA") == "web" else "zoom"
+    else:
+        wanted_unit = None
     results = []
     for unit in config.UNIT_ORDER:
-        if unit in ("zoom", "browser-source") and config.PRODUCER_UNITS.get(source_type) != unit:
+        if unit in ("zoom", "browser-source") and unit != wanted_unit:
             continue
-        if unit == "audio-setup" and source_type not in config.PRODUCER_UNITS:
+        if unit == "audio-setup" and wanted_unit is None:
             continue
         results.append(unit_action(unit, "start"))
         time.sleep(0.5)
@@ -231,6 +238,13 @@ SOURCE_ENV_KEYS = (
     # operator-initiated join so the script's rejoin counter resets.
     "ZOOM_AUTO_REJOIN", "ZOOM_REJOIN_MAX", "ZOOM_JOIN_EPOCH",
     "ZOOM_AUDIO_ON", "ZOOM_VIDEO_ON", "ZOOM_VIEW",
+    # "client" (desktop, join-zoom.sh) or "web" (Zoom's web client, run by
+    # browser-source.sh against the same ZOOM_LINK/ZOOM_PASSCODE already
+    # in .env - no separate secret storage needed). Not secret itself.
+    # join_method=auto starts this at "client"; a mechanism-level failure
+    # flips it to "web" mid-join via switch_zoom_join_via(), never a fresh
+    # apply_source_config (that would also reset the rejoin epoch).
+    "ZOOM_JOIN_VIA",
 )
 
 
@@ -292,6 +306,10 @@ def _source_env_lines(source: dict) -> dict[str, str]:
         values["ZOOM_AUDIO_ON"] = "1" if options.get("audio_on") else "0"
         values["ZOOM_VIDEO_ON"] = "1" if options.get("video_on") else "0"
         values["ZOOM_VIEW"] = str(options.get("view", "speaker"))
+        # auto always starts on the client - the fallback watcher (Part 4)
+        # flips this to "web" mid-join if the client path never gets off
+        # the ground; it never starts on web first.
+        values["ZOOM_JOIN_VIA"] = "web" if options.get("join_method") == "web" else "client"
     elif type_ == "webpage":
         url = url_security.validate_url(source["url"], "webpage")
         values["WEBPAGE_URL"] = url
@@ -307,8 +325,7 @@ def _source_env_lines(source: dict) -> dict[str, str]:
     return values
 
 
-def write_current_source(source: dict) -> None:
-    values = _source_env_lines(source)
+def _write_source_env_values(values: dict[str, str]) -> None:
     bad = [k for k, v in values.items() if "\n" in v]
     if bad:
         raise ControlError(f"value(s) for {', '.join(sorted(bad))} contain a newline, which is not allowed")
@@ -323,6 +340,46 @@ def write_current_source(source: dict) -> None:
     proc = run_as_zoombot(argv, input_bytes=content, timeout=15)
     if proc.returncode != 0:
         raise ControlError("failed to write current-source.env: " + proc.stderr.decode(errors="replace"))
+
+
+def write_current_source(source: dict) -> None:
+    _write_source_env_values(_source_env_lines(source))
+
+
+def switch_zoom_join_via(via: str) -> None:
+    """Flips ZOOM_JOIN_VIA in current-source.env in place, leaving every
+    other key (join epoch, rejoin counters, account profile) untouched.
+    Used only by the join_method=auto fallback (Part 4) - that's a
+    continuation of the same operator-initiated join, not a fresh one, so
+    it must not reset ZOOM_JOIN_EPOCH the way a full apply_source_config
+    would."""
+    if via not in ("client", "web"):
+        raise ControlError(f"invalid join_via: {via}")
+    current = read_current_source()
+    if not current:
+        raise ControlError("current-source.env is empty or unreadable")
+    values = {k: current.get(k, "") for k in SOURCE_ENV_KEYS}
+    values["ZOOM_JOIN_VIA"] = via
+    _write_source_env_values(values)
+
+
+def producer_unit_for(source: dict | None) -> str | None:
+    """Which systemd unit actually draws `source`'s content onto :99.
+    zoom with join_method=client (or auto, before any fallback) -> the
+    zoom unit (scripts/join-zoom.sh, desktop deep-link join). zoom with
+    join_method=web (or auto, after a fallback) and webpage -> the
+    browser-source unit (Chrome kiosk - either a generic page or Zoom's
+    own web client, see scripts/browser-source.sh). direct sources, and
+    no active source, use neither (ffmpeg reads a direct URL itself)."""
+    if not source:
+        return None
+    type_ = source.get("type")
+    if type_ == "webpage":
+        return "browser-source"
+    if type_ != "zoom":
+        return None
+    method = (source.get("options") or {}).get("join_method", "client")
+    return "browser-source" if method == "web" else "zoom"
 
 
 def apply_source_config(source: dict) -> None:
@@ -402,6 +459,7 @@ def start_source(source: dict) -> dict:
             # fall through to a producer restart, which still keeps RTMP up
 
     apply_source_config(source)
+    wanted_unit = producer_unit_for(source)
     needs_ffmpeg_restart = type_ == "direct" or old_type == "direct"
     rtmp_dropped = needs_ffmpeg_restart and ffmpeg_up
 
@@ -409,15 +467,18 @@ def start_source(source: dict) -> dict:
         results.append(_set_slate())
     if needs_ffmpeg_restart:
         results.append(unit_action("ffmpeg-stream", "stop"))
-    for other_type, other_unit in config.PRODUCER_UNITS.items():
-        if other_type != type_:
-            results.append(unit_action(other_unit, "stop"))
+    # zoom and browser-source are mutually exclusive producers - a zoom
+    # source with join_method=web needs browser-source, not the zoom
+    # unit, so this compares against the resolved unit rather than type_.
+    for u in ("zoom", "browser-source"):
+        if u != wanted_unit:
+            results.append(unit_action(u, "stop"))
 
-    if type_ in config.PRODUCER_UNITS:
+    if wanted_unit:
         results.append(unit_action("xvfb", "start")); time.sleep(0.5)
         results.append(unit_action("openbox", "start")); time.sleep(0.5)
         results.append(unit_action("audio-setup", "start")); time.sleep(0.5)
-        results.append(unit_action(config.PRODUCER_UNITS[type_], "restart")); time.sleep(1)
+        results.append(unit_action(wanted_unit, "restart")); time.sleep(1)
         results.append(unit_action("x11vnc", "start"))
 
     if needs_ffmpeg_restart or not ffmpeg_up:
@@ -655,33 +716,18 @@ def zoom_mic_toggle() -> dict:
     return zoom_shortcut("mic")
 
 
-def zoom_meeting_status() -> dict:
-    """Window-title + AT-SPI text heuristics for not_joined / connecting /
-    waiting_room / in_meeting / ended / expired / passcode_required /
-    registration_required / removed / join_failed / unknown, plus
-    `terminal` (Zoom won't recover on its own), the pop-up `dialogs`
-    on screen, and `covers_canvas` when Zoom is up while the active
-    source isn't a Zoom source - i.e. it's sitting on top of the browser
-    (this exact situation went unnoticed for a day: the Zoom panel only
-    shows for Zoom sources). Explicitly non-authoritative."""
+def _zoom_meeting_status_client() -> dict:
+    """The desktop-client path: AT-SPI text heuristics, as before."""
     argv = [SUDO, "-u", config.ZOOMBOT_USER, PYTHON3_BIN, str(ZOOM_STATUS_SCRIPT)]
     try:
         proc = run_as_zoombot(argv, timeout=15)
         data = json.loads(proc.stdout.decode(errors="replace").strip().splitlines()[-1])
     except (ControlError, json.JSONDecodeError, IndexError):
         data = {"status": "unknown", "detail": "status check did not run", "dialogs": [], "terminal": False}
-    data.setdefault("authoritative", False)
-    data.setdefault("dialogs", [])
-    data.setdefault("terminal", False)
     try:
         data["service"] = unit_show("zoom")["phase"]
     except ControlError:
         data["service"] = "unknown"
-    source_type = read_current_source().get("SOURCE_TYPE", "")
-    data["source_type"] = source_type
-    zoom_running = data["status"] != "not_joined" or data["service"] in (PHASE_LIVE, PHASE_STARTING)
-    data["covers_canvas"] = bool(zoom_running and source_type and source_type != "zoom"
-                                 and not (data["status"] == "not_joined" and data["service"] == PHASE_STOPPED))
     if data["status"] in ("in_meeting", "waiting_room", "not_started", "connecting"):
         data["mic"] = _zoom_atspi("mic")
         data["camera"] = _zoom_atspi("camera")
@@ -693,13 +739,63 @@ def zoom_meeting_status() -> dict:
     return data
 
 
+def _zoom_meeting_status_web() -> dict:
+    """The web-client path: DOM text read over CDP (app/zoom_web.py).
+    Camera/mic are never automated for this path (see zoom_web.py), so
+    they're reported as not applicable rather than unknown - there is
+    nothing to read that would ever say otherwise."""
+    from . import zoom_web
+    data = zoom_web.status()
+    try:
+        data["service"] = unit_show("browser-source")["phase"]
+    except ControlError:
+        data["service"] = "unknown"
+    data["mic"] = {"available": False, "state": "unknown", "reason": "not automated for the web-client path"}
+    data["camera"] = {"available": False, "state": "unknown", "reason": "not automated for the web-client path"}
+    return data
+
+
+def zoom_meeting_status() -> dict:
+    """not_joined / connecting / waiting_room / in_meeting / ended /
+    expired / passcode_required / registration_required / removed /
+    join_failed / duplicate_join / wrong_registrant / unknown, plus
+    `terminal` (Zoom won't recover on its own), the pop-up `dialogs` on
+    screen (desktop path only), and `covers_canvas` when Zoom is up while
+    the active source isn't a Zoom source - i.e. it's sitting on top of
+    the browser (this exact situation went unnoticed for a day: the Zoom
+    panel only shows for Zoom sources). Branches on ZOOM_JOIN_VIA to read
+    either the desktop client (AT-SPI) or Zoom's web client (CDP/DOM) -
+    see _zoom_meeting_status_client/_web - so every caller sees one
+    shape regardless of path. Explicitly non-authoritative either way."""
+    env = read_current_source()
+    source_type = env.get("SOURCE_TYPE", "")
+    join_via = env.get("ZOOM_JOIN_VIA", "client")
+    if source_type == "zoom" and join_via == "web":
+        data = _zoom_meeting_status_web()
+    else:
+        data = _zoom_meeting_status_client()
+    data.setdefault("authoritative", False)
+    data.setdefault("dialogs", [])
+    data.setdefault("terminal", False)
+    data["source_type"] = source_type
+    data["join_via"] = join_via if source_type == "zoom" else None
+    zoom_running = data["status"] != "not_joined" or data["service"] in (PHASE_LIVE, PHASE_STARTING)
+    data["covers_canvas"] = bool(zoom_running and source_type and source_type != "zoom"
+                                 and not (data["status"] == "not_joined" and data["service"] == PHASE_STOPPED))
+    return data
+
+
 def zoom_dialog(action: str) -> dict:
     """list: the Zoom pop-up dialogs on screen; dismiss: close them via
     their own OK/Close button (AT-SPI action), Escape, then WM close -
     see scripts/zoom-dialog.py for the safety rules on which buttons it
-    will and won't press."""
+    will and won't press. Desktop-client path only - the web client has
+    no OS-level dialogs to dismiss this way; use zoom_reset() there."""
     if action not in ("list", "dismiss"):
         raise ControlError(f"invalid dialog action: {action}")
+    if read_current_source().get("ZOOM_JOIN_VIA") == "web":
+        return {"dialogs": [], "dismissed": [], "remaining": [],
+                "note": "web-client join - no desktop dialogs to check; use Reset Zoom instead"}
     argv = [SUDO, "-u", config.ZOOMBOT_USER, PYTHON3_BIN, str(ZOOM_DIALOG_SCRIPT), action]
     proc = run_as_zoombot(argv, timeout=20)
     try:
@@ -712,11 +808,14 @@ ZOOM_JOIN_VERBS = {"join": "start", "leave": "stop", "rejoin": "restart"}
 
 
 def zoom_join(action: str, source: dict | None) -> dict:
-    """join / rejoin / leave for the ACTIVE Zoom source. join and rejoin
-    first re-apply the source's config (link, passcode, bot name, join
-    policy) - that also stamps a fresh ZOOM_JOIN_EPOCH so join-zoom.sh's
-    auto-rejoin counter starts from zero for this operator-initiated
-    join. leave is a plain unit stop (a clean Zoom leave)."""
+    """join / rejoin / leave for the ACTIVE Zoom source, via whichever
+    producer its join_method resolves to (desktop client, or Zoom's web
+    client on the browser-source kiosk). join and rejoin first re-apply
+    the source's config (link, passcode, bot name, join policy) - that
+    also stamps a fresh ZOOM_JOIN_EPOCH so the rejoin counter (and, for
+    join_method=auto, the client-vs-web choice) starts fresh for this
+    operator-initiated join. leave is a plain unit stop (a clean leave)
+    of whichever producer is actually running right now."""
     verb = ZOOM_JOIN_VERBS.get(action)
     if not verb:
         raise ControlError("action must be join, rejoin or leave")
@@ -728,16 +827,59 @@ def zoom_join(action: str, source: dict | None) -> dict:
         if missing:
             raise ControlError("Can't join yet - missing " + "; ".join(missing))
         apply_source_config(source)
-    result = unit_action("zoom", verb)
+        unit = producer_unit_for(source)
+        other = "browser-source" if unit == "zoom" else "zoom"
+        result = unit_action(unit, verb)
+        try:
+            unit_action(other, "stop")  # in case a previous join used the other path
+        except ControlError:
+            pass
+        result["action"] = action
+        result["join_via"] = "web" if unit == "browser-source" else "client"
+        return result
+    # leave: whichever producer the active zoom source is actually using
+    # right now - never touches browser-source when the active source
+    # isn't even a zoom one (that would be a live webpage source).
+    env = read_current_source()
+    if env.get("SOURCE_TYPE") != "zoom":
+        raise ControlError("The active source isn't a Zoom meeting")
+    unit = "browser-source" if env.get("ZOOM_JOIN_VIA") == "web" else "zoom"
+    result = unit_action(unit, verb)
     result["action"] = action
     return result
+
+
+def _zoom_reset_web() -> dict:
+    """The web-client equivalent of "Reset Zoom": close tab, relaunch -
+    zoom_web.reset() navigates the kiosk tab away and back to the join
+    URL; if that's not even reachable (DevTools down), fall back to a
+    full browser-source restart, same as any other "kiosk stuck" case."""
+    from . import sources as sources_mod, zoom_web
+    out: dict = {"dismissed": [], "remaining": [], "stopped": False}
+    active = sources_mod.get_active_source()
+    join_url = sources_mod.effective_zoom_join_url(active) if active else None
+    if not join_url:
+        out["results"] = [unit_action("browser-source", "restart")]
+        out["stopped"] = True
+        return out
+    r = zoom_web.reset(join_url)
+    if not r.get("ok"):
+        out["dialog_error"] = r.get("error")
+        out["results"] = [unit_action("browser-source", "restart")]
+        out["stopped"] = True
+        return out
+    out["status_after_dismiss"] = zoom_meeting_status().get("status")
+    return out
 
 
 def zoom_reset() -> dict:
     """"Reset Zoom window": dismiss whatever dialogs Zoom has up (their
     own OK/Close buttons via AT-SPI), then look again; if a dialog is
     still stuck or Zoom is in a state it won't recover from, stop
-    zoom.service and put the slate on :99. Never touches ffmpeg."""
+    zoom.service and put the slate on :99. For a web-client join, this is
+    "close tab, relaunch" instead (_zoom_reset_web). Never touches ffmpeg."""
+    if read_current_source().get("ZOOM_JOIN_VIA") == "web":
+        return _zoom_reset_web()
     out: dict = {"dismissed": [], "remaining": [], "stopped": False}
     try:
         d = zoom_dialog("dismiss")
@@ -769,6 +911,10 @@ def zoom_apply_join_options(source: dict) -> dict:
     toggled: that could unmute a bot into a live meeting)."""
     options = source.get("options") or {}
     report: dict = {"applied": [], "skipped": [], "mic": None, "camera": None, "view": None}
+    if read_current_source().get("ZOOM_JOIN_VIA") == "web":
+        report["reason"] = "mic/camera/view aren't automated for the web-client join path"
+        report["skipped"] = ["mic", "camera", "view"]
+        return report
     status = zoom_meeting_status()
     report["status"] = status.get("status")
     if status.get("status") != "in_meeting":

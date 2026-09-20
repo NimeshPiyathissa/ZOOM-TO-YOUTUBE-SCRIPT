@@ -172,6 +172,11 @@ button.zm-ctl:focus-visible { outline: 2px solid var(--accent-ring); outline-off
 .zm-card-revealed { margin-top: var(--space-2); white-space: pre-wrap; word-break: break-all; }
 .zm-card-missing { display: flex; gap: var(--space-2); align-items: flex-start; margin-top: var(--space-2); font-size: var(--text-xs); color: var(--warning); }
 .zm-card-missing .icon { flex: none; margin-top: 1px; }
+/* Same look as zm-card-missing (a thing to double-check, amber) but a
+   distinct class - unlike missing, a warning never disables the Join button. */
+.zm-card-warning { display: flex; gap: var(--space-2); align-items: flex-start; margin-top: var(--space-2); font-size: var(--text-xs); color: var(--warning); }
+.zm-card-warning .icon { flex: none; margin-top: 1px; }
+.zm-card-warning:empty { display: none; }
 .zm-card-reg { margin-top: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--rm-rule); }
 .zm-card-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-3); }
 .zm-card-actions .btn { min-height: 40px; padding-left: var(--space-3); padding-right: var(--space-3); }

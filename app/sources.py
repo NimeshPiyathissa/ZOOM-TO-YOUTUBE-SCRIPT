@@ -6,6 +6,7 @@ see app/cli.py's migrate-sources command for the one-time copy."""
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 import time
 from urllib.parse import urlsplit
@@ -14,6 +15,7 @@ from . import config, db, url_security, zoomlink
 from .env_store import ValidationError
 
 MEDIA_EXTENSIONS = (".m3u8", ".mp4", ".mkv", ".flv", ".ts", ".mov", ".webm")
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
 def _row_to_dict(row) -> dict:
@@ -31,10 +33,11 @@ def _row_to_dict(row) -> dict:
         d["join_ready"] = bool(effective_zoom_join_url(d))
         d["meeting_id"] = info["meeting_id"] or zoomlink.classify(d["options"].get("join_url") or "")["meeting_id"]
         d["missing"] = zoom_missing(d)
+        d["warnings"] = zoom_warnings(d)
     return d
 
 
-ZOOM_SECRET_OPTION_KEYS = ("passcode", "join_url")
+ZOOM_SECRET_OPTION_KEYS = ("passcode", "join_url", "registrant_email")
 
 
 def public_view(d: dict | None) -> dict | None:
@@ -47,13 +50,16 @@ def public_view(d: dict | None) -> dict | None:
     v = dict(d)
     v["url"] = zoomlink.redact_url(d["url"])
     if d["type"] == "zoom":
+        from . import accounts as accounts_mod  # local: avoid a module-level cycle (accounts -> control)
         o = dict(d.get("options") or {})
         pc = o.pop("passcode", "") or ""
         ju = o.pop("join_url", "") or ""
+        re_ = o.pop("registrant_email", "") or ""
         o["has_passcode"] = bool(pc) or zoomlink.classify(d["url"])["has_pwd"] or zoomlink.classify(ju)["has_pwd"]
         o["passcode_masked"] = ("\u2022" * min(max(len(pc), 4), 8)) if pc else ""
         o["has_join_url"] = bool(ju)
         o["join_url_redacted"] = zoomlink.redact_url(ju) if ju else ""
+        o["registrant_email_masked"] = accounts_mod.mask_email(re_) if re_ else ""
         v["options"] = o
         v["meeting_id_formatted"] = zoomlink.format_meeting_id(d.get("meeting_id"))
     return v
@@ -74,6 +80,57 @@ def zoom_missing(d: dict) -> list[str]:
     if o.get("signin_mode") == "google" and not d.get("account_id"):
         missing.append("a Google account to join with (or switch to guest)")
     return missing
+
+
+def _account_email(account_id) -> str | None:
+    if not account_id:
+        return None
+    with db.get_conn() as conn:
+        row = conn.execute("SELECT email FROM accounts WHERE id=?", (account_id,)).fetchone()
+    return row["email"] if row else None
+
+
+def zoom_warnings(d: dict) -> list[str]:
+    """Non-blocking, actionable warnings for a Zoom source - unlike
+    zoom_missing() these don't stop a join, they flag something worth a
+    second look. Currently just the registrant-email/bound-account check:
+    there's no way to *prove* a tk= token belongs to a given Gmail
+    address (Zoom exposes no lookup for it), so this only compares it
+    against the account's own verified email and warns on a mismatch."""
+    warnings: list[str] = []
+    o = d.get("options") or {}
+    registrant_email = (o.get("registrant_email") or "").strip().lower()
+    if registrant_email:
+        from . import accounts as accounts_mod  # local: avoid a module-level cycle (accounts -> control)
+        bound_email = (_account_email(d.get("account_id")) or "").strip().lower()
+        if bound_email and bound_email != registrant_email:
+            warnings.append(
+                f"This link was registered with {accounts_mod.mask_email(registrant_email)}, but the account "
+                f"bound to this source is {accounts_mod.mask_email(bound_email)} - Zoom may reject the join, or "
+                "admit a different registrant than intended."
+            )
+        elif not d.get("account_id"):
+            warnings.append(
+                "This is a per-registrant link with a Gmail address on file, but no Google account is bound to "
+                "this source - bind the matching account (Accounts page), or join as guest if the webinar allows it."
+            )
+    return warnings
+
+
+def set_last_join_method(source_id: int, method: str) -> None:
+    """Records which path an auto join actually used (client or web), so
+    the UI can show an honest 'Joined via: ...' badge instead of just
+    echoing the chosen policy back. No-op for a non-zoom or missing source
+    (the join itself already happened; this is just the display record)."""
+    if method not in config.ZOOM_JOIN_MODES:
+        return
+    s = get_source(source_id)
+    if not s or s["type"] != "zoom":
+        return
+    options = dict(s["options"]); options["last_join_method"] = method
+    with db.get_conn() as conn:
+        conn.execute("UPDATE sources SET options=? WHERE id=?", (json.dumps(options), source_id))
+    _bump_rev()
 
 
 def effective_zoom_join_url(source: dict) -> str | None:
@@ -228,6 +285,19 @@ def _validate_zoom_options(options: dict) -> dict:
     vanity_url = str(options.get("vanity_url", "") or "").strip()
     if vanity_url and zoomlink.classify(vanity_url)["kind"] != "vanity":
         vanity_url = ""
+    join_method = str(options.get("join_method", "client") or "client").strip().lower()
+    if join_method not in config.ZOOM_JOIN_MODES:
+        raise ValidationError(f"join_method must be one of {sorted(config.ZOOM_JOIN_MODES)}")
+    registrant_email = str(options.get("registrant_email", "") or "").strip()
+    if registrant_email and not _EMAIL_RE.match(registrant_email):
+        raise ValidationError("registrant_email doesn't look like an email address")
+    # Set by control.set_last_join_method() after a join actually happens
+    # (the honest "joined via" record for auto mode) - a save just carries
+    # it through unchanged; anything not a real mode is dropped rather
+    # than stored, since it only ever feeds a display badge.
+    last_join_method = options.get("last_join_method") or ""
+    if last_join_method not in config.ZOOM_JOIN_MODES:
+        last_join_method = ""
     return {
         "passcode": passcode, "bot_name": bot_name, "signin_mode": signin_mode, "join_url": join_url,
         "meeting_kind": meeting_kind,
@@ -238,6 +308,9 @@ def _validate_zoom_options(options: dict) -> dict:
         "rejoin_max": rejoin_max,
         "join_at": join_at,
         "vanity_url": vanity_url,
+        "join_method": join_method,
+        "registrant_email": registrant_email,
+        "last_join_method": last_join_method,
     }
 
 

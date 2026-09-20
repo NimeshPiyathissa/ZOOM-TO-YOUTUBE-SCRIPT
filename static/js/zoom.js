@@ -58,9 +58,14 @@ const STATUS = {
                            guide: "The host locked the meeting. Ask them to unlock it, then rejoin.", actions: ["rejoin"] },
   signin_required:       { label: "Sign-in required",    icon: "log-in",         tone: "bad",
                            guide: "Only signed-in Zoom users are admitted. Set this meeting to join with a Google account, sign in on the remote screen, then rejoin.", actions: ["edit", "screen"] },
+  duplicate_join:        { label: "Link already used",  icon: "alert-triangle", tone: "bad",
+                           guide: "This registrant link has already been used to join - it's single-use per registrant. Re-register for a fresh one.", actions: ["edit"] },
+  wrong_registrant:      { label: "Wrong registrant",   icon: "user-x",         tone: "bad",
+                           guide: "Zoom doesn't recognize this session as the registrant this link was issued for. Check the Gmail address on file, or re-register.", actions: ["edit"] },
   unknown:               { label: "Unknown",             icon: "circle-help",    tone: "idle",
                            guide: "Zoom is running but nothing recognizable is on screen - look at the remote screen.", actions: ["screen"] },
 };
+const JOIN_VIA_LABEL = { client: "Desktop client", web: "Web client" };
 const KIND = { meeting: "Meeting", webinar: "Webinar", pmi: "Personal room" };
 const INPUT_KIND = {
   join_link: ["link-2", "Join link"], personal_link: ["ticket", "Personal registrant link"], registration: ["clipboard-list", "Registration page"],
@@ -88,10 +93,14 @@ function renderStatus(st) {
   $("zm-status-label").textContent = v.label;
   $("zm-status-detail").textContent = st.detail || "";
   if (changed) { box.classList.remove("is-changed"); void box.offsetWidth; box.classList.add("is-changed"); announce("Zoom: " + v.label); }
-  // zoom.service
+  // producer service (zoom.service for the desktop client, browser-source.service for the web client)
   const svc = st.service || "unknown";
+  const svcUnit = st.join_via === "web" ? "browser-source.service" : "zoom.service";
   $("zm-service-badge").className = "badge " + ({ LIVE: "badge-active", STARTING: "badge-activating", FAILED: "badge-failed" }[svc] || "badge-inactive");
-  $("zm-service-text").textContent = "zoom.service " + svc.toLowerCase();
+  $("zm-service-text").textContent = svcUnit + " " + svc.toLowerCase();
+  const viaBadge = $("zm-via-badge");
+  if (st.join_via && key !== "not_joined") { viaBadge.hidden = false; $("zm-via-text").textContent = "via " + (JOIN_VIA_LABEL[st.join_via] || st.join_via); }
+  else viaBadge.hidden = true;
   // guidance + one-tap actions
   const g = $("zm-guidance");
   const a = active();
@@ -304,6 +313,7 @@ function segValue(seg) { const b = seg.querySelector(".seg-btn.is-active"); retu
 initSegmented($("zm-kind-seg"));
 initSegmented($("zm-form-view-seg"));
 initSegmented($("zm-signin-seg"), (v) => { $("zm-account").hidden = v !== "google"; $("zm-account-hint").hidden = v !== "google"; });
+initSegmented($("zm-joinvia-seg"));
 $("zm-join-at").addEventListener("input", () => { $("zm-join-at-hint").hidden = !$("zm-join-at").value; });
 document.querySelectorAll(".zm-reveal").forEach((b) => b.addEventListener("click", () => {
   const inp = $(b.dataset.for); const show = inp.type === "password"; inp.type = show ? "text" : "password";
@@ -323,9 +333,16 @@ function readForm() {
     view: segValue($("zm-form-view-seg")) || "speaker",
     auto_rejoin: $("zm-auto-rejoin").checked, rejoin_max: Number($("zm-rejoin-max").value) || 5,
     join_at: joinAtRaw ? Math.floor(new Date(joinAtRaw).getTime() / 1000) : null,
+    join_method: segValue($("zm-joinvia-seg")) || "client",
   };
   const pc = $("zm-passcode").value.trim();
   if (pc) opts.passcode = pc; else if (!editingId) opts.passcode = (parsed && parsed.passcode) || "";
+  // Same "blank on edit means keep the saved value" convention as
+  // passcode above - the field only ever shows a masked placeholder on
+  // edit (registrant_email_masked), never the real address, so there's
+  // nothing meaningful to prefill and compare against.
+  const regEmail = $("zm-registrant-email").value.trim();
+  if (regEmail || !editingId) opts.registrant_email = regEmail;
   if (parsed && parsed.vanity_url) opts.vanity_url = parsed.vanity_url;
   return { name: $("zm-name").value.trim() || $("zm-name").placeholder || "", url: parsed ? parsed.url : "", options: opts,
            account_id: signin === "google" ? ($("zm-account").value || null) : null };
@@ -369,6 +386,7 @@ function resetEditor() {
   setSeg($("zm-signin-seg"), "guest"); $("zm-account").hidden = true; $("zm-account-hint").hidden = true; $("zm-account").value = "";
   $("zm-audio-on").checked = false; $("zm-video-on").checked = false; setSeg($("zm-form-view-seg"), "speaker");
   $("zm-auto-rejoin").checked = true; $("zm-rejoin-max").value = 5; $("zm-join-at").value = ""; $("zm-join-at-hint").hidden = true;
+  setSeg($("zm-joinvia-seg"), "client"); $("zm-registrant-email").value = ""; $("zm-registrant-email").placeholder = "Only for a per-registrant (tk=) link - leave blank otherwise";
   $("zm-form-error").hidden = true; $("zm-save").innerHTML = icon("check") + "Save meeting";
 }
 
@@ -386,6 +404,8 @@ function startEdit(id) {
   setSeg($("zm-signin-seg"), o.signin_mode || "guest"); $("zm-account").hidden = o.signin_mode !== "google"; $("zm-account-hint").hidden = o.signin_mode !== "google"; $("zm-account").value = m.account_id || "";
   $("zm-audio-on").checked = !!o.audio_on; $("zm-video-on").checked = !!o.video_on; setSeg($("zm-form-view-seg"), o.view || "speaker");
   $("zm-auto-rejoin").checked = o.auto_rejoin !== false; $("zm-rejoin-max").value = o.rejoin_max || 5;
+  setSeg($("zm-joinvia-seg"), o.join_method || "client");
+  $("zm-registrant-email").placeholder = o.registrant_email_masked ? `saved: ${o.registrant_email_masked} (leave blank to keep)` : "Only for a per-registrant (tk=) link - leave blank otherwise";
   if (o.join_at) { const d = new Date(o.join_at * 1000); const pad = (n) => String(n).padStart(2, "0"); $("zm-join-at").value = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`; $("zm-join-at-hint").hidden = false; }
   $("zm-save").innerHTML = icon("check") + "Save changes";
   $("zm-editor").scrollIntoView({ behavior: "smooth", block: "start" });
@@ -403,6 +423,9 @@ function renderLibrary() {
     const o = m.options || {}; const isActive = m.id === activeId; const kind = o.meeting_kind || "meeting";
     const kindIcon = kind === "webinar" ? "ticket" : kind === "pmi" ? "house" : "video";
     const missing = (m.missing || []).length ? `<div class="zm-card-missing">${icon("alert-triangle", "icon-sm")}<span>Missing ${esc(m.missing.join("; "))}</span></div>` : "";
+    const warnings = (m.warnings || []).length ? `<div class="zm-card-warning">${icon("alert-triangle", "icon-sm")}<span>${esc(m.warnings.join(" "))}</span></div>` : "";
+    const joinVia = { client: "Desktop client", web: "Web client", auto: "Auto" }[o.join_method] || "Desktop client";
+    const lastVia = o.last_join_method ? ` (last joined via ${o.last_join_method === "web" ? "web" : "desktop"})` : "";
     const acct = m.account_id ? (($("zm-account").querySelector(`option[value="${m.account_id}"]`) || {}).textContent || "account").replace(/\s*\(.*\)$/, "") : "guest";
     const reg = m.link_kind === "registration" ? `
       <div class="zm-card-reg">
@@ -420,11 +443,12 @@ function renderLibrary() {
         <span class="readout">${esc(m.meeting_id_formatted || (m.link_kind === "registration" ? "registration page" : "—"))}</span>
         <span class="zm-card-secret">${o.has_passcode ? `${icon("lock-keyhole", "icon-sm")}<span class="readout" data-secret="${m.id}">${esc(o.passcode_masked || "••••••")}</span><button class="btn btn-ghost btn-icon btn-sm" data-act="reveal" data-id="${m.id}" aria-label="Reveal passcode and link">${icon("eye", "icon-sm")}</button>` : `<span class="hint m-0">no passcode</span>`}</span>
         <span class="hint m-0">${icon("user", "icon-sm")}${esc(acct)}</span>
+        <span class="hint m-0">${icon("globe", "icon-sm")}${esc(joinVia)}${esc(lastVia)}</span>
         <span class="hint m-0 zm-card-when">${esc(fmtWhen(m.last_joined_at))}</span>
         ${o.join_at ? `<span class="hint m-0 zm-card-sched">${icon("calendar-clock", "icon-sm")}${esc(fmtJoinAt(o.join_at))}${o.join_at * 1000 < Date.now() ? " (overdue)" : ""}</span>` : ""}
       </div>
       <div class="zm-card-revealed hint mono" data-revealed="${m.id}" hidden></div>
-      ${missing}${reg}
+      ${missing}${warnings}${reg}
       <div class="zm-card-actions">
         <button class="btn ${isActive ? "btn-secondary" : "btn-primary"} btn-sm" data-act="switch" data-id="${m.id}" ${m.missing && m.missing.length ? "disabled" : ""}>${icon("play", "icon-sm")}${isActive ? "Active" : "Join"}</button>
         <button class="btn btn-secondary btn-sm" data-act="edit" data-id="${m.id}">${icon("pencil", "icon-sm")}Edit</button>
@@ -445,6 +469,9 @@ function renderActiveHeader() {
   $("zm-active-name").textContent = a.name;
   $("zm-active-id").textContent = a.meeting_id_formatted || "";
   $("zm-active-meta").textContent = [o.bot_name ? `as "${o.bot_name}"` : "", o.signin_mode === "google" ? "Google account" : "guest", fmtWhen(a.last_joined_at)].filter(Boolean).join(" · ");
+  const warn = $("zm-active-warning");
+  if ((a.warnings || []).length) { warn.hidden = false; warn.innerHTML = icon("alert-triangle", "icon-sm") + `<span>${esc(a.warnings.join(" "))}</span>`; }
+  else warn.hidden = true;
 }
 
 $("zm-library").addEventListener("click", async (e) => {

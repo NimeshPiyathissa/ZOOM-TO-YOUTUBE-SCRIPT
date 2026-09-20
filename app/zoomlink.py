@@ -3,8 +3,15 @@
 Three very different things all look like "a Zoom link":
 
   meeting       https://<sub>.zoom.us/j/<id>?pwd=...
-                A normal meeting/webinar join link. The client can join
-                it directly (zoommtg://zoom.us/join?confno=<id>&pwd=...).
+                A normal meeting/webinar join link. It can be joined via
+                the desktop client (zoommtg://zoom.us/join?confno=<id>&pwd=...,
+                see build_join_url/build_wc_join_url) or via Zoom's own web
+                client (https://<sub>.zoom.us/wc/join/<id>?pwd=...) - both
+                are the same meeting, just a different join path. /wc/join/
+                is recognized as the exact same `kind` as /j/ (the *shape*
+                of the link doesn't imply which path an operator wants -
+                that's a separate per-meeting choice, see the dashboard's
+                join_method option).
 
   personal      https://<sub>.zoom.us/w/<id>?tk=<token>&pwd=...
                 (also /j/<id>?tk=...)
@@ -45,7 +52,7 @@ import re
 from urllib.parse import parse_qs, urlsplit, urlunsplit, quote
 
 _HOST_RE = re.compile(r"^([a-z0-9-]+\.)*zoom\.us$", re.IGNORECASE)
-_JOIN_PATH_RE = re.compile(r"^/(j|w)/(\d{9,11})/?$")
+_JOIN_PATH_RE = re.compile(r"^/(?:j|w|wc/join)/(\d{9,11})/?$")
 _REG_PATH_RE = re.compile(r"^/(webinar|meeting)/register/([A-Za-z0-9_-]{6,120})/?$")
 _VANITY_PATH_RE = re.compile(r"^/my/([A-Za-z0-9._-]{3,64})/?$")
 _TOKEN_RE = re.compile(r"^[A-Za-z0-9_.=-]{8,400}$")
@@ -80,7 +87,7 @@ def classify(url: str) -> dict:
     pwd = (qs.get("pwd") or [None])[0]
     m = _JOIN_PATH_RE.match(parts.path)
     if m:
-        out["meeting_id"] = m.group(2)
+        out["meeting_id"] = m.group(1)
         out["has_pwd"] = bool(pwd)
         out["has_tk"] = bool(tk)
         out["kind"] = "personal" if tk else "meeting"
@@ -177,17 +184,65 @@ def build_join_url(meeting_id: str, passcode: str | None = None, tk: str | None 
     return f"https://{host}/j/{meeting_id}" + ("?" + "&".join(q) if q else "")
 
 
+def build_wc_join_url(meeting_id: str, passcode: str | None = None, tk: str | None = None, host: str = "zoom.us") -> str:
+    """The https /wc/join/ link Zoom's own web client uses - same meeting,
+    same secrets, different join path. See control.py's join_method=web."""
+    q = []
+    if passcode:
+        q.append("pwd=" + quote(passcode, safe=""))
+    if tk:
+        q.append("tk=" + quote(tk, safe=""))
+    return f"https://{host}/wc/join/{meeting_id}" + ("?" + "&".join(q) if q else "")
+
+
+def extract_credentials(url: str) -> dict:
+    """meeting_id/pwd/tk/host pulled out of any recognized join link
+    (/j/, /w/, /wc/join/), so a caller that already holds the secrets
+    (control.py) can rebuild the *other* shape of link (deep link vs
+    wc/join) without re-deriving the parsing logic. Not for anything
+    that leaves the process unmasked - this returns raw secrets."""
+    info = classify(url)
+    qs = parse_qs(urlsplit(url).query)
+    return {
+        "meeting_id": info["meeting_id"],
+        "pwd": (qs.get("pwd") or [None])[0],
+        "tk": (qs.get("tk") or [None])[0],
+        "host": info["host"] or "zoom.us",
+    }
+
+
 # ---------------------------------------------------------------- smart paste
 
 _URL_IN_TEXT_RE = re.compile(r"https?://[^\s<>\"')\]]+", re.IGNORECASE)
 _ZOOMMTG_RE = re.compile(r"zoommtg://[^\s<>\"')\]]+", re.IGNORECASE)
-_ID_LABEL_RE = re.compile(r"(?:meeting|webinar)\s*id\s*[:：]\s*([\d][\d \- ]{7,16}\d)", re.IGNORECASE)
+_ID_LABEL_RE = re.compile(r"(?:meeting|webinar)\s*id\s*[:：]\s*([\d][\d \- ]{7,16}\d)", re.IGNORECASE)
 _PASSCODE_LABEL_RE = re.compile(r"(?:passcode|password|pass\s*code)\s*[:：]\s*([^\s\r\n]{1,64})", re.IGNORECASE)
 _BARE_ID_RE = re.compile(r"^\s*(\d[\d \-]{7,16}\d)\s*$")
 
 
 def _digits(s: str) -> str:
     return re.sub(r"\D", "", s or "")
+
+
+def _unwrap_redirect(url: str) -> str | None:
+    """A URL whose host isn't zoom.us may be a redirect wrapper (Outlook
+    Safe Links, corporate mail-gateway proxies, generic link-tracking
+    services) carrying the real zoom.us URL in a query parameter.
+    parse_qs already URL-decodes each value, so a plain
+    ?url=https%3A%2F%2Fus06web.zoom.us%2Fj%2F... shape is found directly.
+    A vendor with its own non-standard encoding (e.g. Proofpoint URL
+    Defense's character-substituted URLs) isn't handled here - add a
+    decoder for that specific shape if a real sample ever shows up.
+    Returns the embedded zoom.us URL, or None."""
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return None
+    for values in parse_qs(parts.query).values():
+        for v in values:
+            if _HOST_RE.match((urlsplit(v).hostname or "").lower()):
+                return v
+    return None
 
 
 def _empty() -> dict:
@@ -321,12 +376,23 @@ def parse_any(text: str, passcode: str | None = None) -> dict:
         text_pass = pm.group(1)
     zoom_urls = []
     for um in _URL_IN_TEXT_RE.finditer(text):
-        cand = um.group(0).rstrip(".,;:")
+        raw_cand = um.group(0).rstrip(".,;:")
+        cand = raw_cand
+        if not _HOST_RE.match((urlsplit(cand).hostname or "").lower()):
+            unwrapped = _unwrap_redirect(cand)
+            if unwrapped:
+                cand = unwrapped
         if _HOST_RE.match((urlsplit(cand).hostname or "").lower()):
             zoom_urls.append(cand)
             info = classify(normalize_url(cand))
             if info["kind"] != "unknown":
-                is_invite = len(text) > len(cand) + 20
+                # Compared against the matched substring as it appeared in
+                # the input (before unwrapping a redirect wrapper) - a
+                # wrapped link that's the *whole* paste shouldn't be
+                # mistaken for "a link inside a longer invite blob" just
+                # because the wrapper itself is longer than the meeting
+                # link it carries.
+                is_invite = len(text) > len(raw_cand) + 20
                 res = _from_https(cand, out, text_pass or passcode)
                 if is_invite:
                     res["input_kind"] = "invite"

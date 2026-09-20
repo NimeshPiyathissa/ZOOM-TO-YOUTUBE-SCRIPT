@@ -336,7 +336,7 @@ async def api_state(request: Request):
         "system": stats.system_stats(),
         "units": units,
         "active_source": active_source_view,
-        "producer_unit": config.PRODUCER_UNITS.get(active_source["type"]) if active_source else None,
+        "producer_unit": control.producer_unit_for(active_source),
         "source_health": source_health,
         "server_time": time.time(),
     }
@@ -393,12 +393,33 @@ async def api_stream_action(action: str, request: Request):
     return result
 
 
+def _schedule_zoom_followup(source: dict, join_via: str = "client") -> None:
+    """Exactly one background follow-up after a zoom source becomes
+    active/joined, depending on the path: the desktop client gets
+    _apply_join_options_later (mic/camera/view, unchanged); a direct web
+    join gets _web_join_followup (drives Zoom's pre-join screen to
+    actually reach the meeting); join_method "auto" gets
+    _auto_fallback_watcher (watches the client attempt and falls back to
+    web only on a mechanism-level failure - see its docstring for exactly
+    which failures those are). Shared by the dedicated Join/Rejoin
+    buttons (_zoom_action) and the generic source-switch endpoint
+    (api_sources_switch), which is also how /remote and the scheduler
+    activate a zoom source."""
+    method = (source.get("options") or {}).get("join_method", "client")
+    if method == "auto":
+        asyncio.create_task(_auto_fallback_watcher(source["id"]))
+    elif join_via == "web":
+        asyncio.create_task(_web_join_followup(source["id"]))
+    else:
+        asyncio.create_task(_apply_join_options_later(source["id"]))
+
+
 async def _zoom_action(action: str, request: Request):
     """join / rejoin re-apply the active Zoom source's config first (so a
-    fresh ZOOM_JOIN_EPOCH resets join-zoom.sh's rejoin counter), then
-    start/restart zoom.service; leave stops it. After a join, a
-    background task waits for the meeting window and applies the
-    meeting's mic/camera/view options with read-back."""
+    fresh ZOOM_JOIN_EPOCH resets the rejoin counter), then start/restart
+    whichever producer join_method resolves to; leave stops it. After a
+    join, exactly one background follow-up is scheduled - see
+    _schedule_zoom_followup."""
     session = deps.require_session_api(request)
     deps.require_csrf(request, session)
     deps.require_rate_limit(session, "zoom_" + action, max_calls=6, window_seconds=15)
@@ -409,7 +430,7 @@ async def _zoom_action(action: str, request: Request):
         return _api_error(exc)
     if action in ("join", "rejoin") and active:
         sources_mod.mark_joined(active["id"])
-        asyncio.create_task(_apply_join_options_later(active["id"]))
+        _schedule_zoom_followup(active, result.get("join_via", "client"))
     db.audit(session["username"], f"zoom_{action}", active["name"] if active else "", deps.client_ip(request))
     return result
 
@@ -456,6 +477,92 @@ async def _apply_join_options_later(source_id: int, timeout: float = 150.0) -> N
                 _join_options_last.update({"state": "abandoned", "status": st.get("status"), "finished_at": time.time()})
                 return
         _join_options_last.update({"state": "timeout", "finished_at": time.time()})
+    except Exception as exc:  # noqa: BLE001 - background task must not die silently
+        _join_options_last.update({"state": "error", "error": str(exc)[:200], "finished_at": time.time()})
+
+
+async def _web_join_followup(source_id: int, timeout: float = 75.0) -> None:
+    """join_method=web: browser-source.sh has already navigated the kiosk
+    to the wc/join URL by the time this runs; drives Zoom's pre-join
+    screen the rest of the way (zoom_web.join_from_browser) and records
+    which path was used. Shares _join_options_last with the desktop
+    follow-up so the Zoom page only has to poll one endpoint regardless
+    of path."""
+    from . import zoom_web
+    _join_options_last.clear()
+    _join_options_last.update({"source_id": source_id, "state": "web_joining", "started_at": time.time()})
+    try:
+        s = sources_mod.get_source(source_id)
+        if not s:
+            _join_options_last.update({"state": "abandoned", "finished_at": time.time()})
+            return
+        options = s.get("options") or {}
+        result = await run_in_threadpool(
+            zoom_web.join_from_browser, options.get("bot_name", "Stream Bot"), options.get("passcode") or None, timeout,
+        )
+        await run_in_threadpool(sources_mod.set_last_join_method, source_id, "web")
+        db.audit(None, "zoom_web_join",
+                 f"source_id={source_id} ok={result.get('ok')} status={(result.get('status') or {}).get('status')}")
+        _join_options_last.update({"state": "done" if result.get("ok") else "web_failed",
+                                   "result": result, "finished_at": time.time()})
+    except Exception as exc:  # noqa: BLE001 - background task must not die silently
+        _join_options_last.update({"state": "error", "error": str(exc)[:200], "finished_at": time.time()})
+
+
+async def _auto_fallback_watcher(source_id: int, client_timeout: float = 40.0) -> None:
+    """join_method=auto: the join already started on the desktop client
+    (control.zoom_join resolves auto to "client" for the first attempt -
+    see producer_unit_for). Watches zoom_meeting_status() for
+    `client_timeout` seconds. Falls back to the web client only when the
+    client attempt produced NO verifiable signal at all in that window -
+    never reached in_meeting, never reached any terminal status either -
+    which means the desktop client itself failed to get off the ground
+    (crash-looping, or launched but never produced a readable window).
+    Any terminal status (passcode/expired/locked/registration_required/
+    removed/waiting_room/join_failed/...) is a property of the meeting
+    itself, not the join mechanism, so it is NOT a fallback trigger - the
+    web client would hit the identical wall and a fallback there would
+    just burn a join attempt for nothing."""
+    from . import zoom_web
+    _join_options_last.clear()
+    _join_options_last.update({"source_id": source_id, "state": "watching_client", "started_at": time.time()})
+    try:
+        deadline = time.time() + client_timeout
+        while time.time() < deadline:
+            await asyncio.sleep(4)
+            st = await run_in_threadpool(control.zoom_meeting_status)
+            if st.get("status") == "in_meeting":
+                s = sources_mod.get_source(source_id)
+                await run_in_threadpool(sources_mod.set_last_join_method, source_id, "client")
+                if s:
+                    report = await run_in_threadpool(control.zoom_apply_join_options, s)
+                    _join_options_last.update({"state": "done", "report": report, "finished_at": time.time()})
+                return
+            if st.get("terminal"):
+                await run_in_threadpool(sources_mod.set_last_join_method, source_id, "client")
+                _join_options_last.update({"state": "abandoned", "status": st.get("status"), "finished_at": time.time()})
+                return
+
+        # No signal at all within the window - fall back to the web client,
+        # continuing the same operator-initiated join (switch_zoom_join_via
+        # deliberately doesn't touch ZOOM_JOIN_EPOCH/rejoin counters).
+        s = sources_mod.get_source(source_id)
+        if not s:
+            _join_options_last.update({"state": "abandoned", "reason": "source no longer exists", "finished_at": time.time()})
+            return
+        _join_options_last.update({"state": "falling_back_to_web"})
+        options = s.get("options") or {}
+        await run_in_threadpool(control.switch_zoom_join_via, "web")
+        await run_in_threadpool(control.unit_action, "zoom", "stop")
+        await run_in_threadpool(control.unit_action, "browser-source", "restart")
+        result = await run_in_threadpool(
+            zoom_web.join_from_browser, options.get("bot_name", "Stream Bot"), options.get("passcode") or None,
+        )
+        await run_in_threadpool(sources_mod.set_last_join_method, source_id, "web")
+        db.audit(None, "zoom_auto_fallback",
+                 f"source_id={source_id} web_ok={result.get('ok')} status={(result.get('status') or {}).get('status')}")
+        _join_options_last.update({"state": "done" if result.get("ok") else "web_failed",
+                                   "result": result, "fell_back": True, "finished_at": time.time()})
     except Exception as exc:  # noqa: BLE001 - background task must not die silently
         _join_options_last.update({"state": "error", "error": str(exc)[:200], "finished_at": time.time()})
 
@@ -911,7 +1018,8 @@ async def api_sources_switch(source_id: int, request: Request):
     sources_mod.set_active_source_id(source_id)
     if s["type"] == "zoom":
         sources_mod.mark_joined(source_id)
-        asyncio.create_task(_apply_join_options_later(source_id))
+        join_via = "web" if control.producer_unit_for(s) == "browser-source" else "client"
+        _schedule_zoom_followup(s, join_via)
     db.audit(session["username"], "source_switch",
              f"{s['name']} hot={outcome['hot_swapped']} dropped={outcome['rtmp_dropped']}", deps.client_ip(request))
     return outcome

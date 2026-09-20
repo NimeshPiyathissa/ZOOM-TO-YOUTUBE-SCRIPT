@@ -54,8 +54,11 @@ STOP_ORDER = list(reversed(UNIT_ORDER))
 ALLOWED_UNITS = set(UNIT_ORDER)
 
 # Producer units, mutually exclusive - the capture source for zoom/webpage
-# source types. Direct-media sources use neither (ffmpeg reads the URL itself).
-PRODUCER_UNITS = {"zoom": "zoom", "webpage": "browser-source"}
+# source types. Direct-media sources use neither (ffmpeg reads the URL
+# itself). A zoom source can ALSO run on browser-source (join_method=web -
+# Zoom's own web client in the Chrome kiosk instead of the desktop client),
+# so which unit a zoom source actually needs isn't a static lookup by type
+# any more - see control.producer_unit_for().
 
 # Units surfaced individually on the Overview page (novnc-proxy is plumbing,
 # hidden from the main status grid but still controllable). "zoom" and
@@ -95,6 +98,11 @@ ALL_ENV_KEYS = [
     "RESOLUTION", "FPS", "VIDEO_BITRATE", "AUDIO_BITRATE", "X264_PRESET", "VNC_PASSWORD", "DISPLAY_NUM",
 ]
 ZOOM_SIGNIN_MODES = {"guest", "google"}
+# Which app actually joins the meeting: the desktop Linux client (existing
+# zoommtg:// deep-link path), Zoom's own web client (runs on the
+# browser-source producer instead - see control.py's _producer_unit), or
+# "auto" (try client, fall back to web only on a mechanism-level failure).
+ZOOM_JOIN_MODES = {"client", "web", "auto"}
 # x264 presets the panel offers, fastest (least CPU) first. ultrafast is
 # the current default on this box for headroom while live at 720p.
 X264_PRESETS = ["ultrafast", "superfast", "veryfast", "faster", "fast", "medium"]

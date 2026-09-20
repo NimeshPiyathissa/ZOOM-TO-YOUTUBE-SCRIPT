@@ -92,3 +92,77 @@ def test_source_env_lines_zoom_join_policy():
     v = control._source_env_lines(source)
     assert v["ZOOM_AUTO_REJOIN"] == "0" and v["ZOOM_REJOIN_MAX"] == "3" and v["ZOOM_AUDIO_ON"] == "1"
     assert v["ZOOM_VIDEO_ON"] == "0" and v["ZOOM_VIEW"] == "gallery" and v["ZOOM_JOIN_EPOCH"].isdigit()
+
+
+def test_source_env_lines_zoom_join_via():
+    assert control._source_env_lines({"type": "zoom", "url": LINK, "options": {}})["ZOOM_JOIN_VIA"] == "client"
+    web = {"type": "zoom", "url": LINK, "options": {"join_method": "web"}}
+    assert control._source_env_lines(web)["ZOOM_JOIN_VIA"] == "web"
+    auto = {"type": "zoom", "url": LINK, "options": {"join_method": "auto"}}
+    assert control._source_env_lines(auto)["ZOOM_JOIN_VIA"] == "client"   # auto always starts on the client
+
+
+def test_producer_unit_for():
+    assert control.producer_unit_for(None) is None
+    assert control.producer_unit_for({"type": "webpage"}) == "browser-source"
+    assert control.producer_unit_for({"type": "direct"}) is None
+    assert control.producer_unit_for({"type": "zoom", "options": {}}) == "zoom"
+    assert control.producer_unit_for({"type": "zoom", "options": {"join_method": "client"}}) == "zoom"
+    assert control.producer_unit_for({"type": "zoom", "options": {"join_method": "auto"}}) == "zoom"
+    assert control.producer_unit_for({"type": "zoom", "options": {"join_method": "web"}}) == "browser-source"
+
+
+# ---------------------------------------------------------------- join_method / registrant_email (web-client join)
+
+def test_join_method_and_registrant_email_validation(tmp_db):
+    with pytest.raises(ValidationError, match="join_method"):
+        sources.create_source("X", "zoom", LINK, {"join_method": "carrier-pigeon"})
+    with pytest.raises(ValidationError, match="email"):
+        sources.create_source("X", "zoom", LINK, {"registrant_email": "not-an-email"})
+    sid = sources.create_source("X", "zoom", LINK, {"join_method": "web", "registrant_email": "person@example.com"})
+    s = sources.get_source(sid)
+    assert s["options"]["join_method"] == "web" and s["options"]["registrant_email"] == "person@example.com"
+
+
+def test_registrant_email_masked_in_public_view(tmp_db):
+    sid = sources.create_source("X", "zoom", LINK, {"registrant_email": "person@example.com"})
+    pub = sources.public_view(sources.get_source(sid))
+    assert "registrant_email" not in pub["options"]
+    assert "person@example.com" not in pub["options"]["registrant_email_masked"]
+    assert "@" in pub["options"]["registrant_email_masked"]
+
+
+def _make_account(email, label="Acct"):
+    with db.get_conn() as conn:
+        cur = conn.execute(
+            "INSERT INTO accounts (label, profile_id, email, state, created_at) VALUES (?,?,?,?,?)",
+            (label, "acct-" + label.lower(), email, "signed_in", 0.0),
+        )
+        return cur.lastrowid
+
+
+def test_registrant_email_mismatch_warns(tmp_db):
+    acct_id = _make_account("bound@example.com")
+    sid = sources.create_source("X", "zoom", LINK, {"registrant_email": "registrant@example.com"})
+    sources.set_account(sid, acct_id)
+    s = sources.get_source(sid)
+    assert s["warnings"] and any("registered with" in w for w in s["warnings"])
+    assert "bound@example.com" not in " ".join(s["warnings"])   # masked, not raw
+    # matching email -> no warning (account_id must be re-passed - update_source
+    # doesn't preserve an unspecified account_id, same as any other field here)
+    sources.update_source(sid, "X", "zoom", "", {"registrant_email": "bound@example.com"}, account_id=acct_id)
+    assert sources.get_source(sid)["warnings"] == []
+
+
+def test_registrant_email_without_account_warns(tmp_db):
+    sid = sources.create_source("X", "zoom", LINK, {"registrant_email": "registrant@example.com"})
+    s = sources.get_source(sid)
+    assert any("no Google account is bound" in w for w in s["warnings"])
+
+
+def test_set_last_join_method(tmp_db):
+    sid = sources.create_source("X", "zoom", LINK, {})
+    sources.set_last_join_method(sid, "web")
+    assert sources.get_source(sid)["options"]["last_join_method"] == "web"
+    sources.set_last_join_method(sid, "not-a-real-mode")
+    assert sources.get_source(sid)["options"]["last_join_method"] == "web"   # unchanged, invalid ignored
