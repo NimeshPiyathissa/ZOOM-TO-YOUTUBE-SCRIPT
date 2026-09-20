@@ -312,7 +312,14 @@ function setSeg(seg, value) { seg.querySelectorAll(".seg-btn").forEach((b) => b.
 function segValue(seg) { const b = seg.querySelector(".seg-btn.is-active"); return b ? b.dataset.value : null; }
 initSegmented($("zm-kind-seg"));
 initSegmented($("zm-form-view-seg"));
-initSegmented($("zm-signin-seg"), (v) => { $("zm-account").hidden = v !== "google"; $("zm-account-hint").hidden = v !== "google"; });
+initSegmented($("zm-signin-seg"), (v) => {
+  $("zm-account").hidden = v !== "google";
+  $("zm-account-hint").hidden = v !== "google";
+  if (v === "google" && !$("zm-account").value) {
+    const valid = Array.from($("zm-account").options).find((o) => o.value && !o.disabled);
+    if (valid) $("zm-account").value = valid.value;
+  }
+});
 initSegmented($("zm-joinvia-seg"));
 $("zm-join-at").addEventListener("input", () => { $("zm-join-at-hint").hidden = !$("zm-join-at").value; });
 document.querySelectorAll(".zm-reveal").forEach((b) => b.addEventListener("click", () => {
@@ -324,6 +331,14 @@ document.querySelectorAll(".zm-reveal").forEach((b) => b.addEventListener("click
 
 function readForm() {
   const signin = segValue($("zm-signin-seg")) || "guest";
+  let acctId = signin === "google" ? ($("zm-account").value || null) : null;
+  if (signin === "google" && !acctId) {
+    const valid = Array.from($("zm-account").options).find((o) => o.value && !o.disabled);
+    if (valid) {
+      acctId = valid.value;
+      $("zm-account").value = valid.value;
+    }
+  }
   const joinAtRaw = $("zm-join-at").value;
   const opts = {
     bot_name: $("zm-bot-name").value.trim() || "Stream Bot",
@@ -345,7 +360,7 @@ function readForm() {
   if (regEmail || !editingId) opts.registrant_email = regEmail;
   if (parsed && parsed.vanity_url) opts.vanity_url = parsed.vanity_url;
   return { name: $("zm-name").value.trim() || $("zm-name").placeholder || "", url: parsed ? parsed.url : "", options: opts,
-           account_id: signin === "google" ? ($("zm-account").value || null) : null };
+           account_id: acctId };
 }
 
 async function save(thenJoin) {
@@ -360,7 +375,7 @@ async function save(thenJoin) {
   const missing = [];
   if (!editingId && !(parsed && parsed.ok)) missing.push(parsed && parsed.errors && parsed.errors.length ? parsed.errors[0] : "a Zoom link or meeting ID");
   if (!body.name) missing.push("a name");
-  if (body.options.signin_mode === "google" && !body.account_id) missing.push("which Google account to join with");
+  if (body.options.signin_mode === "google" && !body.account_id) missing.push("which Google account to join with (sign in on the Accounts page first, or switch Join as to Guest)");
   if (missing.length) { err.hidden = false; err.textContent = "Can't save yet - missing " + missing.join("; ") + "."; return; }
   body.type = "zoom";
   try {
@@ -402,6 +417,10 @@ function startEdit(id) {
   renderParsed();
   $("zm-name").value = m.name; $("zm-bot-name").value = o.bot_name || "Stream Bot";
   setSeg($("zm-signin-seg"), o.signin_mode || "guest"); $("zm-account").hidden = o.signin_mode !== "google"; $("zm-account-hint").hidden = o.signin_mode !== "google"; $("zm-account").value = m.account_id || "";
+  if (o.signin_mode === "google" && !$("zm-account").value) {
+    const valid = Array.from($("zm-account").options).find((x) => x.value && !x.disabled);
+    if (valid) $("zm-account").value = valid.value;
+  }
   $("zm-audio-on").checked = !!o.audio_on; $("zm-video-on").checked = !!o.video_on; setSeg($("zm-form-view-seg"), o.view || "speaker");
   $("zm-auto-rejoin").checked = o.auto_rejoin !== false; $("zm-rejoin-max").value = o.rejoin_max || 5;
   setSeg($("zm-joinvia-seg"), o.join_method || "client");

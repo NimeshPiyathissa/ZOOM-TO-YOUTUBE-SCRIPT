@@ -266,7 +266,19 @@ def verify_account(account_id: int) -> dict:
         # The running kiosk holds this profile (bound web source): ask
         # that Chrome over DevTools which Google account its page shows
         # instead of fighting it for the directory.
-        result = _verify_via_running_kiosk(acct["profile_id"]) or result
+        kiosk = _verify_via_running_kiosk(acct["profile_id"])
+        if kiosk:
+            result = kiosk
+        elif acct.get("state") == "signed_in":
+            # Profile is actively in use by a running source (e.g. Zoom, YouTube kiosk).
+            # Do not demote an active session to inconclusive while in use.
+            result = {
+                "status": "signed_in",
+                "email": acct.get("email"),
+                "via": "running source (profile in use)",
+            }
+        else:
+            result = result
     status = result.get("status", "inconclusive")
     if status not in ("signed_in", "signed_out", "inconclusive"):
         status = "inconclusive"
