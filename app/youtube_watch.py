@@ -176,16 +176,20 @@ async def tick(play_link) -> None:
             pass
     # Keep the player filling the canvas: a watch page shows YouTube's
     # masthead/sidebar unless its player is fullscreen, and YouTube drops
-    # fullscreen on some transitions (ad -> video, playlist advance).
+    # fullscreen on some transitions (ad -> video, playlist advance, an
+    # upsell card, ...). Retry every tick like dismiss-prompt/skip-ad do -
+    # _mark_once only dedupes the audit/toast, never the click itself -
+    # because a dropped-fullscreen tick shows real black letterboxing to
+    # viewers; gating the retry behind the 20s dedup (as this used to)
+    # left it on screen far longer than the ~4s tick interval should allow.
     if s["yt_keep_fullscreen"] and st.get("has_video") and not st.get("fullscreen") and not st.get("continue_prompt") \
             and not st.get("ended") and st.get("body_hint", "") == "":
-        if _mark_once("fullscreen", st.get("url", "")):
-            try:
-                r = await cdp.evaluate(cdp.JS_FULLSCREEN, user_gesture=True)
-                if r.get("value") in ("clicked-yt-button", "requested"):
-                    auto.append("fullscreen restored")
-            except cdp.CDPError:
-                pass
+        try:
+            r = await cdp.evaluate(cdp.JS_FULLSCREEN, user_gesture=True)
+            if r.get("value") in ("clicked-yt-button", "requested") and _mark_once("fullscreen", st.get("url", "")):
+                auto.append("fullscreen restored")
+        except cdp.CDPError:
+            pass
     # A saved link's speed: YouTube resets playbackRate after an ad or a
     # playlist step, so put it back while the video (not an ad) plays.
     if current["link_id"] is not None and st.get("has_video") and not st.get("ad_showing") and not st.get("paused"):

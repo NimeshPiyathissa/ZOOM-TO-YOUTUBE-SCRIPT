@@ -3,6 +3,7 @@
 {% block title %}Live Studio – Zoom Stream Dashboard{% endblock %}
 {% block extra_css %}
 <link rel="stylesheet" href="/static/css/rack.css">
+<link rel="stylesheet" href="/static/css/remote.css">
 <link rel="stylesheet" href="/static/css/studio.css">
 {% endblock %}
 
@@ -46,6 +47,25 @@
       </button>
     </div>
   </header>
+
+  <!-- ================================================================ Program Monitor: live preview of :99 -->
+  <section class="card studio-preview-card" aria-labelledby="studio-preview-h">
+    <h2 id="studio-preview-h" class="rack-title">
+      {{ icon("monitor", "icon-sm") }}Program Monitor
+      <span class="rack-title-end"><span class="program-id" aria-hidden="true">DISPLAY :99</span></span>
+    </h2>
+    <div class="panel-preview" id="studio-preview" data-phase="STOPPED">
+      <div class="monitor-tally" aria-hidden="true"></div>
+      <img id="studio-preview-img" alt="Live preview of display :99" hidden>
+      <div class="empty-state p-0" id="studio-preview-placeholder">{{ icon("video") }}<div class="empty-sub">No preview yet</div></div>
+      <div class="panel-preview-overlay">
+        <span class="badge badge-inactive panel-state" id="studio-preview-state"><span class="dot"></span><span id="studio-preview-state-text">—</span></span>
+        <span class="tnum panel-elapsed" id="studio-preview-elapsed"></span>
+        <span class="hint tnum panel-preview-age" id="studio-preview-age"></span>
+      </div>
+    </div>
+    <p class="hint mt-2">Passive thumbnail, refreshed every 3 s. For touch control of the desktop, use the Program monitor on <a href="/remote">/remote</a>.</p>
+  </section>
 
   <!-- ================================================================ Telemetry & Audio Monitor Row -->
   <div class="studio-row studio-row-split">

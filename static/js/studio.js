@@ -57,6 +57,15 @@
   const btnSaveSk = document.getElementById("btn-save-sk");
   const skStatusMsg = document.getElementById("sk-status-msg");
 
+  // Elements: Program Monitor (preview)
+  const studioPreview = document.getElementById("studio-preview");
+  const studioPreviewImg = document.getElementById("studio-preview-img");
+  const studioPreviewPlaceholder = document.getElementById("studio-preview-placeholder");
+  const studioPreviewState = document.getElementById("studio-preview-state");
+  const studioPreviewStateText = document.getElementById("studio-preview-state-text");
+  const studioPreviewElapsed = document.getElementById("studio-preview-elapsed");
+  const studioPreviewAge = document.getElementById("studio-preview-age");
+
   // Elements: Source
   const sourceStatusBadge = document.getElementById("source-status-badge");
   const sourceBadgeText = document.getElementById("source-badge-text");
@@ -82,6 +91,7 @@
   let uptimeClockTimer = null;
   let audioPollTimer = null;
   let statePollTimer = null;
+  let previewPollTimer = null;
   let pendingAction = null; // "go-live" | "stop"
   let cachedStreamKey = "";
   let isKeyRevealed = false;
@@ -123,9 +133,20 @@
 
   // ---------------------------------------------------------------- Master Broadcast & Tally
 
+  const PHASE_LABEL = { STOPPED: "Stopped", STARTING: "Starting…", LIVE: "LIVE", RECONNECTING: "Reconnecting…", FAILED: "Failed" };
+
+  function updatePreviewMonitor(phase, uptime) {
+    if (!studioPreview) return;
+    studioPreview.dataset.phase = phase;
+    studioPreviewState.className = "badge panel-state " + phaseBadgeClass(phase);
+    studioPreviewStateText.textContent = PHASE_LABEL[phase] || phase;
+    studioPreviewElapsed.textContent = phase === "LIVE" ? formatTimecode(uptime) : "";
+  }
+
   function updateTally(phase, uptime) {
     currentPhase = (phase || "STOPPED").toUpperCase();
     streamUptime = uptime || 0;
+    updatePreviewMonitor(currentPhase, streamUptime);
 
     if (currentPhase === "LIVE") {
       masterStrip.setAttribute("data-state", "on-air");
@@ -620,6 +641,36 @@
     }
   }
 
+  // ---------------------------------------------------------------- Program Monitor preview poll
+
+  async function pollPreview() {
+    if (document.hidden || !studioPreview) return;
+    try {
+      const res = await fetch(`/api/preview.jpg?t=${Date.now()}`, { credentials: "same-origin" });
+      if (!res.ok) throw new Error("no preview");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const old = studioPreviewImg.src;
+      studioPreviewImg.src = url;
+      studioPreviewImg.hidden = false;
+      studioPreviewPlaceholder.hidden = true;
+      studioPreview.classList.remove("is-stale");
+      studioPreviewAge.textContent = "live";
+      studioPreview.dataset.lastOk = String(Date.now());
+      if (old && old.startsWith("blob:")) URL.revokeObjectURL(old);
+    } catch (err) {
+      const last = Number(studioPreview.dataset.lastOk || 0);
+      if (last && Date.now() - last < 30000) {
+        studioPreview.classList.add("is-stale");
+        studioPreviewAge.textContent = "stale " + Math.round((Date.now() - last) / 1000) + "s";
+      } else {
+        studioPreviewImg.hidden = true;
+        studioPreviewPlaceholder.hidden = false;
+        studioPreviewAge.textContent = "";
+      }
+    }
+  }
+
   // ---------------------------------------------------------------- Polling & Lifecycle
 
   async function pollState() {
@@ -659,17 +710,20 @@
     // Run initial state poll
     pollState();
     pollAudio();
+    pollPreview();
 
     // Start background intervals
     uptimeClockTimer = setInterval(tickClock, 1000);
     statePollTimer = setInterval(pollState, 2000);
     audioPollTimer = setInterval(pollAudio, 250);
+    previewPollTimer = setInterval(pollPreview, 3000);
 
     // Visibility management
     document.addEventListener("visibilitychange", () => {
       if (!document.hidden) {
         pollState();
         pollAudio();
+        pollPreview();
       }
     });
   }
