@@ -27,6 +27,7 @@
     </div>
     <nav class="sidebar-nav">
       <a href="/" class="{{ 'active' if request.url.path == '/' }}">{{ icon("layout-dashboard") | safe }}<span class="label">Overview</span></a>
+      <a href="/studio" class="{{ 'active' if request.url.path == '/studio' }}">{{ icon("youtube") | safe }}<span class="label">Live Studio</span></a>
       <a href="/controls" class="{{ 'active' if request.url.path == '/controls' }}">{{ icon("sliders-horizontal") | safe }}<span class="label">Controls</span></a>
       <a href="/remote" class="{{ 'active' if request.url.path == '/remote' }}">{{ icon("cast") | safe }}<span class="label">Remote</span></a>
       <a href="/zoom" class="{{ 'active' if request.url.path == '/zoom' }}">{{ icon("video") | safe }}<span class="label">Zoom</span></a>

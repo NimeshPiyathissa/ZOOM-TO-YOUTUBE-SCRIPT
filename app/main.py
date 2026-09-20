@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import pathlib
+import re
 import subprocess
 import time
 
@@ -89,6 +90,7 @@ async def security_headers(request: Request, call_next):
         # library (app/youtube.py thumbnail_url) - images only.
         "img-src 'self' data: blob: https://i.ytimg.com; "
         "connect-src 'self' ws: wss:; "
+        "frame-src 'self' https://www.youtube.com; "
         "frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
     )
     return response
@@ -209,6 +211,38 @@ async def zoom_page(request: Request):
         "meetings": meetings, "active_source_id": active["id"] if active else None,
         "sources_rev": sources_mod.sources_rev(),
         "accounts": accounts_mod.list_accounts(), "timezone": config.TIMEZONE,
+    })
+
+
+@app.get("/studio", response_class=HTMLResponse)
+async def studio_page(request: Request):
+    """Dedicated YouTube Live Studio Room: broadcast-grade master controls,
+    real-time tally strip, stream health telemetry, dual-channel audio peak ladder,
+    stream key / RTMP manager, source indicator, and mobile slide-over live chat."""
+    session = _require_page(request)
+    if isinstance(session, RedirectResponse):
+        return session
+    active = sources_mod.get_active_source()
+    parsed_env = env_store.read_parsed()
+    yt_key = parsed_env.get("YT_STREAM_KEY", "")
+    masked_key_hint = f"••••••••••••{yt_key[-4:]}" if len(yt_key) >= 4 else ("Configured" if yt_key else "Not configured")
+
+    studio_settings = {
+        "video_id": db.get_setting("yt_studio_video_id", "") or "",
+        "watch_url": db.get_setting("yt_studio_watch_url", "") or "",
+        "control_room_url": db.get_setting("yt_studio_control_room_url", "https://studio.youtube.com/channel/live/livestreaming") or "https://studio.youtube.com/channel/live/livestreaming",
+    }
+
+    return templates.TemplateResponse("studio.html", {
+        "request": request,
+        "csrf_token": session["csrf_token"],
+        "username": session["username"],
+        "active_source": active,
+        "stream_key_configured": bool(yt_key),
+        "stream_key_hint": masked_key_hint,
+        "rtmp_ingest_url": "rtmps://a.rtmps.youtube.com:443/live2",
+        "studio_settings": studio_settings,
+        "sources_rev": sources_mod.sources_rev(),
     })
 
 
@@ -724,6 +758,91 @@ async def api_extract_zoom_link(request: Request):
     body = await request.json()
     meeting_id, passcode = env_store.extract_zoom_id_passcode(str(body.get("link", "")))
     return {"meeting_id": meeting_id, "passcode": passcode}
+
+
+# ---------------------------------------------------------------- api: studio
+
+@app.get("/api/studio/stream-key/reveal")
+async def api_studio_stream_key_reveal(request: Request):
+    """The YouTube RTMP Ingest URL and Stream Key for an explicit reveal/copy tap.
+    Rate-limited and audited; never cached."""
+    session = deps.require_session_api(request)
+    deps.require_rate_limit(session, "studio_key_reveal", max_calls=10, window_seconds=60)
+    parsed_env = env_store.read_parsed()
+    yt_key = parsed_env.get("YT_STREAM_KEY", "")
+    db.audit(session["username"], "studio_key_reveal", "", deps.client_ip(request))
+    return JSONResponse({
+        "stream_key": yt_key,
+        "rtmp_url": "rtmps://a.rtmps.youtube.com:443/live2",
+    }, headers={"Cache-Control": "no-store"})
+
+
+@app.post("/api/studio/stream-key")
+async def api_studio_stream_key_save(request: Request):
+    """Updates YT_STREAM_KEY in .env via write-env.sh and returns units needing restart."""
+    session = deps.require_session_api(request)
+    deps.require_csrf(request, session)
+    deps.require_rate_limit(session, "studio_key_update", max_calls=5, window_seconds=60)
+    data = await request.json()
+    new_key = str(data.get("stream_key", "")).strip()
+    if not new_key:
+        raise HTTPException(status_code=400, detail="Stream key cannot be empty")
+    try:
+        units = await run_in_threadpool(env_store.write_updates, {"YT_STREAM_KEY": new_key})
+    except (env_store.ValidationError, control.ControlError) as exc:
+        return _api_error(exc)
+    db.audit(session["username"], "studio_stream_key_update", f"ends in {new_key[-4:] if len(new_key)>=4 else 'key'}", deps.client_ip(request))
+    return {
+        "ok": True,
+        "units_to_restart": units,
+        "hint": f"••••••••••••{new_key[-4:]}" if len(new_key) >= 4 else "Configured",
+    }
+
+
+@app.get("/api/studio/settings")
+async def api_studio_settings_get(request: Request):
+    deps.require_session_api(request)
+    return {
+        "video_id": db.get_setting("yt_studio_video_id", "") or "",
+        "watch_url": db.get_setting("yt_studio_watch_url", "") or "",
+        "control_room_url": db.get_setting("yt_studio_control_room_url", "https://studio.youtube.com/channel/live/livestreaming") or "https://studio.youtube.com/channel/live/livestreaming",
+    }
+
+
+@app.post("/api/studio/settings")
+async def api_studio_settings_save(request: Request):
+    session = deps.require_session_api(request)
+    deps.require_csrf(request, session)
+    data = await request.json()
+    video_id = str(data.get("video_id", "")).strip()
+    watch_url = str(data.get("watch_url", "")).strip()
+    control_room_url = str(data.get("control_room_url", "")).strip()
+
+    if video_id:
+        yt_match = re.search(r"(?:v=|\/live\/|\/watch\?v=|\.be\/)([a-zA-Z0-9_-]{11})", video_id)
+        if yt_match:
+            video_id = yt_match.group(1)
+        elif not re.match(r"^[a-zA-Z0-9_-]{8,15}$", video_id):
+            raise HTTPException(status_code=400, detail="Invalid YouTube Video ID format")
+
+    if watch_url and not (watch_url.startswith("https://") or watch_url.startswith("http://")):
+        raise HTTPException(status_code=400, detail="Watch URL must start with http:// or https://")
+
+    db.set_setting("yt_studio_video_id", video_id)
+    if watch_url:
+        db.set_setting("yt_studio_watch_url", watch_url)
+    elif video_id:
+        db.set_setting("yt_studio_watch_url", f"https://www.youtube.com/watch?v={video_id}")
+    if control_room_url:
+        db.set_setting("yt_studio_control_room_url", control_room_url)
+
+    db.audit(session["username"], "studio_settings_update", video_id, deps.client_ip(request))
+    return {
+        "ok": True,
+        "video_id": video_id,
+        "watch_url": db.get_setting("yt_studio_watch_url", ""),
+        "control_room_url": db.get_setting("yt_studio_control_room_url", "https://studio.youtube.com/channel/live/livestreaming"),
+    }
 
 
 @app.post("/api/settings")

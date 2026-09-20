@@ -69,6 +69,25 @@ _SPEED_HISTORY_MAX = 10
 _recent_speeds: list[float] = []
 
 
+_encoder_proc: psutil.Process | None = None
+
+
+def _get_encoder_cpu(pid: int | None) -> float | None:
+    global _encoder_proc
+    if not pid or pid <= 0:
+        _encoder_proc = None
+        return None
+    try:
+        if _encoder_proc is None or _encoder_proc.pid != pid:
+            _encoder_proc = psutil.Process(pid)
+            _encoder_proc.cpu_percent(interval=None)
+            return None
+        return round(_encoder_proc.cpu_percent(interval=None), 1)
+    except (psutil.NoSuchProcess, psutil.AccessDenied, Exception):
+        _encoder_proc = None
+        return None
+
+
 def ffmpeg_progress(show: dict) -> dict | None:
     """Returns live FFmpeg progress, or None if there's no reason to
     trust the log file as current: the unit must actually be LIVE (real
@@ -108,6 +127,7 @@ def ffmpeg_progress(show: dict) -> dict | None:
                 "drop": int(drop.group(1)) if drop else 0,
                 "warning": speed < 1.0,
                 "age_seconds": round(age, 1),
+                "encoder_cpu": _get_encoder_cpu(show.get("main_pid")),
             }
     return None
 

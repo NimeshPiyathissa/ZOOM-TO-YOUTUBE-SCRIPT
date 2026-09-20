@@ -85,8 +85,12 @@ class AudioLevelManager:
         live = self.latest is not None and age is not None and age < LEVEL_STALE_SECONDS
         return {
             "live": live,
-            "peak_db": self.latest["peak_db"] if live else None,
-            "rms_db": self.latest["rms_db"] if live else None,
+            "peak_db": self.latest["peak_db"] if live and self.latest else None,
+            "peak_l_db": (self.latest.get("peak_l_db") if (self.latest and "peak_l_db" in self.latest) else (self.latest["peak_db"] if live and self.latest else None)),
+            "peak_r_db": (self.latest.get("peak_r_db") if (self.latest and "peak_r_db" in self.latest) else (self.latest["peak_db"] if live and self.latest else None)),
+            "rms_db": self.latest["rms_db"] if live and self.latest else None,
+            "rms_l_db": (self.latest.get("rms_l_db") if (self.latest and "rms_l_db" in self.latest) else (self.latest["rms_db"] if live and self.latest else None)),
+            "rms_r_db": (self.latest.get("rms_r_db") if (self.latest and "rms_r_db" in self.latest) else (self.latest["rms_db"] if live and self.latest else None)),
             "age_seconds": round(age, 1) if age is not None else None,
         }
 

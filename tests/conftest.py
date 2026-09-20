@@ -22,3 +22,13 @@ if "pwd" not in sys.modules:
 
         fake_pwd.getpwnam = lambda name: _FakePasswdEntry()
         sys.modules["pwd"] = fake_pwd
+
+if "pyDes" not in sys.modules:
+    try:
+        import pyDes  # noqa: F401
+    except ImportError:
+        fake_pydes = types.ModuleType("pyDes")
+        fake_pydes.des = lambda key, *a, **k: types.SimpleNamespace(encrypt=lambda d: d, decrypt=lambda d: d)
+        fake_pydes.ECB = 0
+        fake_pydes.PAD_NORMAL = 0
+        sys.modules["pyDes"] = fake_pydes
