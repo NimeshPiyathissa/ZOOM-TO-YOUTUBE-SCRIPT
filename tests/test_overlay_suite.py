@@ -134,10 +134,124 @@ def test_overlay_js_generation():
     }
     js = overlay.generate_overlay_js(st)
     assert "obs-text-overlay" in js
+    assert "livestream-watermark-overlay" in js
+    assert "livestream-watermark-inner" in js
+    assert "document.documentElement" in js
+    assert "MutationObserver" in js
+    assert "2147483647" in js
+    assert "display: block !important" in js
     assert "TEST OVERLAY" in js
     assert "Montserrat" in js
     assert "-webkit-text-stroke" in js
     assert "text-shadow" in js
+
+    # Test hidden state
+    st_hidden = dict(st, visible=False)
+    js_hidden = overlay.generate_overlay_js(st_hidden)
+    assert "display: none !important" in js_hidden
+
+
+def test_extended_typography_suite(client):
+    assert len(overlay.GOOGLE_FONTS) >= 60
+    assert "High-Impact & Broadcast Titles" in overlay.GOOGLE_FONT_CATEGORIES
+    assert "Modern & Clean Sans-Serif" in overlay.GOOGLE_FONT_CATEGORIES
+    assert "Condensed & Tall" in overlay.GOOGLE_FONT_CATEGORIES
+    assert "Tech, Sci-Fi & Gaming" in overlay.GOOGLE_FONT_CATEGORIES
+    assert "Elegant & Editorial Serif" in overlay.GOOGLE_FONT_CATEGORIES
+    assert "Handwritten & Script" in overlay.GOOGLE_FONT_CATEGORIES
+    assert "Sri Lankan / Sinhala Unicode Support" in overlay.GOOGLE_FONT_CATEGORIES
+
+    # Check Sinhala Unicode fonts
+    sinhala_fonts = overlay.GOOGLE_FONT_CATEGORIES["Sri Lankan / Sinhala Unicode Support"]
+    assert "Noto Sans Sinhala" in sinhala_fonts
+    assert "Noto Serif Sinhala" in sinhala_fonts
+    assert "Abhaya Libre" in sinhala_fonts
+
+    # Test dynamic JS generation for special font names
+    js_sinhala = overlay.generate_overlay_js({"font_family": "Noto Sans Sinhala", "visible": True})
+    assert "Noto+Sans+Sinhala" in js_sinhala
+    assert "font-overlay-noto-sans-sinhala" in js_sinhala
+
+    js_gaming = overlay.generate_overlay_js({"font_family": "Press Start 2P", "visible": True})
+    assert "Press+Start+2P" in js_gaming
+    assert "font-overlay-press-start-2p" in js_gaming
+
+    # Test template dropdown renders optgroups
+    res = client.get("/overlay")
+    assert res.status_code == 200
+    html = res.text
+    assert '<optgroup label="High-Impact &amp; Broadcast Titles">' in html or '<optgroup label="High-Impact & Broadcast Titles">' in html
+    assert '<optgroup label="Sri Lankan / Sinhala Unicode Support">' in html
+    assert "Noto Sans Sinhala" in html
+
+
+def test_overlay_api_status(client, monkeypatch):
+    from app import cdp
+
+    async def mock_get_page_target():
+        return {
+            "title": "Zoom Meeting Session",
+            "url": "https://app.zoom.us/wc/123456/join",
+            "webSocketDebuggerUrl": "ws://127.0.0.1:9222/devtools/page/1",
+        }
+
+    async def mock_evaluate(expression, user_gesture=False):
+        return {
+            "value": {
+                "injected": True,
+                "visible": True,
+                "parent": "HTML",
+                "text": "TEST OVERLAY",
+            }
+        }
+
+    monkeypatch.setattr(cdp, "_get_page_target", mock_get_page_target)
+    monkeypatch.setattr(cdp, "evaluate", mock_evaluate)
+
+    res = client.get("/api/overlay/status")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["connected"] is True
+    assert data["injected"] is True
+    assert data["visible"] is True
+    assert data["target_title"] == "Zoom Meeting Session"
+    assert data["parent"] == "HTML"
+
+
+def test_overlay_api_reinject(client, monkeypatch):
+    from app import cdp
+
+    async def mock_get_page_target():
+        return {
+            "title": "Zoom Meeting Session",
+            "url": "https://app.zoom.us/wc/123456/join",
+            "webSocketDebuggerUrl": "ws://127.0.0.1:9222/devtools/page/1",
+        }
+
+    async def mock_evaluate(expression, user_gesture=False):
+        return {
+            "value": {
+                "injected": True,
+                "visible": True,
+                "parent": "HTML",
+                "text": "TEST OVERLAY",
+            }
+        }
+
+    monkeypatch.setattr(cdp, "_get_page_target", mock_get_page_target)
+    monkeypatch.setattr(cdp, "evaluate", mock_evaluate)
+
+    res = client.post(
+        "/api/overlay/reinject",
+        json={},
+        headers={"X-CSRF-Token": client.session["csrf_token"]},
+    )
+    assert res.status_code == 200
+    data = res.json()
+    assert data["ok"] is True
+    assert data["status"]["connected"] is True
+    assert data["status"]["injected"] is True
+    assert data["status"]["pushed"] is True
 
 
 # --- 2. Emergency Failover BRB Slate Tests ---

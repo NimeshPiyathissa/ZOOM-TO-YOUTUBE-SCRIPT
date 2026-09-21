@@ -263,6 +263,7 @@ async def overlay_page(request: Request):
         "username": session["username"],
         "overlay_state": state,
         "google_fonts": overlay.GOOGLE_FONTS,
+        "font_categories": overlay.GOOGLE_FONT_CATEGORIES,
     })
 
 
@@ -895,6 +896,28 @@ async def api_overlay_toggle(request: Request):
     await overlay.push_overlay_to_kiosk(updated)
     db.audit(session["username"], "overlay_toggle", f"visible={updated.get('visible')}", deps.client_ip(request))
     return {"ok": True, "state": updated}
+
+
+@app.get("/api/overlay/status")
+async def api_overlay_status(request: Request):
+    deps.require_session_api(request)
+    from . import overlay
+    return await overlay.get_overlay_kiosk_status()
+
+
+@app.post("/api/overlay/reinject")
+async def api_overlay_reinject(request: Request):
+    session = deps.require_session_api(request)
+    deps.require_csrf(request, session)
+    from . import overlay
+    res = await overlay.reinject_overlay()
+    db.audit(
+        session["username"],
+        "overlay_reinject",
+        f"connected={res.get('connected')}, injected={res.get('injected')}, visible={res.get('visible')}",
+        deps.client_ip(request),
+    )
+    return {"ok": True, "status": res}
 
 
 # ---------------------------------------------------------------- api: emergency failover BRB slate (Part 3)

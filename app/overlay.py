@@ -7,30 +7,95 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
+import re
 
 from . import cdp, config
 
 logger = logging.getLogger("zoom-stream.overlay")
 
-GOOGLE_FONTS = [
-    "Roboto",
-    "Montserrat",
-    "Poppins",
-    "Bebas Neue",
-    "Oswald",
-    "Inter",
-    "Anton",
-    "Playfair Display",
-    "Open Sans",
-    "Lato",
-    "Raleway",
-    "Source Sans Pro",
-    "Fira Sans",
-    "Merriweather",
-    "Cinzel",
-    "Ubuntu",
-    "Bangers",
-]
+GOOGLE_FONT_CATEGORIES = {
+    "High-Impact & Broadcast Titles": [
+        "Anton",
+        "Bebas Neue",
+        "Teko",
+        "Archivo Black",
+        "Russo One",
+        "Righteous",
+        "Bungee",
+        "Alfa Slab One",
+        "Black Han Sans",
+        "Titan One",
+        "Bangers",
+        "Squada One",
+    ],
+    "Modern & Clean Sans-Serif": [
+        "Montserrat",
+        "Poppins",
+        "Roboto",
+        "Inter",
+        "Open Sans",
+        "Lato",
+        "Raleway",
+        "DM Sans",
+        "Plus Jakarta Sans",
+        "Work Sans",
+        "Outfit",
+        "Rubik",
+        "Nunito",
+        "Kanit",
+    ],
+    "Condensed & Tall": [
+        "Oswald",
+        "Barlow Semi Condensed",
+        "Fjalla One",
+        "Pathway Gothic One",
+        "Saira Condensed",
+        "Antonio",
+        "Six Caps",
+        "Yanone Kaffeesatz",
+    ],
+    "Tech, Sci-Fi & Gaming": [
+        "Orbitron",
+        "Exo 2",
+        "Audiowide",
+        "Rajdhani",
+        "Chakra Petch",
+        "Michroma",
+        "Oxanium",
+        "Share Tech Mono",
+        "Press Start 2P",
+        "Silkscreen",
+    ],
+    "Elegant & Editorial Serif": [
+        "Playfair Display",
+        "Merriweather",
+        "Cinzel",
+        "Lora",
+        "Cormorant Garamond",
+        "Bodoni Moda",
+        "Spectral",
+        "Prata",
+        "DM Serif Display",
+        "Abril Fatface",
+    ],
+    "Handwritten & Script": [
+        "Pacifico",
+        "Caveat",
+        "Dancing Script",
+        "Permanent Marker",
+        "Great Vibes",
+        "Satisfy",
+        "Shadows Into Light",
+        "Kalam",
+    ],
+    "Sri Lankan / Sinhala Unicode Support": [
+        "Noto Sans Sinhala",
+        "Noto Serif Sinhala",
+        "Abhaya Libre",
+    ],
+}
+
+GOOGLE_FONTS = [font for fonts in GOOGLE_FONT_CATEGORIES.values() for font in fonts]
 
 DEFAULT_OVERLAY_STATE = {
     "text": "LIVE BROADCAST",
@@ -127,7 +192,7 @@ def toggle_overlay_visibility() -> dict:
 
 def generate_overlay_js(state: dict) -> str:
     """Generates the client-side JavaScript snippet to inject/update the overlay in Chrome kiosk."""
-    visible = state.get("visible", False)
+    visible = bool(state.get("visible", False))
     text = (state.get("text") or "").replace("\n", "<br>")
     font_family = state.get("font_family") or "Montserrat"
     font_size = state.get("font_size", 42)
@@ -136,7 +201,7 @@ def generate_overlay_js(state: dict) -> str:
     outline_enabled = state.get("outline_enabled", False)
     outline_color = state.get("outline_color", "#000000")
     outline_width = state.get("outline_width", 2)
-    outline_css = f"-webkit-text-stroke: {outline_width}px {outline_color};" if outline_enabled else "-webkit-text-stroke: 0;"
+    outline_css = f"-webkit-text-stroke: {outline_width}px {outline_color} !important;" if outline_enabled else "-webkit-text-stroke: 0 !important;"
 
     box_enabled = state.get("box_enabled", False)
     box_color_rgba = hex_to_rgba(state.get("box_color", "#000000"), state.get("box_opacity", 75)) if box_enabled else "transparent"
@@ -148,7 +213,7 @@ def generate_overlay_js(state: dict) -> str:
     shadow_blur = state.get("shadow_blur", 10)
     shadow_x = state.get("shadow_x", 2)
     shadow_y = state.get("shadow_y", 4)
-    shadow_css = f"text-shadow: {shadow_x}px {shadow_y}px {shadow_blur}px {shadow_color};" if shadow_enabled else "text-shadow: none;"
+    shadow_css = f"text-shadow: {shadow_x}px {shadow_y}px {shadow_blur}px {shadow_color} !important;" if shadow_enabled else "text-shadow: none !important;"
 
     pos_x = state.get("pos_x", 5.0)
     pos_y = state.get("pos_y", 88.0)
@@ -172,49 +237,93 @@ def generate_overlay_js(state: dict) -> str:
         transform = f"translate({tx}, {ty})"
 
     font_url_family = font_family.replace(" ", "+")
+    font_slug = re.sub(r"[^a-z0-9]+", "-", font_family.lower()).strip("-")
+    font_id = f"font-overlay-{font_slug}"
+    display_val = "block" if visible else "none"
+    visibility_val = "visible" if visible else "hidden"
+    opacity_val = "1" if visible else "0"
 
     js = f"""(() => {{
-      // 1. Ensure Google Font is loaded
-      const fontId = 'font-overlay-{font_url_family.lower()}';
+      // 1. Ensure Google Font is loaded dynamically
+      const fontUrlFamily = {json.dumps(font_url_family)};
+      const fontId = {json.dumps(font_id)};
       if (!document.getElementById(fontId)) {{
         const link = document.createElement('link');
         link.id = fontId;
         link.rel = 'stylesheet';
-        link.href = 'https://fonts.googleapis.com/css2?family={font_url_family}:wght@400;600;700;800&display=swap';
+        link.href = 'https://fonts.googleapis.com/css2?family=' + fontUrlFamily + '&display=swap';
         document.head.appendChild(link);
       }}
 
-      // 2. Locate or create overlay container
-      let overlay = document.getElementById('obs-text-overlay');
-      if (!overlay) {{
-        overlay = document.createElement('div');
-        overlay.id = 'obs-text-overlay';
-        overlay.style.position = 'fixed';
-        overlay.style.zIndex = '2147483646';
-        overlay.style.pointerEvents = 'none';
-        overlay.style.willChange = 'transform, top, left';
-        overlay.style.lineHeight = '1.25';
-        overlay.style.maxWidth = '90vw';
-        overlay.style.wordBreak = 'break-word';
-        (document.body || document.documentElement).appendChild(overlay);
+      // 2. Clean up legacy obs-text-overlay if present outside our root container
+      const legacy = document.getElementById('obs-text-overlay');
+      if (legacy) {{
+        legacy.remove();
       }}
 
-      // 3. Apply styles & visibility
-      overlay.style.display = {'block' if visible else 'none'};
-      if (!{json.dumps(visible)}) return true;
+      // 3. Locate or create root watermark container attached to document.documentElement
+      let container = document.getElementById('livestream-watermark-overlay');
+      if (!container) {{
+        container = document.createElement('div');
+        container.id = 'livestream-watermark-overlay';
+        (document.documentElement || document.body).appendChild(container);
+      }}
 
-      overlay.style.left = '{pos_x}%';
-      overlay.style.top = '{pos_y}%';
-      overlay.style.transform = '{transform}';
-      overlay.style.fontFamily = '"{font_family}", sans-serif';
-      overlay.style.fontSize = '{font_size}px';
-      overlay.style.color = '{font_color_rgba}';
-      overlay.style.backgroundColor = '{box_color_rgba}';
-      overlay.style.padding = '{box_padding}px';
-      overlay.style.borderRadius = '{box_radius}px';
-      overlay.style.cssText += '; {outline_css} {shadow_css}';
-      overlay.innerHTML = {json.dumps(text)};
-      return true;
+      // Ensure container is child of document.documentElement (top-most DOM root)
+      if (container.parentElement !== document.documentElement && document.documentElement) {{
+        document.documentElement.appendChild(container);
+      }}
+
+      const isVisible = {json.dumps(visible)};
+      container.style.cssText = 'position: fixed !important; top: 0 !important; left: 0 !important; width: 100vw !important; height: 100vh !important; pointer-events: none !important; z-index: 2147483647 !important; overflow: hidden !important; margin: 0 !important; padding: 0 !important; border: none !important; display: {display_val} !important; visibility: {visibility_val} !important; opacity: {opacity_val} !important;';
+
+      if (!isVisible) {{
+        return {{ success: true, visible: false, attached: true }};
+      }}
+
+      // 4. Locate or create inner overlay box
+      let inner = document.getElementById('livestream-watermark-inner');
+      if (!inner) {{
+        inner = document.createElement('div');
+        inner.id = 'livestream-watermark-inner';
+        container.appendChild(inner);
+      }}
+
+      inner.style.cssText = 'position: absolute !important; pointer-events: none !important; will-change: transform, top, left !important; line-height: 1.25 !important; max-width: 90vw !important; word-break: break-word !important; white-space: pre-wrap !important; box-sizing: border-box !important; left: {pos_x}% !important; top: {pos_y}% !important; transform: {transform} !important; font-family: "{font_family}", sans-serif !important; font-size: {font_size}px !important; color: {font_color_rgba} !important; background-color: {box_color_rgba} !important; padding: {box_padding}px !important; border-radius: {box_radius}px !important; {outline_css} {shadow_css}';
+      inner.innerHTML = {json.dumps(text)};
+
+      // 5. Persistent MutationObserver to guard against React re-renders wiping DOM elements
+      if (!window.__zoom_watermark_observer) {{
+        try {{
+          const rootNode = document.documentElement || document.body;
+          window.__zoom_watermark_observer = new MutationObserver(() => {{
+            const c = document.getElementById('livestream-watermark-overlay');
+            if (!c || c.parentElement !== document.documentElement) {{
+              if (c) c.remove();
+              if (typeof window.__zoom_reinject_watermark === 'function') {{
+                window.__zoom_reinject_watermark();
+              }}
+            }}
+          }});
+          window.__zoom_watermark_observer.observe(rootNode, {{ childList: true, subtree: false }});
+        }} catch (e) {{
+          console.warn('Watermark MutationObserver error:', e);
+        }}
+      }}
+
+      window.__zoom_reinject_watermark = () => {{
+        let c = document.getElementById('livestream-watermark-overlay');
+        if (!c && document.documentElement) {{
+          document.documentElement.appendChild(container);
+        }}
+      }};
+
+      return {{
+        success: true,
+        visible: true,
+        attached: Boolean(document.getElementById('livestream-watermark-overlay')),
+        parent: container.parentElement ? container.parentElement.tagName : null
+      }};
     }})()"""
     return js
 
@@ -232,3 +341,53 @@ async def push_overlay_to_kiosk(state: dict | None = None) -> bool:
     except Exception as exc:
         logger.debug("Overlay push to kiosk skipped (kiosk not running or DevTools busy): %s", exc)
         return False
+
+
+async def get_overlay_kiosk_status() -> dict:
+    """Probes Chrome kiosk via CDP to determine if overlay is injected and visible on Display :99."""
+    state = get_overlay_state()
+    try:
+        target = await cdp._get_page_target()
+        js_probe = """
+        (() => {
+          const container = document.getElementById('livestream-watermark-overlay');
+          const inner = document.getElementById('livestream-watermark-inner');
+          return {
+            injected: Boolean(container && inner),
+            visible: Boolean(container && container.style.display !== 'none' && container.style.visibility !== 'hidden'),
+            parent: container && container.parentElement ? container.parentElement.tagName : null,
+            text: inner ? (inner.innerText || '') : ''
+          };
+        })()
+        """
+        res = await cdp.evaluate(js_probe)
+        val = res.get("value") or {}
+        return {
+            "connected": True,
+            "target_title": target.get("title", ""),
+            "target_url": target.get("url", ""),
+            "configured_visible": state.get("visible", False),
+            "injected": bool(val.get("injected", False)),
+            "visible": bool(val.get("visible", False)),
+            "parent": val.get("parent"),
+            "text": val.get("text", ""),
+        }
+    except Exception as exc:
+        return {
+            "connected": False,
+            "target_title": "",
+            "target_url": "",
+            "configured_visible": state.get("visible", False),
+            "injected": False,
+            "visible": False,
+            "error": str(exc),
+        }
+
+
+async def reinject_overlay() -> dict:
+    """Forces immediate re-injection of overlay state into Chrome kiosk via CDP."""
+    state = get_overlay_state()
+    success = await push_overlay_to_kiosk(state)
+    status = await get_overlay_kiosk_status()
+    status["pushed"] = success
+    return status

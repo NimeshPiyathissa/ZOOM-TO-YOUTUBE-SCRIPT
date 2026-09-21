@@ -105,7 +105,9 @@ def generate_brb_js(state: dict) -> str:
       if (titleEl) titleEl.innerText = {json.dumps(title)};
       if (subEl) subEl.innerText = {json.dumps(subtitle)};
 
-      slate.style.display = {'flex' if active else 'none'};
+      slate.style.display = {json.dumps('flex' if active else 'none')};
+      slate.style.visibility = {json.dumps('visible' if active else 'hidden')};
+      slate.style.opacity = {json.dumps('1' if active else '0')};
       return true;
     }})()"""
 

@@ -49,6 +49,11 @@ async def _get_page_target() -> dict:
     pages = [t for t in targets if t.get("type") == "page"]
     if not pages:
         raise CDPError("No Chrome page target found - is the active source a webpage source?")
+    for p in pages:
+        url = (p.get("url") or "").lower()
+        title = (p.get("title") or "").lower()
+        if "zoom.us" in url or "zoom" in title:
+            return p
     return pages[0]
 
 
@@ -100,7 +105,13 @@ async def evaluate(expression: str, user_gesture: bool = False) -> dict:
             "expression": expression, "returnByValue": True, "awaitPromise": False,
             "userGesture": bool(user_gesture),
         })
-        return result.get("result", {})
+        res = result.get("result", {})
+        if res.get("subtype") == "error":
+            raise CDPError(f"Page JS error: {res.get('description') or res.get('value')}")
+        if "exceptionDetails" in result:
+            desc = result["exceptionDetails"].get("exception", {}).get("description") or result["exceptionDetails"].get("text", "JS exception")
+            raise CDPError(f"Page JS exception: {desc}")
+        return res
 
 
 # Deliberately operate on the real <video> element YouTube's player
@@ -144,7 +155,7 @@ def js_set_volume(percent: int) -> str:
 # quality and its setPlaybackQuality() API is a no-op on modern players,
 # so this is reported, not selectable (see the plan's "can't work as
 # specified" notes).
-JS_STATE = """(() => {
+JS_STATE = r"""(() => {
   const v = document.querySelector('video');
   const txt = (sel) => { const el = document.querySelector(sel); return el ? (el.innerText || '').trim() : ''; };
   const errorText = txt('.ytp-error-content-wrap-reason') || txt('.ytp-error') || '';

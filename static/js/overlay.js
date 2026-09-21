@@ -30,7 +30,7 @@
 
   // Input Controls
   const inputTextInput = document.getElementById('overlay-text-input');
-  const inputFontFamily = document.getElementById('overlay-font-family');
+  const inputFontFamily = document.getElementById('overlay-font-family') || document.getElementById('fontFamily');
   const inputFontSize = document.getElementById('overlay-font-size');
   const fontSizeVal = document.getElementById('font-size-val');
 
@@ -86,9 +86,23 @@
     return meta ? meta.getAttribute('content') : '';
   }
 
+  function loadGoogleFont(fontFamily) {
+    if (!fontFamily) return;
+    const fontUrlFamily = fontFamily.replace(/\s+/g, '+');
+    const fontId = 'font-preview-' + fontFamily.toLowerCase().replace(/[^a-z0-9]/g, '-');
+    if (!document.getElementById(fontId)) {
+      const link = document.createElement('link');
+      link.id = fontId;
+      link.rel = 'stylesheet';
+      link.href = 'https://fonts.googleapis.com/css2?family=' + fontUrlFamily + '&display=swap';
+      document.head.appendChild(link);
+    }
+  }
+
   // Update Visual Preview Box
   function updatePreview() {
     if (!stage || !box || !render) return;
+    loadGoogleFont(state.font_family);
 
     // Stage scale factor (relative to 1920x1080 canvas)
     const stageWidth = stage.clientWidth || 960;
@@ -192,6 +206,7 @@
         const data = await res.json();
         if (data && data.state) state = data.state;
         updatePreview();
+        if (typeof checkHardwareStatus === 'function') checkHardwareStatus();
         if (showToast && typeof window.toast === 'function') {
           window.toast('Overlay applied to live broadcast.', 'success');
         }
@@ -524,6 +539,7 @@
           const data = await res.json();
           if (data && data.state) state = data.state;
           updatePreview();
+          checkHardwareStatus();
           if (typeof window.toast === 'function') {
             window.toast(state.visible ? 'Overlay is now ON-AIR' : 'Overlay is now HIDDEN', state.visible ? 'success' : 'info');
           }
@@ -541,11 +557,88 @@
     });
   }
 
+  // Hardware Status Indicator & Force Re-Inject
+  const hwBadge = document.getElementById('overlay-hw-badge');
+  const hwText = document.getElementById('overlay-hw-text');
+  const btnReinject = document.getElementById('btn-reinject-overlay');
+  const btnReinjectText = document.getElementById('btn-reinject-text');
+
+  async function checkHardwareStatus() {
+    if (!hwBadge || !hwText) return;
+    try {
+      const res = await fetch('/api/overlay/status');
+      if (!res.ok) return;
+      const data = await res.json();
+      hwBadge.classList.remove('status-active', 'status-waiting', 'status-hidden');
+      if (!data.connected) {
+        hwBadge.classList.add('status-waiting');
+        hwText.textContent = '🟡 WAITING FOR STREAM / CDP';
+      } else if (data.connected && data.injected && data.visible) {
+        hwBadge.classList.add('status-active');
+        hwText.textContent = '🟢 OVERLAY ACTIVE ON DISPLAY :99';
+      } else if (data.connected && data.injected && !data.visible) {
+        hwBadge.classList.add('status-hidden');
+        hwText.textContent = '⚪ OVERLAY HIDDEN';
+      } else {
+        hwBadge.classList.add('status-waiting');
+        hwText.textContent = '🟡 READY TO INJECT';
+      }
+    } catch (e) {
+      if (hwBadge && hwText) {
+        hwBadge.classList.remove('status-active', 'status-waiting', 'status-hidden');
+        hwBadge.classList.add('status-waiting');
+        hwText.textContent = '🟡 WAITING FOR STREAM / CDP';
+      }
+    }
+  }
+
+  if (btnReinject) {
+    btnReinject.addEventListener('click', async () => {
+      const originalText = btnReinjectText ? btnReinjectText.textContent : 'Force Re-Inject';
+      if (btnReinjectText) btnReinjectText.textContent = 'Injecting...';
+      btnReinject.disabled = true;
+      try {
+        const res = await fetch('/api/overlay/reinject', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-Token': getCsrfToken(),
+          },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          await checkHardwareStatus();
+          if (typeof window.toast === 'function') {
+            const injected = data.status && data.status.injected;
+            window.toast(
+              injected ? 'Overlay successfully re-injected on Display :99' : 'Re-injected (kiosk status updated)',
+              injected ? 'success' : 'info'
+            );
+          }
+        } else {
+          if (typeof window.toast === 'function') {
+            window.toast('Failed to re-inject overlay', 'danger');
+          }
+        }
+      } catch (e) {
+        console.error('Reinject failed:', e);
+        if (typeof window.toast === 'function') {
+          window.toast('Network error re-injecting overlay', 'danger');
+        }
+      } finally {
+        if (btnReinjectText) btnReinjectText.textContent = originalText;
+        btnReinject.disabled = false;
+      }
+    });
+  }
+
   // Resize listener to re-scale font and padding proportionally
   window.addEventListener('resize', () => {
     updatePreview();
   });
 
-  // Initial render
+  // Initial render & status check
   updatePreview();
+  checkHardwareStatus();
+  setInterval(checkHardwareStatus, 4000);
 })();
