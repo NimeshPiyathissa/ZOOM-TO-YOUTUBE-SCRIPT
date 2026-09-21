@@ -139,3 +139,76 @@ def alert_zoom_disconnected(detail: str = "Meeting disconnected or ended") -> bo
         "Zoom session is no longer active. Emergency BRB holding card can be engaged."
     )
     return send_alert(msg)
+
+
+def alert_clean_feed_triggered(trigger_source: str = "Studio / Operator") -> bool:
+    """Fired when Zoom clean-feed enforcement is triggered."""
+    msg = (
+        "🧹 <b>ZOOM CLEAN-FEED APPLIED</b>\n\n"
+        f"<b>Trigger:</b> {trigger_source}\n"
+        f"<b>Time:</b> {time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime())}\n"
+        "Controls eliminated and full edge-to-edge canvas fit enforced."
+    )
+    return send_alert(msg)
+
+
+_telegram_poller_task: asyncio.Task | None = None
+
+
+async def _poll_telegram_commands_loop():
+    """Polls Telegram getUpdates for /clean and /cleanfeed commands."""
+    last_update_id = 0
+    while True:
+        try:
+            token, allowed_chat_id = get_telegram_config()
+            if not token:
+                await asyncio.sleep(10)
+                continue
+            url = f"https://api.telegram.org/bot{token}/getUpdates"
+            params = {"offset": last_update_id + 1, "timeout": 5}
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(url, params=params)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    for update in data.get("result", []):
+                        uid = update.get("update_id", 0)
+                        if uid > last_update_id:
+                            last_update_id = uid
+                        msg = update.get("message") or update.get("channel_post") or {}
+                        chat = msg.get("chat", {})
+                        chat_id = str(chat.get("id", ""))
+                        if allowed_chat_id and chat_id != allowed_chat_id:
+                            continue
+                        text = (msg.get("text") or "").strip().lower()
+                        if text in ("/clean", "/cleanfeed", "/clean_feed", "clean", "clean feed"):
+                            from . import zoom_web
+                            res = await zoom_web.apply_cleanfeed_async()
+                            if res.get("ok"):
+                                reply = (
+                                    "✅ <b>Clean feed applied!</b>\n"
+                                    "Zoom Workplace top header, bottom toolbar, and black borders eliminated."
+                                )
+                            else:
+                                reply = f"⚠️ <b>Clean feed trigger:</b> {res.get('error', 'CDP evaluated')}"
+                            await send_alert_async(reply)
+        except Exception as exc:
+            logger.debug("Telegram polling exception: %s", exc)
+        await asyncio.sleep(3)
+
+
+def start_telegram_poller():
+    global _telegram_poller_task
+    if _telegram_poller_task is None or _telegram_poller_task.done():
+        try:
+            loop = asyncio.get_running_loop()
+            _telegram_poller_task = loop.create_task(_poll_telegram_commands_loop())
+        except RuntimeError:
+            pass
+
+
+def stop_telegram_poller():
+    global _telegram_poller_task
+    if _telegram_poller_task and not _telegram_poller_task.done():
+        _telegram_poller_task.cancel()
+        _telegram_poller_task = None
+

@@ -12,6 +12,7 @@
 <link rel="stylesheet" href="/static/css/components.css">
 <link rel="stylesheet" href="/static/css/cards-3d.css">
 <link rel="stylesheet" href="/static/css/layout.css">
+<link rel="stylesheet" href="/static/css/passwall-glass.css">
 {% block extra_css %}{% endblock %}
 <link rel="icon" href="data:,">
 </head>
@@ -29,11 +30,11 @@
       <a href="/" class="{{ 'active' if request.url.path == '/' }}">{{ icon("layout-dashboard") | safe }}<span class="label">Overview</span></a>
       <a href="/studio" class="{{ 'active' if request.url.path == '/studio' }}">{{ icon("youtube") | safe }}<span class="label">Live Studio</span></a>
       <a href="/overlay" class="{{ 'active' if request.url.path == '/overlay' }}">{{ icon("type") | safe }}<span class="label">Text Overlays</span></a>
+      <a href="/settings" class="{{ 'active' if request.url.path in ['/settings', '/config'] }}">{{ icon("settings") | safe }}<span class="label">Settings</span></a>
       <a href="/controls" class="{{ 'active' if request.url.path == '/controls' }}">{{ icon("sliders-horizontal") | safe }}<span class="label">Controls</span></a>
       <a href="/remote" class="{{ 'active' if request.url.path == '/remote' }}">{{ icon("cast") | safe }}<span class="label">Remote</span></a>
       <a href="/zoom" class="{{ 'active' if request.url.path == '/zoom' }}">{{ icon("video") | safe }}<span class="label">Zoom</span></a>
       <a href="/accounts" class="{{ 'active' if request.url.path == '/accounts' }}">{{ icon("user") | safe }}<span class="label">Accounts</span></a>
-      <a href="/config" class="{{ 'active' if request.url.path == '/config' }}">{{ icon("settings") | safe }}<span class="label">Configuration</span></a>
       <a href="/logs" class="{{ 'active' if request.url.path == '/logs' }}">{{ icon("terminal") | safe }}<span class="label">Logs</span></a>
       <a href="/vnc" class="{{ 'active' if request.url.path == '/vnc' }}">{{ icon("monitor") | safe }}<span class="label">Remote GUI</span></a>
       <a href="/schedule" class="{{ 'active' if request.url.path == '/schedule' }}">{{ icon("calendar-clock") | safe }}<span class="label">Schedule</span></a>
@@ -71,6 +72,16 @@
     </div>
 {% endif %}
     <main class="{{ 'page' if username else '' }}">
+      {% if username %}
+      <nav class="passwall-nav" aria-label="Passwall Quick Navigation">
+        <a href="/" class="passwall-nav-link {{ 'active' if request.url.path == '/' }}">{{ icon("layout-dashboard", "icon-sm") | safe }}Overview</a>
+        <a href="/studio" class="passwall-nav-link {{ 'active' if request.url.path == '/studio' }}">{{ icon("youtube", "icon-sm") | safe }}Live Studio</a>
+        <a href="/overlay" class="passwall-nav-link {{ 'active' if request.url.path == '/overlay' }}">{{ icon("type", "icon-sm") | safe }}Overlays</a>
+        <a href="/settings" class="passwall-nav-link {{ 'active' if request.url.path in ['/settings', '/config'] }}">{{ icon("settings", "icon-sm") | safe }}Settings</a>
+        <a href="/remote" class="passwall-nav-link {{ 'active' if request.url.path == '/remote' }}">{{ icon("cast", "icon-sm") | safe }}Remote</a>
+        <a href="/zoom" class="passwall-nav-link {{ 'active' if request.url.path == '/zoom' }}">{{ icon("video", "icon-sm") | safe }}Zoom</a>
+      </nav>
+      {% endif %}
       {% block content %}{% endblock %}
     </main>
 {% if username %}

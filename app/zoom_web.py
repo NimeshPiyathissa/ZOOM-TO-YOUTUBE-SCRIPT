@@ -123,6 +123,110 @@ JS_AUTOPILOT_STEP = """(() => {
 })()"""
 
 JS_CLEANFEED_INJECT = """(() => {
+  const CSS_TEXT = `
+    /* 1. Eliminate Top Header & All Sub-Headers */
+    .meeting-app-header, #header, .header, .topic, .meeting-info-header,
+    .meeting-info-icon__header, .meeting-topic,
+    [class*="header"], [class*="meeting-app-header"], [class*="header__"], [class*="meeting-header"],
+    .suspension-header, div[role="banner"], .meeting-client-head,
+    [id="header_container"], .header-container {
+        display: none !important;
+        height: 0 !important;
+        width: 0 !important;
+        opacity: 0 !important;
+        pointer-events: none !important;
+        visibility: hidden !important;
+        min-height: 0 !important;
+        max-height: 0 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        border: none !important;
+        overflow: hidden !important;
+    }
+
+    /* 2. Eliminate Bottom Control Bar & Floating Tools */
+    .footer, #wc-footer, .meeting-control-bar, .footer__control-bar,
+    [class*="footer"], div[role="toolbar"], #foot-bar,
+    .footer-bar, .room-footer, .more-button, .audio-option-menu,
+    .settings-dialog, .suspension-window, .security-option-menu,
+    .footer-button-base, .leave-btn-container, [class*="leave-btn"],
+    .meeting-client-inner .footer, [class*="meeting-control-bar"],
+    [class*="footer__control-bar"], [class*="footer-button"],
+    [id="footer_container"], .footer-container,
+    [id="livesdk__campaign"], [class*="livesdk"], [id*="livesdk"],
+    .livesdk__placement, .livesdk__invitation, .livesdk__Draggable {
+        display: none !important;
+        height: 0 !important;
+        width: 0 !important;
+        opacity: 0 !important;
+        pointer-events: none !important;
+        visibility: hidden !important;
+        min-height: 0 !important;
+        max-height: 0 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        border: none !important;
+        overflow: hidden !important;
+    }
+
+    /* 3. Strip Participant Tags & Badges */
+    .participant-name, .video-box__name-tag, [class*="speaker-bar"],
+    [class*="name-tag"], #speaker-box-name, .video-avatar__avatar-name,
+    .speaker-bar, .name-label, [class*="speaker-name"],
+    [class*="participant-name"], .speaker-active-name,
+    .can-hide.participant-name, .aria-label-participant-name {
+        display: none !important;
+        opacity: 0 !important;
+        pointer-events: none !important;
+        visibility: hidden !important;
+        height: 0 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+
+    /* 4. Eliminate Black Bars & Force 100vw x 100vh Edge-to-Edge */
+    html, body, #root, #app, .main-layout, .meeting-client, .meeting-client-inner, .window-content,
+    .video-container, .gallery-video-container, .speaker-view, .single-view,
+    .full-screen-video, .video-player-container, #video-container, .video-box,
+    [id="content_container"], .zoom-newcontent, .total-main-content, [id="content"], .main-content,
+    .react-draggable, [class*="main-layout"], [class*="meeting-client"], [class*="video-container"] {
+        width: 100vw !important;
+        height: 100vh !important;
+        max-width: 100vw !important;
+        max-height: 100vh !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        border: none !important;
+        overflow: hidden !important;
+        background-color: #000 !important;
+        background: #000 !important;
+        box-sizing: border-box !important;
+    }
+
+    /* Force active video container and canvas to fill the entire screen */
+    .speaker-active-video, .video-avatar-container, .speaker-view,
+    video, canvas, canvas.speaker-active-video__canvas, div[class*="active-video"] {
+        position: fixed !important;
+        top: 0 !important;
+        left: 0 !important;
+        width: 100vw !important;
+        height: 100vh !important;
+        max-width: 100vw !important;
+        max-height: 100vh !important;
+        object-fit: contain !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        z-index: 1 !important;
+    }
+
+    ::-webkit-scrollbar {
+        display: none !important;
+        width: 0 !important;
+        height: 0 !important;
+    }
+  `;
+
+  // 1. Right-Click Context Lock
   const suppress = (e) => {
     if (e) {
       if (typeof e.preventDefault === 'function') e.preventDefault();
@@ -131,73 +235,158 @@ JS_CLEANFEED_INJECT = """(() => {
     }
     return false;
   };
-  window.addEventListener('contextmenu', suppress, true);
-  document.addEventListener('contextmenu', suppress, true);
-  window.addEventListener('auxclick', (e) => { if (e && e.button === 2) suppress(e); }, true);
-  window.addEventListener('keydown', (e) => { if (e && (e.key === 'ContextMenu' || e.keyCode === 93)) suppress(e); }, true);
-
-  if (!document.getElementById('zoom-cleanfeed-style')) {
-    const style = document.createElement('style');
-    style.id = 'zoom-cleanfeed-style';
-    style.textContent = `
-      .meeting-app-header, #header, .header, .meeting-info-icon__header, .meeting-info-header,
-      .topic, .meeting-topic, [class*="meeting-app-header"], [class*="header__"], [class*="meeting-header"],
-      .footer, .meeting-control-bar, .footer__control-bar, #wc-footer,
-      .meeting-client-inner .footer, [class*="meeting-control-bar"], [class*="footer__control-bar"],
-      [class*="footer-button"], .footer-bar, .room-footer, .more-button, .audio-option-menu,
-      .settings-dialog, .suspension-window, .meeting-client-head, #foot-bar, .security-option-menu,
-      .footer-button-base, .leave-btn-container, [class*="leave-btn"],
-      .participant-name, .speaker-bar, .name-label, [class*="speaker-name"],
-      [class*="participant-name"], [class*="video-avatar__avatar-name"], [class*="video-box__name-tag"],
-      [class*="name-tag"], .video-box__name-tag, .speaker-active-name, .can-hide.participant-name,
-      .aria-label-participant-name {
-        display: none !important;
-        opacity: 0 !important;
-        pointer-events: none !important;
-        visibility: hidden !important;
-        height: 0 !important;
-        min-height: 0 !important;
-        max-height: 0 !important;
-        margin: 0 !important;
-        padding: 0 !important;
-      }
-      html, body {
-        width: 100vw !important;
-        height: 100vh !important;
-        overflow: hidden !important;
-        margin: 0 !important;
-        padding: 0 !important;
-        background-color: #000 !important;
-      }
-      #root, #app, .main-layout, .meeting-client, .meeting-client-inner,
-      .video-container, .gallery-video-container, .speaker-view, .single-view,
-      .full-screen-video, .video-player-container, #video-container, .video-box,
-      .react-draggable, [class*="main-layout"], [class*="meeting-client"], [class*="video-container"] {
-        width: 100vw !important;
-        height: 100vh !important;
-        max-width: 100vw !important;
-        max-height: 100vh !important;
-        position: fixed !important;
-        top: 0 !important;
-        left: 0 !important;
-        margin: 0 !important;
-        padding: 0 !important;
-      }
-      video, canvas {
-        width: 100vw !important;
-        height: 100vh !important;
-        max-width: 100vw !important;
-        max-height: 100vh !important;
-        object-fit: contain !important;
-        position: fixed !important;
-        top: 0 !important;
-        left: 0 !important;
-      }
-    `;
-    (document.head || document.documentElement).appendChild(style);
+  if (!window.__cleanfeed_events_bound) {
+    window.addEventListener('contextmenu', suppress, true);
+    document.addEventListener('contextmenu', suppress, true);
+    window.addEventListener('auxclick', (e) => { if (e && e.button === 2) suppress(e); }, true);
+    window.addEventListener('keydown', (e) => { if (e && (e.key === 'ContextMenu' || e.keyCode === 93)) suppress(e); }, true);
+    window.__cleanfeed_events_bound = true;
   }
-  return true;
+
+  // 2. Ensure Style Element Exists & Contains Nuclear Rules
+  let styleEl = document.getElementById('zoom-cleanfeed-style');
+  if (!styleEl) {
+    styleEl = document.createElement('style');
+    styleEl.id = 'zoom-cleanfeed-style';
+    styleEl.textContent = CSS_TEXT;
+    (document.head || document.documentElement).appendChild(styleEl);
+  } else if (styleEl.textContent !== CSS_TEXT) {
+    styleEl.textContent = CSS_TEXT;
+  }
+
+  // 3. Programmatic DOM Purge & Fit
+  const HIDE_SEL = [
+    '.meeting-app-header', '#header', '.header', '.topic', '.meeting-info-header',
+    '.meeting-info-icon__header', '.meeting-topic',
+    '[class*="header"]', '[class*="meeting-app-header"]', '[class*="header__"]', '[class*="meeting-header"]',
+    '.suspension-header', 'div[role="banner"]', '.meeting-client-head',
+    '[id="header_container"]', '.header-container',
+    '.footer', '#wc-footer', '.meeting-control-bar', '.footer__control-bar',
+    '[class*="footer"]', 'div[role="toolbar"]', '#foot-bar',
+    '.footer-bar', '.room-footer', '.more-button', '.audio-option-menu',
+    '.settings-dialog', '.suspension-window', '.security-option-menu',
+    '.footer-button-base', '.leave-btn-container', '[class*="leave-btn"]',
+    '.meeting-client-inner .footer', '[class*="meeting-control-bar"]',
+    '[class*="footer__control-bar"]', '[class*="footer-button"]',
+    '[id="footer_container"]', '.footer-container',
+    '[id="livesdk__campaign"]', '[class*="livesdk"]', '[id*="livesdk"]',
+    '.livesdk__placement', '.livesdk__invitation', '.livesdk__Draggable',
+    '.participant-name', '.video-box__name-tag', '[class*="speaker-bar"]',
+    '[class*="name-tag"]', '#speaker-box-name', '.video-avatar__avatar-name',
+    '.speaker-bar', '.name-label', '[class*="speaker-name"]',
+    '[class*="participant-name"]', '.speaker-active-name',
+    '.can-hide.participant-name', '.aria-label-participant-name'
+  ].join(',');
+
+  const purge = () => {
+    try {
+      const els = document.querySelectorAll(HIDE_SEL);
+      for (let i = 0; i < els.length; i++) {
+        const el = els[i];
+        if (el && el.style) {
+          el.style.setProperty('display', 'none', 'important');
+          el.style.setProperty('opacity', '0', 'important');
+          el.style.setProperty('pointer-events', 'none', 'important');
+          el.style.setProperty('visibility', 'hidden', 'important');
+          el.style.setProperty('height', '0', 'important');
+        }
+      }
+      const vids = document.querySelectorAll('.speaker-active-video, .video-avatar-container, .speaker-view, video, canvas, canvas.speaker-active-video__canvas, div[class*="active-video"]');
+      for (let i = 0; i < vids.length; i++) {
+        const v = vids[i];
+        if (v && v.style) {
+          v.style.setProperty('position', 'fixed', 'important');
+          v.style.setProperty('top', '0', 'important');
+          v.style.setProperty('left', '0', 'important');
+          v.style.setProperty('width', '100vw', 'important');
+          v.style.setProperty('height', '100vh', 'important');
+          v.style.setProperty('max-width', '100vw', 'important');
+          v.style.setProperty('max-height', '100vh', 'important');
+          v.style.setProperty('object-fit', 'contain', 'important');
+          v.style.setProperty('margin', '0', 'important');
+          v.style.setProperty('padding', '0', 'important');
+          v.style.setProperty('z-index', '1', 'important');
+        }
+      }
+    } catch (_) {}
+  };
+
+  purge();
+
+  // 4. Persistent MutationObserver on document.documentElement
+  if (!window.__cleanfeed_observer) {
+    try {
+      window.__cleanfeed_observer = new MutationObserver(() => {
+        if (!document.getElementById('zoom-cleanfeed-style')) {
+          const s = document.createElement('style');
+          s.id = 'zoom-cleanfeed-style';
+          s.textContent = CSS_TEXT;
+          (document.head || document.documentElement).appendChild(s);
+        }
+        purge();
+      });
+      window.__cleanfeed_observer.observe(document.documentElement, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['class', 'style']
+      });
+    } catch (_) {}
+  }
+
+  return { ok: true, has_style: !!document.getElementById('zoom-cleanfeed-style') };
 })()"""
+
+
+async def apply_cleanfeed_async() -> dict:
+    """Evaluates JS_CLEANFEED_INJECT over CDP in the active Zoom page."""
+    try:
+        res = await cdp.evaluate(JS_CLEANFEED_INJECT)
+        return {"ok": True, "result": res.get("value")}
+    except cdp.CDPError as exc:
+        return {"ok": False, "error": str(exc)}
+
+
+def clean_feed() -> dict:
+    """Synchronous trigger for manual one-click clean-feed."""
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+    if loop and loop.is_running():
+        return {"ok": True, "scheduled": True}
+    return asyncio.run(apply_cleanfeed_async())
+
+
+_cleanfeed_heartbeat_task: asyncio.Task | None = None
+
+
+async def _cleanfeed_heartbeat_loop():
+    """CDP periodic heartbeat loop (every 3 seconds) that verifies the CSS
+    injection is present in the active page execution context."""
+    while True:
+        try:
+            await apply_cleanfeed_async()
+        except Exception:
+            pass
+        await asyncio.sleep(3)
+
+
+def start_cleanfeed_heartbeat():
+    global _cleanfeed_heartbeat_task
+    if _cleanfeed_heartbeat_task is None or _cleanfeed_heartbeat_task.done():
+        try:
+            loop = asyncio.get_running_loop()
+            _cleanfeed_heartbeat_task = loop.create_task(_cleanfeed_heartbeat_loop())
+        except RuntimeError:
+            pass
+
+
+def stop_cleanfeed_heartbeat():
+    global _cleanfeed_heartbeat_task
+    if _cleanfeed_heartbeat_task and not _cleanfeed_heartbeat_task.done():
+        _cleanfeed_heartbeat_task.cancel()
+        _cleanfeed_heartbeat_task = None
 
 
 

@@ -3,11 +3,82 @@
 {% block title %}Configuration - Zoom Stream Dashboard{% endblock %}
 {% block content %}
 
-<div class="section mt-0">
-  <div class="section-head"><h2>Sources</h2><span class="hint m-0">Zoom meetings, web pages, and direct media streams</span></div>
-  <div class="card">
+<div class="config-container-passwall">
+
+  <!-- ================================================================ 1. Basic settings -->
+  <h2 class="floating-section-title">
+    {{ icon("sliders-horizontal", "icon-sm") }}Basic settings
+  </h2>
+
+  <!-- Zoom Account Card -->
+  <div class="glass-card" id="zoom-account">
+    <div class="card-head-title mb-2">
+      <h3 class="glass-row-title">{{ icon("user", "icon-sm") }}Zoom Account &amp; Identity</h3>
+    </div>
+    <p class="hint mb-3">
+      Google Sign-In is completed by hand over Remote GUI - nothing here ever reads, stores, or logs a Google
+      password, 2FA code, or OAuth token.
+    </p>
+    <div class="secret-row mb-3">
+      {{ icon("at-sign") }}
+      <span class="hint m-0" id="zoom-account-status">
+        {% if zoom_account.confirmed_signed_in %}Signed in as <strong>{{ zoom_account.label }}</strong>{% else %}Signed out (guest join){% endif %}
+      </span>
+    </div>
+    <div class="btn-row mb-3">
+      <button id="btn-zoom-google-signin" class="btn btn-primary">{{ icon("log-in", "icon-sm") }}Sign in with Google&hellip;</button>
+      <a class="btn btn-secondary" href="/vnc">{{ icon("monitor", "icon-sm") }}Open Remote GUI</a>
+      <button id="btn-zoom-signout" class="btn btn-danger">{{ icon("log-out", "icon-sm") }}Sign out</button>
+    </div>
+    <div class="field max-w-sm" id="zoom-confirm-row" hidden>
+      <label class="label" for="zoom-account-label">Account label (what you'll see in dashboard)</label>
+      <div class="input-group">
+        <input class="input" id="zoom-account-label" placeholder="bot@ourcompany.com">
+        <button type="button" class="btn btn-primary" id="btn-zoom-confirm-signin">I've signed in</button>
+      </div>
+    </div>
+    <details class="mt-3">
+      <summary class="hint cursor-pointer">Troubleshooting Google sign-in prompts</summary>
+      <div class="hint mt-2">
+        <p class="mb-2"><strong>"This browser or app may not be secure"</strong> - Google sometimes flags automated browser profiles. Use dedicated bot accounts with 2FA App Passwords.</p>
+        <p class="m-0">Session persistence survives routine restarts in zoombot home directory.</p>
+      </div>
+    </details>
+  </div>
+
+  <!-- YouTube Stream Key Card -->
+  <div class="glass-card">
+    <div class="card-head-title mb-2">
+      <h3 class="glass-row-title">{{ icon("key-round", "icon-sm") }}YouTube Stream Key</h3>
+    </div>
+    <div class="secret-row mb-3">
+      {{ icon("key-round") }}
+      <span class="hint m-0">Currently <strong class="mono">{{ cfg.YT_STREAM_KEY.hint }}</strong></span>
+    </div>
+    <div class="field mb-3">
+      <label class="label" for="cfg-stream-key">Replace stream key</label>
+      <div class="input-group">
+        <input class="input" id="cfg-stream-key" type="password" autocomplete="new-password" placeholder="paste new key to replace">
+        <button type="button" class="btn btn-ghost btn-icon" id="toggle-stream-key" aria-label="Show stream key characters" data-tooltip="Show/hide">{{ icon("eye", "icon-sm") }}</button>
+      </div>
+    </div>
+    <button id="save-stream-key" class="btn btn-primary">Replace key</button>
+  </div>
+
+  <!-- ================================================================ 2. Manage Overlays & Streams -->
+  <h2 class="floating-section-title">
+    {{ icon("layers", "icon-sm") }}Manage Overlays &amp; Streams
+  </h2>
+
+  <!-- Sources Table & Management Card -->
+  <div class="glass-card">
+    <div class="card-head-title mb-2">
+      <h3 class="glass-row-title">{{ icon("list", "icon-sm") }}Saved Media Sources</h3>
+      <span class="hint m-0">Zoom meetings, web pages, and direct media streams</span>
+    </div>
+
     {% if sources %}
-    <div class="table-wrap">
+    <div class="table-wrap mb-4">
       <table id="sources-table">
         <thead><tr><th>Type</th><th>Name</th><th>URL</th><th></th></tr></thead>
         <tbody>
@@ -26,11 +97,11 @@
       </table>
     </div>
     {% else %}
-    <div class="empty-state">{{ icon("link") }}<div class="empty-sub">No saved sources yet.</div></div>
+    <div class="empty-state mb-4">{{ icon("link") }}<div class="empty-sub">No saved sources yet.</div></div>
     {% endif %}
 
-    <h3 class="mt-4 mb-3">Add source</h3>
-    <div class="form-grid">
+    <h3 class="glass-row-title mt-4 mb-3">{{ icon("plus-circle", "icon-sm") }}Add New Source</h3>
+    <div class="form-grid mb-3">
       <div class="field"><label class="label">Name</label><input class="input" id="src-name"></div>
       <div class="field">
         <label class="label" for="src-url">URL</label>
@@ -38,7 +109,8 @@
         <div class="hint" id="src-detect"></div>
       </div>
     </div>
-    <div class="field">
+
+    <div class="field mb-3">
       <label class="label">Type</label>
       <div class="segmented" id="src-type-group">
         <button type="button" class="seg-btn" data-type="zoom">{{ icon("video", "icon-sm") }}Zoom meeting</button>
@@ -47,38 +119,36 @@
       </div>
     </div>
 
-    <div class="field max-w-sm" id="src-account-field">
-      <label class="label" for="src-account">Google account (Chrome profile) to play / join as</label>
+    <div class="field max-w-sm mb-3" id="src-account-field">
+      <label class="label" for="src-account">Google account (Chrome profile)</label>
       <select id="src-account" class="input">
         <option value="">Shared profile (no account)</option>
         {% for a in accounts %}<option value="{{ a.id }}">{{ a.label }}{% if a.identity_masked %} - {{ a.identity_masked }}{% endif %} ({{ a.state }})</option>{% endfor %}
       </select>
-      <div class="hint mt-1">Web pages play in that account's browser profile; Zoom's "Sign in with Google" opens in it too. Manage accounts on the <a href="/accounts">Accounts</a> page.</div>
     </div>
 
     <div id="src-fields-zoom" class="source-type-fields" hidden>
       <div class="banner banner-info mb-3" id="src-zoom-kind" hidden><span id="src-zoom-kind-text"></span></div>
-      <div class="form-grid">
-        <div class="field"><label class="label">Passcode (fallback, only used if the link has no pwd=)</label><input class="input" id="src-zoom-passcode"></div>
+      <div class="form-grid mb-3">
+        <div class="field"><label class="label">Passcode</label><input class="input" id="src-zoom-passcode"></div>
         <div class="field"><label class="label">Bot display name</label><input class="input" id="src-zoom-botname" value="Stream Bot" maxlength="64"></div>
       </div>
-      <div class="field">
-        <label class="label">Sign-in</label>
+      <div class="field mb-3">
+        <label class="label">Sign-in Mode</label>
         <div class="segmented" id="src-zoom-signin-group">
           {% for m in signin_modes %}<button type="button" class="seg-btn {{ 'is-active' if m == 'guest' }}" data-value="{{ m }}">{{ m }}</button>{% endfor %}
         </div>
-        <div class="hint mt-1">"google" joins using whatever Zoom account is currently signed in on the bot - set that up below first.</div>
       </div>
     </div>
 
     <div id="src-fields-webpage" class="source-type-fields" hidden>
-      <div class="form-grid">
+      <div class="form-grid mb-3">
         <div class="field"><label class="label">Zoom level (0.5&ndash;2.0)</label><input class="input" id="src-webpage-zoom" type="number" min="0.5" max="2.0" step="0.05" value="1.0"></div>
-        <div class="field"><label class="label">Reload every N seconds (0 = never)</label><input class="input" id="src-webpage-reload" type="number" min="0" value="0"></div>
+        <div class="field"><label class="label">Reload interval (s)</label><input class="input" id="src-webpage-reload" type="number" min="0" value="0"></div>
       </div>
-      <div class="switch-row mb-2">
+      <div class="switch-row mb-3">
         <span class="switch"><input type="checkbox" id="src-webpage-click"><span class="track"></span></span>
-        <span class="switch-label">This page needs a manual click to start playback (handled once over Remote GUI after switching to it)</span>
+        <span class="switch-label">Manual click to start playback</span>
       </div>
     </div>
 
@@ -87,149 +157,101 @@
         <button type="button" id="src-direct-probe" class="btn btn-secondary btn-sm">{{ icon("search", "icon-sm") }}Probe URL</button>
         <span class="hint m-0" id="src-direct-probe-result"></span>
       </div>
-      <div class="field">
+      <div class="field mb-3">
         <label class="label">Encoding</label>
         <div class="segmented" id="src-direct-mode-group">
           {% for m in direct_modes %}<button type="button" class="seg-btn {{ 'is-active' if m == 'reencode' }}" data-value="{{ m }}" {{ 'disabled' if m == 'copy' }}>{{ m }}</button>{% endfor %}
         </div>
-        <div class="hint mt-1" id="src-direct-mode-hint">"copy" is only available once a probe confirms YouTube-compatible codecs (H.264 + AAC).</div>
       </div>
       <div class="switch-row mb-2">
         <span class="switch"><input type="checkbox" id="src-direct-loop"><span class="track"></span></span>
         <span class="switch-label">Loop the input</span>
       </div>
-      <div class="switch-row mb-2">
+      <div class="switch-row mb-3">
         <span class="switch"><input type="checkbox" id="src-direct-reconnect" checked><span class="track"></span></span>
-        <span class="switch-label">Automatically reconnect on network drop</span>
+        <span class="switch-label">Automatically reconnect on drop</span>
       </div>
     </div>
 
     <button id="add-source" class="btn btn-primary mt-2">{{ icon("plus", "icon-sm") }}Add source</button>
   </div>
-</div>
 
-<div class="section">
-  <div class="section-head"><h2>Zoom account</h2></div>
-  <div class="card">
-    <p class="hint mb-3">
-      Google Sign-In is completed by hand over Remote GUI - nothing here ever reads, stores, or logs a Google
-      password, 2FA code, or OAuth token. We recommend using a <strong>dedicated Google account</strong> for this bot,
-      not a personal or shared one.
-    </p>
-    <div class="secret-row mb-3">
-      {{ icon("at-sign") }}
-      <span class="hint m-0" id="zoom-account-status">
-        {% if zoom_account.confirmed_signed_in %}Signed in as <strong>{{ zoom_account.label }}</strong>{% else %}Signed out (guest join){% endif %}
-      </span>
-    </div>
-    <div class="btn-row mb-3">
-      <button id="btn-zoom-google-signin" class="btn btn-primary">{{ icon("log-in", "icon-sm") }}Sign in with Google&hellip;</button>
-      <a class="btn btn-secondary" href="/vnc">{{ icon("monitor", "icon-sm") }}Open Remote GUI</a>
-      <button id="btn-zoom-signout" class="btn btn-danger">{{ icon("log-out", "icon-sm") }}Sign out</button>
-    </div>
-    <div class="field max-w-sm" id="zoom-confirm-row" hidden>
-      <label class="label" for="zoom-account-label">Account label (what you'll see in the dashboard - e.g. an email, masked if you prefer)</label>
-      <div class="input-group">
-        <input class="input" id="zoom-account-label" placeholder="bot@ourcompany.com">
-        <button type="button" class="btn btn-primary" id="btn-zoom-confirm-signin">I've signed in</button>
-      </div>
-    </div>
-    <details class="mt-3">
-      <summary>Troubleshooting Google's sign-in prompts</summary>
-      <div class="hint mt-2">
-        <p class="mb-2"><strong>"This browser or app may not be secure"</strong> - Google sometimes shows this for automated-looking browser profiles. Retry, and if it persists, use the dedicated bot account's recovery options or an App Password if 2FA is on.</p>
-        <p class="mb-2"><strong>Extra verification / "Verify it's you"</strong> - complete it interactively over Remote GUI like any normal sign-in; nothing here can skip it, by design.</p>
-        <p class="m-0">Session persistence: Zoom/Chrome keep this sign-in in <code>zoombot</code>'s home directory (permissions locked to that user only) across restarts. How long it lasts before needing to sign in again isn't something Zoom or Google publish a fixed number for - expect it to survive routine restarts but to eventually need re-authentication, especially after a password change or extended idle period.</p>
-      </div>
-    </details>
-  </div>
-</div>
+  <!-- ================================================================ 3. System Configuration -->
+  <h2 class="floating-section-title">
+    {{ icon("settings", "icon-sm") }}System Configuration
+  </h2>
 
-<div class="section">
-  <div class="section-head"><h2>YouTube stream key</h2></div>
-  <div class="card">
-    <div class="secret-row">
-      {{ icon("key-round") }}
-      <span class="hint m-0">Currently <strong class="mono">{{ cfg.YT_STREAM_KEY.hint }}</strong></span>
+  <!-- Stream Settings Card -->
+  <div class="glass-card">
+    <div class="card-head-title mb-2">
+      <h3 class="glass-row-title">{{ icon("sliders", "icon-sm") }}Encoder &amp; Stream Settings</h3>
     </div>
-    <div class="field">
-      <label class="label" for="cfg-stream-key">Replace stream key</label>
-      <div class="input-group">
-        <input class="input" id="cfg-stream-key" type="password" autocomplete="new-password" placeholder="paste new key to replace">
-        <button type="button" class="btn btn-ghost btn-icon" id="toggle-stream-key" aria-label="Show stream key characters" data-tooltip="Show/hide">{{ icon("eye", "icon-sm") }}</button>
-      </div>
-    </div>
-    <button id="save-stream-key" class="btn btn-primary">Replace key</button>
-  </div>
-</div>
-
-<div class="section">
-  <div class="section-head"><h2>Stream settings</h2></div>
-  <div class="card">
-    <div class="field">
-      <label class="label">Presets</label>
+    <div class="field mb-3">
+      <label class="label">Resolution Presets</label>
       <div class="segmented" id="preset-group">
         {% for name in presets %}
         <button type="button" class="seg-btn" data-preset="{{ name }}">{{ name }}</button>
         {% endfor %}
       </div>
     </div>
-    <div class="form-grid">
+    <div class="form-grid mb-3">
       <div class="field"><label class="label" for="cfg-res">Resolution (WxH)</label><input class="input" id="cfg-res" value="{{ cfg.RESOLUTION }}"></div>
       <div class="field"><label class="label" for="cfg-fps">FPS (15&ndash;30)</label><input class="input" id="cfg-fps" type="number" min="15" max="30" value="{{ cfg.FPS }}"></div>
     </div>
-    <div class="field">
-      <label class="label" for="cfg-preset">Encoder preset (faster = less CPU, slightly lower quality per bit)</label>
+    <div class="field mb-3">
+      <label class="label" for="cfg-preset">Encoder preset</label>
       <select class="input" id="cfg-preset">
         {% for p in ["ultrafast","superfast","veryfast","faster","fast","medium"] %}
         <option value="{{ p }}"{{ ' selected' if (cfg.X264_PRESET or 'veryfast') == p else '' }}>{{ p }}</option>
         {% endfor %}
       </select>
     </div>
-    <div class="field">
-      <label class="label" for="cfg-vbitrate">Video bitrate (1000&ndash;8000 kbps)</label>
+    <div class="field mb-3">
+      <label class="label" for="cfg-vbitrate">Video bitrate (kbps)</label>
       <div class="slider-row">
         <input type="range" class="slider" id="cfg-vbitrate-range" min="1000" max="8000" step="100">
         <input class="input input-fixed-sm" id="cfg-vbitrate" type="number" min="1000" max="8000" value="{{ cfg.VIDEO_BITRATE }}">
       </div>
     </div>
-    <div class="field">
-      <label class="label" for="cfg-abitrate">Audio bitrate (96&ndash;320 kbps)</label>
+    <div class="field mb-3">
+      <label class="label" for="cfg-abitrate">Audio bitrate (kbps)</label>
       <div class="slider-row">
         <input type="range" class="slider" id="cfg-abitrate-range" min="96" max="320" step="8">
         <input class="input input-fixed-sm" id="cfg-abitrate" type="number" min="96" max="320" value="{{ cfg.AUDIO_BITRATE }}">
       </div>
     </div>
-    <div class="hint mb-4">Changing resolution restarts the entire pipeline (it resizes the virtual display).</div>
     <button id="save-stream-settings" class="btn btn-primary">Save stream settings</button>
   </div>
-</div>
 
-<div class="section">
-  <div class="section-head"><h2>Remote GUI password</h2></div>
-  <div class="card">
-    <p class="hint mb-3">VNC password: <strong>{{ "configured" if cfg.VNC_PASSWORD.configured else "not set" }}</strong></p>
-    <div class="field">
+  <!-- Remote GUI Password Card -->
+  <div class="glass-card">
+    <div class="card-head-title mb-2">
+      <h3 class="glass-row-title">{{ icon("monitor", "icon-sm") }}Remote GUI Password (VNC)</h3>
+    </div>
+    <p class="hint mb-3">VNC password status: <strong>{{ "configured" if cfg.VNC_PASSWORD.configured else "not set" }}</strong></p>
+    <div class="field mb-3">
       <label class="label" for="cfg-vnc-pass">New VNC password</label>
       <input class="input" id="cfg-vnc-pass" type="password" autocomplete="new-password">
     </div>
     <button id="save-vnc-pass" class="btn btn-primary">Rotate VNC password</button>
   </div>
-</div>
 
-<div class="section">
-  <div class="section-head"><h2>Auto-recovery &amp; alerts</h2></div>
-  <div class="card">
+  <!-- Auto-Recovery & Alerts Card -->
+  <div class="glass-card">
+    <div class="card-head-title mb-2">
+      <h3 class="glass-row-title">{{ icon("bell", "icon-sm") }}Auto-Recovery &amp; Alerts</h3>
+    </div>
     <div class="switch-row mb-4">
       <span class="switch"><input type="checkbox" id="cfg-auto-recovery" {{ "checked" if auto_recovery == "on" }}><span class="track"></span></span>
-      <span class="switch-label">If the stream fails and systemd exhausts its own retries, automatically reset and restart it (up to 3&times;/hour)</span>
+      <span class="switch-label">Automatically reset and restart if stream crashes</span>
     </div>
-    <div class="field">
-      <label class="label" for="cfg-webhook">Alert webhook URL (Telegram bot / generic JSON webhook)</label>
+    <div class="field mb-3">
+      <label class="label" for="cfg-webhook">Alert webhook URL (Telegram / JSON)</label>
       <input class="input" id="cfg-webhook" type="password" autocomplete="new-password" placeholder="{{ 'configured - paste to replace' if webhook_configured else 'not set' }}">
     </div>
     <button id="save-settings" class="btn btn-primary">Save</button>
   </div>
+
 </div>
 
 {% endblock %}

@@ -279,6 +279,11 @@ async def accounts_page(request: Request):
     })
 
 
+@app.get("/settings", response_class=HTMLResponse)
+async def settings_alias_page(request: Request):
+    return await config_page(request)
+
+
 @app.get("/config", response_class=HTMLResponse)
 async def config_page(request: Request):
     session = _require_page(request)
@@ -659,6 +664,32 @@ async def api_zoom_reset(request: Request):
         return _api_error(exc)
     db.audit(session["username"], "zoom_reset",
              f"dismissed={len(result.get('dismissed', []))} stopped={result.get('stopped')}", deps.client_ip(request))
+    return result
+
+
+@app.post("/api/zoom/clean-feed")
+async def api_zoom_clean_feed_post(request: Request):
+    """Instant one-click clean-feed trigger: forces zero-controls and removes black borders over CDP."""
+    session = deps.require_session_api(request)
+    deps.require_csrf(request, session)
+    deps.require_rate_limit(session, "zoom_clean_feed", max_calls=20, window_seconds=30)
+    from . import zoom_web, telegram
+    result = await zoom_web.apply_cleanfeed_async()
+    db.audit(session["username"], "zoom_clean_feed", f"ok={result.get('ok')}", deps.client_ip(request))
+    if result.get("ok"):
+        telegram.alert_clean_feed_triggered()
+    return result
+
+
+@app.get("/api/zoom/clean-feed")
+async def api_zoom_clean_feed_get(request: Request):
+    """GET variant of clean-feed trigger for quick verification and manual call."""
+    session = deps.require_session_api(request)
+    from . import zoom_web, telegram
+    result = await zoom_web.apply_cleanfeed_async()
+    db.audit(session["username"], "zoom_clean_feed", f"ok={result.get('ok')}", deps.client_ip(request))
+    if result.get("ok"):
+        telegram.alert_clean_feed_triggered()
     return result
 
 
@@ -2230,3 +2261,7 @@ async def health():
 async def on_startup():
     db.init_db()
     scheduler.start()
+    from . import zoom_web, telegram
+    zoom_web.start_cleanfeed_heartbeat()
+    telegram.start_telegram_poller()
+

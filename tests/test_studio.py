@@ -175,3 +175,30 @@ def test_stats_ffmpeg_progress_encoder_cpu(tmp_path, monkeypatch):
     assert progress["fps"] == 30.0
     assert progress["bitrate_kbps"] == 2048.0
     assert progress["encoder_cpu"] == 22.5
+
+
+def test_api_zoom_clean_feed_requires_auth(anon_client):
+    res = anon_client.post("/api/zoom/clean-feed")
+    assert res.status_code == 401
+
+
+def test_api_zoom_clean_feed_post(client, monkeypatch):
+    from app import zoom_web
+    async def mock_cleanfeed():
+        return {"ok": True, "result": True}
+    monkeypatch.setattr(zoom_web, "apply_cleanfeed_async", mock_cleanfeed)
+
+    # Missing CSRF
+    res = client.post("/api/zoom/clean-feed")
+    assert res.status_code == 403
+
+    # With CSRF
+    res = client.post("/api/zoom/clean-feed", headers={"x-csrf-token": client.session["csrf_token"]})
+    assert res.status_code == 200
+    assert res.json() == {"ok": True, "result": True}
+
+    # GET variant
+    res_get = client.get("/api/zoom/clean-feed")
+    assert res_get.status_code == 200
+    assert res_get.json() == {"ok": True, "result": True}
+

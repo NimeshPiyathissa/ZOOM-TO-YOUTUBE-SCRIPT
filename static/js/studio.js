@@ -770,6 +770,45 @@
       });
     }
 
+    // Clean Feed Button Trigger
+    const btnCleanFeed = document.getElementById("btn-clean-feed");
+    const btnCleanFeedText = document.getElementById("btn-clean-feed-text");
+    const btnSourceCleanFeed = document.getElementById("btn-source-clean-feed");
+
+    async function triggerCleanFeed(btn) {
+      if (btn) btn.disabled = true;
+      if (btnCleanFeedText) btnCleanFeedText.textContent = "Cleaning…";
+      try {
+        const res = await fetch("/api/zoom/clean-feed", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-CSRF-Token": getCsrfToken(),
+          },
+        });
+        const data = await res.json();
+        if (data.ok) {
+          showToast("Clean feed applied! Zoom controls and black borders removed.", "ok");
+        } else {
+          showToast(data.error || data.detail || "Clean feed trigger failed", "err");
+        }
+      } catch (err) {
+        showToast("Error triggering clean feed: " + err.message, "err");
+      } finally {
+        if (btnCleanFeedText) btnCleanFeedText.textContent = "Clean Feed";
+        setTimeout(() => {
+          if (btn) btn.disabled = false;
+        }, 1000);
+      }
+    }
+
+    if (btnCleanFeed) {
+      btnCleanFeed.addEventListener("click", () => triggerCleanFeed(btnCleanFeed));
+    }
+    if (btnSourceCleanFeed) {
+      btnSourceCleanFeed.addEventListener("click", () => triggerCleanFeed(btnSourceCleanFeed));
+    }
+
     let isPanicMuted = false;
     async function pollPanicMute() {
       try {

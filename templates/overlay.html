@@ -16,10 +16,15 @@
 {% endblock %}
 
 {% block content %}
-<div class="overlay-container rack-grid">
+<div class="overlay-container-passwall">
 
-  <!-- ================================================================ Master Header & Output Toggle -->
-  <header class="card overlay-master-bar">
+  <!-- ================================================================ 1. Live Broadcast Controls -->
+  <h2 class="floating-section-title">
+    {{ icon("play-circle", "icon-sm") }}Live Broadcast Controls
+  </h2>
+
+  <!-- Master Header & Output Toggle -->
+  <header class="glass-card overlay-master-bar">
     <div class="overlay-master-left">
       <div class="overlay-brand">
         <span class="overlay-brand-icon">{{ icon("type") }}</span>
@@ -55,15 +60,20 @@
     </div>
   </header>
 
-  <!-- ================================================================ Interactive 16:9 Canvas Preview Card -->
-  <section class="card overlay-preview-card" aria-labelledby="preview-heading">
+  <!-- ================================================================ 2. Manage Overlays & Streams -->
+  <h2 class="floating-section-title">
+    {{ icon("layers", "icon-sm") }}Manage Overlays &amp; Streams
+  </h2>
+
+  <!-- Interactive 16:9 Canvas Preview Card -->
+  <section class="glass-card overlay-preview-card" aria-labelledby="preview-heading">
     <div class="card-header-flex">
-      <h2 id="preview-heading" class="rack-title">
+      <h3 id="preview-heading" class="rack-title">
         {{ icon("monitor", "icon-sm") }}16:9 Live Broadcast Canvas
         <span class="rack-title-end">
           <span class="program-id">DISPLAY :99 DIRECT INJECTION (0% CPU)</span>
         </span>
-      </h2>
+      </h3>
       <div class="canvas-coords-readout" id="canvas-coords-readout">
         <span>X: <strong id="readout-x">{{ overlay_state.pos_x }}%</strong></span>
         <span>Y: <strong id="readout-y">{{ overlay_state.pos_y }}%</strong></span>
@@ -71,7 +81,7 @@
     </div>
 
     <!-- 16:9 Aspect Ratio Interactive Stage -->
-    <div class="canvas-stage-wrapper">
+    <div class="canvas-stage-wrapper mt-2">
       <div class="canvas-stage-16-9" id="canvas-stage">
         <div class="canvas-grid-lines" aria-hidden="true"></div>
         <div class="canvas-safe-area" aria-hidden="true" title="Title Safe Boundary (90%)"></div>
@@ -98,272 +108,280 @@
         <button type="button" class="btn btn-secondary btn-sm snap-btn" data-snap="bottom-left">Bottom-Left</button>
         <button type="button" class="btn btn-secondary btn-sm snap-btn" data-snap="bottom-right">Bottom-Right</button>
       </div>
-      <span class="hint ml-auto">Drag anywhere on the stage or use snap anchors to position.</span>
     </div>
   </section>
 
-  <!-- ================================================================ Advanced Styling Controls Row -->
-  <div class="studio-row studio-row-split">
+  <!-- ================================================================ 3. Basic settings -->
+  <h2 class="floating-section-title">
+    {{ icon("type", "icon-sm") }}Basic settings
+  </h2>
 
-    <!-- Typography & Color Settings -->
-    <section class="card overlay-controls-card" aria-labelledby="typography-heading">
-      <h2 id="typography-heading" class="rack-title">
+  <!-- Typography & Content Card -->
+  <section class="glass-card overlay-controls-card" aria-labelledby="typography-heading">
+    <div class="card-head-title mb-2">
+      <h3 id="typography-heading" class="rack-title">
         {{ icon("type", "icon-sm") }}Typography &amp; Content
-      </h2>
+      </h3>
+    </div>
 
-      <!-- Text Content -->
-      <div class="field">
-        <label class="label" for="overlay-text-input">Overlay Text / Caption</label>
-        <textarea id="overlay-text-input" class="textarea input" rows="2" placeholder="Enter broadcast text...">{{ overlay_state.text }}</textarea>
-        <span class="hint">Line breaks are preserved on screen.</span>
-      </div>
+    <!-- Text Content -->
+    <div class="field mb-3">
+      <label class="label" for="overlay-text-input">Overlay Text / Caption</label>
+      <textarea id="overlay-text-input" class="textarea input" rows="2" placeholder="Enter broadcast text...">{{ overlay_state.text }}</textarea>
+      <span class="hint">Line breaks are preserved on screen.</span>
+    </div>
 
-      <!-- Google Fonts Visual Picker Component -->
-      <div class="field mt-3 font-picker-field">
-        <label class="label" id="font-picker-label" for="font-picker-trigger">Google Font Family – Broadcast Typography Suite (60+ Fonts)</label>
-        
-        <!-- Native select element kept in DOM (visually hidden) for backward compatibility and test assertions -->
-        <select id="overlay-font-family" name="fontFamily" class="select input visually-hidden" aria-hidden="true" tabindex="-1">
-          {% if font_categories %}
-            {% for category, fonts in font_categories.items() %}
-            <optgroup label="{{ category }}">
-              {% for font in fonts %}
-              <option value="{{ font }}" {% if overlay_state.font_family == font %}selected{% endif %}>
-                {{ font }}
-              </option>
-              {% endfor %}
-            </optgroup>
-            {% endfor %}
-          {% else %}
-            {% for font in google_fonts %}
+    <!-- Google Fonts Visual Picker Component -->
+    <div class="field mb-3 font-picker-field">
+      <label class="label" id="font-picker-label" for="font-picker-trigger">Google Font Family – Broadcast Typography Suite (60+ Fonts)</label>
+      
+      <!-- Native select element kept in DOM for backward compatibility and test assertions -->
+      <select id="overlay-font-family" name="fontFamily" class="select input visually-hidden" aria-hidden="true" tabindex="-1">
+        {% if font_categories %}
+          {% for category, fonts in font_categories.items() %}
+          <optgroup label="{{ category }}">
+            {% for font in fonts %}
             <option value="{{ font }}" {% if overlay_state.font_family == font %}selected{% endif %}>
               {{ font }}
             </option>
             {% endfor %}
-          {% endif %}
-        </select>
+          </optgroup>
+          {% endfor %}
+        {% else %}
+          {% for font in google_fonts %}
+          <option value="{{ font }}" {% if overlay_state.font_family == font %}selected{% endif %}>
+            {{ font }}
+          </option>
+          {% endfor %}
+        {% endif %}
+      </select>
 
-        <!-- Custom Visual Dropdown Component -->
-        <div class="custom-font-picker" id="custom-font-picker">
-          <button type="button" class="font-picker-trigger" id="font-picker-trigger" aria-haspopup="listbox" aria-expanded="false" aria-labelledby="font-picker-label font-picker-trigger">
-            <div class="font-trigger-info">
-              <span class="font-trigger-name" id="font-trigger-name" style="font-family: '{{ overlay_state.font_family }}', sans-serif;">{{ overlay_state.font_family }}</span>
-              <span class="font-trigger-badge" id="font-trigger-badge">
-                {% if overlay_state.font_family in ['Noto Sans Sinhala', 'Noto Serif Sinhala', 'Abhaya Libre'] %}
-                  අආ ශ්‍රී
-                {% else %}
-                  Ag 123
-                {% endif %}
-              </span>
-            </div>
-            <span class="font-trigger-chevron">{{ icon("chevron-down", "icon-sm") }}</span>
-          </button>
-
-          <div class="font-picker-dropdown" id="font-picker-dropdown" role="listbox" aria-labelledby="font-picker-label" hidden>
-            <!-- Instant Search / Filter -->
-            <div class="font-picker-search-box">
-              <span class="search-icon">{{ icon("search", "icon-xs") }}</span>
-              <input type="text" id="font-picker-search" class="font-picker-search-input" placeholder="Search 60+ fonts or styles (e.g. Sinhala, Bold, Gaming)..." autocomplete="off" spellcheck="false">
-              <button type="button" id="font-picker-search-clear" class="font-search-clear" aria-label="Clear search" hidden>&times;</button>
-            </div>
-
-            <!-- Scrollable List of Font Categories and Items -->
-            <div class="font-picker-list" id="font-picker-list">
-              {% if font_categories %}
-                {% for category, fonts in font_categories.items() %}
-                <div class="font-picker-category-group" data-category="{{ category }}">
-                  <div class="font-picker-category-header">{{ category }}</div>
-                  <div class="font-picker-category-items">
-                    {% for font in fonts %}
-                    {% set is_sinhala = font in ['Noto Sans Sinhala', 'Noto Serif Sinhala', 'Abhaya Libre'] %}
-                    <div class="font-picker-item {% if overlay_state.font_family == font %}is-selected{% endif %}"
-                         role="option"
-                         aria-selected="{{ 'true' if overlay_state.font_family == font else 'false' }}"
-                         data-font="{{ font }}"
-                         data-category="{{ category }}"
-                         data-sinhala="{{ 'true' if is_sinhala else 'false' }}"
-                         tabindex="0">
-                      <div class="font-item-meta">
-                        <span class="font-item-name" style="font-family: '{{ font }}', sans-serif;">{{ font }}</span>
-                        <span class="font-item-category-tag">{{ category }}</span>
-                      </div>
-                      <div class="font-item-preview" style="font-family: '{{ font }}', sans-serif;">
-                        {% if is_sinhala %}
-                          <span class="specimen-badge specimen-sinhala">අආ ශ්‍රී</span>
-                        {% else %}
-                          <span class="specimen-badge">Ag 123</span>
-                        {% endif %}
-                      </div>
-                      <span class="font-item-check" aria-hidden="true">{{ icon("check", "icon-xs") }}</span>
-                    </div>
-                    {% endfor %}
-                  </div>
-                </div>
-                {% endfor %}
+      <!-- Custom Visual Dropdown Component -->
+      <div class="custom-font-picker" id="custom-font-picker">
+        <button type="button" class="font-picker-trigger" id="font-picker-trigger" aria-haspopup="listbox" aria-expanded="false" aria-labelledby="font-picker-label font-picker-trigger">
+          <div class="font-trigger-info">
+            <span class="font-trigger-name" id="font-trigger-name" style="font-family: '{{ overlay_state.font_family }}', sans-serif;">{{ overlay_state.font_family }}</span>
+            <span class="font-trigger-badge" id="font-trigger-badge">
+              {% if overlay_state.font_family in ['Noto Sans Sinhala', 'Noto Serif Sinhala', 'Abhaya Libre'] %}
+                අආ ශ්‍රී
+              {% else %}
+                Ag 123
               {% endif %}
-              <div class="font-picker-empty" id="font-picker-empty" hidden>
-                No matching fonts found
+            </span>
+          </div>
+          <span class="font-trigger-chevron">{{ icon("chevron-down", "icon-sm") }}</span>
+        </button>
+
+        <div class="font-picker-dropdown" id="font-picker-dropdown" role="listbox" aria-labelledby="font-picker-label" hidden>
+          <!-- Instant Search / Filter -->
+          <div class="font-picker-search-box">
+            <span class="search-icon">{{ icon("search", "icon-xs") }}</span>
+            <input type="text" id="font-picker-search" class="font-picker-search-input" placeholder="Search 60+ fonts or styles (e.g. Sinhala, Bold, Gaming)..." autocomplete="off" spellcheck="false">
+            <button type="button" id="font-picker-search-clear" class="font-search-clear" aria-label="Clear search" hidden>&times;</button>
+          </div>
+
+          <!-- Scrollable List of Font Categories and Items -->
+          <div class="font-picker-list" id="font-picker-list">
+            {% if font_categories %}
+              {% for category, fonts in font_categories.items() %}
+              <div class="font-picker-category-group" data-category="{{ category }}">
+                <div class="font-picker-category-header">{{ category }}</div>
+                <div class="font-picker-category-items">
+                  {% for font in fonts %}
+                  {% set is_sinhala = font in ['Noto Sans Sinhala', 'Noto Serif Sinhala', 'Abhaya Libre'] %}
+                  <div class="font-picker-item {% if overlay_state.font_family == font %}is-selected{% endif %}"
+                       role="option"
+                       aria-selected="{{ 'true' if overlay_state.font_family == font else 'false' }}"
+                       data-font="{{ font }}"
+                       data-category="{{ category }}"
+                       data-sinhala="{{ 'true' if is_sinhala else 'false' }}"
+                       tabindex="0">
+                    <div class="font-item-meta">
+                      <span class="font-item-name" style="font-family: '{{ font }}', sans-serif;">{{ font }}</span>
+                      <span class="font-item-category-tag">{{ category }}</span>
+                    </div>
+                    <div class="font-item-preview" style="font-family: '{{ font }}', sans-serif;">
+                      {% if is_sinhala %}
+                        <span class="specimen-badge specimen-sinhala">අආ ශ්‍රී</span>
+                      {% else %}
+                        <span class="specimen-badge">Ag 123</span>
+                      {% endif %}
+                    </div>
+                    <span class="font-item-check" aria-hidden="true">{{ icon("check", "icon-xs") }}</span>
+                  </div>
+                  {% endfor %}
+                </div>
               </div>
+              {% endfor %}
+            {% endif %}
+            <div class="font-picker-empty" id="font-picker-empty" hidden>
+              No matching fonts found
             </div>
           </div>
         </div>
-        <span class="hint">Organized into 7 broadcast categories with live typeface specimens.</span>
       </div>
+      <span class="hint">Organized into 7 broadcast categories with live typeface specimens.</span>
+    </div>
 
-      <!-- Font Size Slider -->
-      <div class="field mt-3">
+    <!-- Font Size Slider -->
+    <div class="field mb-3">
+      <div class="slider-header">
+        <label class="label" for="overlay-font-size">Font Size</label>
+        <span class="slider-readout" id="font-size-val">{{ overlay_state.font_size }} px</span>
+      </div>
+      <input type="range" id="overlay-font-size" class="slider" min="14" max="120" value="{{ overlay_state.font_size }}">
+    </div>
+
+    <!-- Font Color & Opacity -->
+    <div class="field-row mb-3">
+      <div class="field-col">
+        <label class="label" for="overlay-font-color">Font Color</label>
+        <div class="color-picker-group">
+          <input type="color" id="overlay-font-color" class="color-input" value="{{ overlay_state.font_color }}">
+          <input type="text" id="overlay-font-color-hex" class="input input-sm readout color-hex" value="{{ overlay_state.font_color }}" maxlength="7">
+        </div>
+      </div>
+      <div class="field-col">
         <div class="slider-header">
-          <label class="label" for="overlay-font-size">Font Size</label>
-          <span class="slider-readout" id="font-size-val">{{ overlay_state.font_size }} px</span>
+          <label class="label" for="overlay-font-opacity">Font Opacity</label>
+          <span class="slider-readout" id="font-opacity-val">{{ overlay_state.font_opacity }}%</span>
         </div>
-        <input type="range" id="overlay-font-size" class="slider" min="14" max="120" value="{{ overlay_state.font_size }}">
+        <input type="range" id="overlay-font-opacity" class="slider" min="0" max="100" value="{{ overlay_state.font_opacity }}">
       </div>
+    </div>
+  </section>
 
-      <!-- Font Color & Opacity -->
-      <div class="field-row mt-3">
-        <div class="field-col">
-          <label class="label" for="overlay-font-color">Font Color</label>
-          <div class="color-picker-group">
-            <input type="color" id="overlay-font-color" class="color-input" value="{{ overlay_state.font_color }}">
-            <input type="text" id="overlay-font-color-hex" class="input input-sm readout color-hex" value="{{ overlay_state.font_color }}" maxlength="7">
-          </div>
-        </div>
-        <div class="field-col">
-          <div class="slider-header">
-            <label class="label" for="overlay-font-opacity">Font Opacity</label>
-            <span class="slider-readout" id="font-opacity-val">{{ overlay_state.font_opacity }}%</span>
-          </div>
-          <input type="range" id="overlay-font-opacity" class="slider" min="0" max="100" value="{{ overlay_state.font_opacity }}">
-        </div>
+  <!-- ================================================================ 4. System Configuration -->
+  <h2 class="floating-section-title">
+    {{ icon("sliders", "icon-sm") }}System Configuration
+  </h2>
+
+  <!-- Background Box & Drop Shadow Settings Card -->
+  <section class="glass-card overlay-controls-card" aria-labelledby="decorations-heading">
+    <div class="card-head-title mb-2">
+      <h3 id="decorations-heading" class="rack-title">
+        {{ icon("layers", "icon-sm") }}Style Effects &amp; Decorations
+      </h3>
+    </div>
+
+    <!-- Text Outline / Stroke -->
+    <div class="field-group-box mb-3">
+      <div class="field-group-header">
+        <label class="checkbox-label font-bold" for="toggle-outline">
+          <input type="checkbox" id="toggle-outline" {% if overlay_state.outline_enabled %}checked{% endif %}>
+          <span>Text Outline / Stroke (Anti-Whiteboard)</span>
+        </label>
       </div>
-
-      <!-- Text Outline / Stroke -->
-      <div class="field-group-box mt-4">
-        <div class="field-group-header">
-          <label class="checkbox-label font-bold" for="toggle-outline">
-            <input type="checkbox" id="toggle-outline" {% if overlay_state.outline_enabled %}checked{% endif %}>
-            <span>Text Outline / Stroke (Anti-Whiteboard)</span>
-          </label>
-        </div>
-        <div class="field-group-body" id="group-outline-body" {% if not overlay_state.outline_enabled %}style="opacity: 0.5; pointer-events: none;"{% endif %}>
-          <div class="field-row mt-2">
-            <div class="field-col">
-              <label class="label" for="overlay-outline-color">Stroke Color</label>
-              <div class="color-picker-group">
-                <input type="color" id="overlay-outline-color" class="color-input" value="{{ overlay_state.outline_color }}">
-                <input type="text" id="overlay-outline-color-hex" class="input input-sm readout color-hex" value="{{ overlay_state.outline_color }}" maxlength="7">
-              </div>
+      <div class="field-group-body" id="group-outline-body" {% if not overlay_state.outline_enabled %}style="opacity: 0.5; pointer-events: none;"{% endif %}>
+        <div class="field-row mt-2">
+          <div class="field-col">
+            <label class="label" for="overlay-outline-color">Stroke Color</label>
+            <div class="color-picker-group">
+              <input type="color" id="overlay-outline-color" class="color-input" value="{{ overlay_state.outline_color }}">
+              <input type="text" id="overlay-outline-color-hex" class="input input-sm readout color-hex" value="{{ overlay_state.outline_color }}" maxlength="7">
             </div>
-            <div class="field-col">
-              <div class="slider-header">
-                <label class="label" for="overlay-outline-width">Stroke Thickness</label>
-                <span class="slider-readout" id="outline-width-val">{{ overlay_state.outline_width }} px</span>
-              </div>
-              <input type="range" id="overlay-outline-width" class="slider" min="1" max="12" value="{{ overlay_state.outline_width }}">
+          </div>
+          <div class="field-col">
+            <div class="slider-header">
+              <label class="label" for="overlay-outline-width">Stroke Thickness</label>
+              <span class="slider-readout" id="outline-width-val">{{ overlay_state.outline_width }} px</span>
             </div>
+            <input type="range" id="overlay-outline-width" class="slider" min="1" max="12" value="{{ overlay_state.outline_width }}">
           </div>
         </div>
       </div>
-    </section>
+    </div>
 
-    <!-- Background Box & Drop Shadow Settings -->
-    <section class="card overlay-controls-card" aria-labelledby="decorations-heading">
-      <h2 id="decorations-heading" class="rack-title">
-        {{ icon("layers", "icon-sm") }}Background Box &amp; Drop Shadow
-      </h2>
-
-      <!-- Background Box Options -->
-      <div class="field-group-box">
-        <div class="field-group-header">
-          <label class="checkbox-label font-bold" for="toggle-box">
-            <input type="checkbox" id="toggle-box" {% if overlay_state.box_enabled %}checked{% endif %}>
-            <span>Background Holding Box</span>
-          </label>
-        </div>
-        <div class="field-group-body" id="group-box-body" {% if not overlay_state.box_enabled %}style="opacity: 0.5; pointer-events: none;"{% endif %}>
-          <div class="field-row mt-2">
-            <div class="field-col">
-              <label class="label" for="overlay-box-color">Box Color</label>
-              <div class="color-picker-group">
-                <input type="color" id="overlay-box-color" class="color-input" value="{{ overlay_state.box_color }}">
-                <input type="text" id="overlay-box-color-hex" class="input input-sm readout color-hex" value="{{ overlay_state.box_color }}" maxlength="7">
-              </div>
-            </div>
-            <div class="field-col">
-              <div class="slider-header">
-                <label class="label" for="overlay-box-opacity">Box Opacity</label>
-                <span class="slider-readout" id="box-opacity-val">{{ overlay_state.box_opacity }}%</span>
-              </div>
-              <input type="range" id="overlay-box-opacity" class="slider" min="0" max="100" value="{{ overlay_state.box_opacity }}">
+    <!-- Background Box Options -->
+    <div class="field-group-box mb-3">
+      <div class="field-group-header">
+        <label class="checkbox-label font-bold" for="toggle-box">
+          <input type="checkbox" id="toggle-box" {% if overlay_state.box_enabled %}checked{% endif %}>
+          <span>Background Holding Box</span>
+        </label>
+      </div>
+      <div class="field-group-body" id="group-box-body" {% if not overlay_state.box_enabled %}style="opacity: 0.5; pointer-events: none;"{% endif %}>
+        <div class="field-row mt-2">
+          <div class="field-col">
+            <label class="label" for="overlay-box-color">Box Color</label>
+            <div class="color-picker-group">
+              <input type="color" id="overlay-box-color" class="color-input" value="{{ overlay_state.box_color }}">
+              <input type="text" id="overlay-box-color-hex" class="input input-sm readout color-hex" value="{{ overlay_state.box_color }}" maxlength="7">
             </div>
           </div>
+          <div class="field-col">
+            <div class="slider-header">
+              <label class="label" for="overlay-box-opacity">Box Opacity</label>
+              <span class="slider-readout" id="box-opacity-val">{{ overlay_state.box_opacity }}%</span>
+            </div>
+            <input type="range" id="overlay-box-opacity" class="slider" min="0" max="100" value="{{ overlay_state.box_opacity }}">
+          </div>
+        </div>
 
-          <div class="field-row mt-3">
-            <div class="field-col">
-              <div class="slider-header">
-                <label class="label" for="overlay-box-padding">Padding</label>
-                <span class="slider-readout" id="box-padding-val">{{ overlay_state.box_padding }} px</span>
-              </div>
-              <input type="range" id="overlay-box-padding" class="slider" min="0" max="60" value="{{ overlay_state.box_padding }}">
+        <div class="field-row mt-3">
+          <div class="field-col">
+            <div class="slider-header">
+              <label class="label" for="overlay-box-padding">Padding</label>
+              <span class="slider-readout" id="box-padding-val">{{ overlay_state.box_padding }} px</span>
             </div>
-            <div class="field-col">
-              <div class="slider-header">
-                <label class="label" for="overlay-box-radius">Corner Radius</label>
-                <span class="slider-readout" id="box-radius-val">{{ overlay_state.box_radius }} px</span>
-              </div>
-              <input type="range" id="overlay-box-radius" class="slider" min="0" max="40" value="{{ overlay_state.box_radius }}">
+            <input type="range" id="overlay-box-padding" class="slider" min="0" max="60" value="{{ overlay_state.box_padding }}">
+          </div>
+          <div class="field-col">
+            <div class="slider-header">
+              <label class="label" for="overlay-box-radius">Corner Radius</label>
+              <span class="slider-readout" id="box-radius-val">{{ overlay_state.box_radius }} px</span>
             </div>
+            <input type="range" id="overlay-box-radius" class="slider" min="0" max="40" value="{{ overlay_state.box_radius }}">
           </div>
         </div>
       </div>
+    </div>
 
-      <!-- Drop Shadow Options -->
-      <div class="field-group-box mt-4">
-        <div class="field-group-header">
-          <label class="checkbox-label font-bold" for="toggle-shadow">
-            <input type="checkbox" id="toggle-shadow" {% if overlay_state.shadow_enabled %}checked{% endif %}>
-            <span>Drop Shadow</span>
-          </label>
-        </div>
-        <div class="field-group-body" id="group-shadow-body" {% if not overlay_state.shadow_enabled %}style="opacity: 0.5; pointer-events: none;"{% endif %}>
-          <div class="field-row mt-2">
-            <div class="field-col">
-              <label class="label" for="overlay-shadow-color">Shadow Color</label>
-              <div class="color-picker-group">
-                <input type="color" id="overlay-shadow-color" class="color-input" value="{{ overlay_state.shadow_color }}">
-                <input type="text" id="overlay-shadow-color-hex" class="input input-sm readout color-hex" value="{{ overlay_state.shadow_color }}" maxlength="7">
-              </div>
-            </div>
-            <div class="field-col">
-              <div class="slider-header">
-                <label class="label" for="overlay-shadow-blur">Blur Radius</label>
-                <span class="slider-readout" id="shadow-blur-val">{{ overlay_state.shadow_blur }} px</span>
-              </div>
-              <input type="range" id="overlay-shadow-blur" class="slider" min="0" max="40" value="{{ overlay_state.shadow_blur }}">
+    <!-- Drop Shadow Options -->
+    <div class="field-group-box mb-3">
+      <div class="field-group-header">
+        <label class="checkbox-label font-bold" for="toggle-shadow">
+          <input type="checkbox" id="toggle-shadow" {% if overlay_state.shadow_enabled %}checked{% endif %}>
+          <span>Drop Shadow</span>
+        </label>
+      </div>
+      <div class="field-group-body" id="group-shadow-body" {% if not overlay_state.shadow_enabled %}style="opacity: 0.5; pointer-events: none;"{% endif %}>
+        <div class="field-row mt-2">
+          <div class="field-col">
+            <label class="label" for="overlay-shadow-color">Shadow Color</label>
+            <div class="color-picker-group">
+              <input type="color" id="overlay-shadow-color" class="color-input" value="{{ overlay_state.shadow_color }}">
+              <input type="text" id="overlay-shadow-color-hex" class="input input-sm readout color-hex" value="{{ overlay_state.shadow_color }}" maxlength="7">
             </div>
           </div>
+          <div class="field-col">
+            <div class="slider-header">
+              <label class="label" for="overlay-shadow-blur">Blur Radius</label>
+              <span class="slider-readout" id="shadow-blur-val">{{ overlay_state.shadow_blur }} px</span>
+            </div>
+            <input type="range" id="overlay-shadow-blur" class="slider" min="0" max="40" value="{{ overlay_state.shadow_blur }}">
+          </div>
+        </div>
 
-          <div class="field-row mt-3">
-            <div class="field-col">
-              <div class="slider-header">
-                <label class="label" for="overlay-shadow-x">Offset X</label>
-                <span class="slider-readout" id="shadow-x-val">{{ overlay_state.shadow_x }} px</span>
-              </div>
-              <input type="range" id="overlay-shadow-x" class="slider" min="-30" max="30" value="{{ overlay_state.shadow_x }}">
+        <div class="field-row mt-3">
+          <div class="field-col">
+            <div class="slider-header">
+              <label class="label" for="overlay-shadow-x">Offset X</label>
+              <span class="slider-readout" id="shadow-x-val">{{ overlay_state.shadow_x }} px</span>
             </div>
-            <div class="field-col">
-              <div class="slider-header">
-                <label class="label" for="overlay-shadow-y">Offset Y</label>
-                <span class="slider-readout" id="shadow-y-val">{{ overlay_state.shadow_y }} px</span>
-              </div>
-              <input type="range" id="overlay-shadow-y" class="slider" min="-30" max="30" value="{{ overlay_state.shadow_y }}">
+            <input type="range" id="overlay-shadow-x" class="slider" min="-30" max="30" value="{{ overlay_state.shadow_x }}">
+          </div>
+          <div class="field-col">
+            <div class="slider-header">
+              <label class="label" for="overlay-shadow-y">Offset Y</label>
+              <span class="slider-readout" id="shadow-y-val">{{ overlay_state.shadow_y }} px</span>
             </div>
+            <input type="range" id="overlay-shadow-y" class="slider" min="-30" max="30" value="{{ overlay_state.shadow_y }}">
           </div>
         </div>
       </div>
-    </section>
-
-  </div>
+    </div>
+  </section>
 
 </div>
 {% endblock %}
