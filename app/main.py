@@ -81,8 +81,9 @@ async def security_headers(request: Request, call_next):
         "default-src 'self'; "
         # noVNC is vendored under /static/vendor/novnc, so no third-party
         # script origin is needed any more (was: https://cdn.jsdelivr.net).
-        "script-src 'self'; "
-        "style-src 'self'; "
+        "script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "font-src 'self' data: https://fonts.gstatic.com; "
         # blob: is required for the Overview preview thumbnail (overview.js
         # fetches a JPEG and shows it via URL.createObjectURL), a JS-created
         # same-origin object URL, not attacker-controllable remote content.
