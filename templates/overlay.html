@@ -1,0 +1,280 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon %}
+{% block title %}Text Overlays Studio – Zoom Stream Dashboard{% endblock %}
+{% block extra_css %}
+<link rel="stylesheet" href="/static/css/rack.css">
+<link rel="stylesheet" href="/static/css/overlay.css">
+<!-- Preload Google Fonts for preview -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Bangers&family=Bebas+Neue&family=Cinzel:wght@600;800&family=Fira+Sans:wght@400;600;800&family=Inter:wght@400;600;800&family=Lato:wght@400;700&family=Merriweather:wght@400;700&family=Montserrat:wght@400;600;800&family=Open+Sans:wght@400;600;800&family=Oswald:wght@400;600;700&family=Playfair+Display:wght@600;800&family=Poppins:wght@400;600;800&family=Raleway:wght@400;700&family=Roboto:wght@400;500;700;900&family=Source+Sans+Pro:wght@400;600;700&family=Ubuntu:wght@400;500;700&display=swap" rel="stylesheet">
+{% endblock %}
+
+{% block content %}
+<div class="overlay-container rack-grid">
+
+  <!-- ================================================================ Master Header & Output Toggle -->
+  <header class="card overlay-master-bar">
+    <div class="overlay-master-left">
+      <div class="overlay-brand">
+        <span class="overlay-brand-icon">{{ icon("type") }}</span>
+        <div>
+          <h1 class="overlay-title">OBS-Style Text Overlay Studio</h1>
+          <span class="hint m-0">Zero-CPU hardware-accelerated broadcast overlay layer for Display :99</span>
+        </div>
+      </div>
+
+      <div class="overlay-status-badge" id="overlay-status-badge" data-visible="{{ 'true' if overlay_state.visible else 'false' }}">
+        <span class="status-dot"></span>
+        <span class="status-text" id="overlay-status-text">{% if overlay_state.visible %}ON-AIR (VISIBLE){% else %}OFF-AIR (HIDDEN){% endif %}</span>
+      </div>
+    </div>
+
+    <div class="overlay-master-actions">
+      <button id="btn-toggle-overlay" class="btn btn-touch {% if overlay_state.visible %}btn-danger{% else %}btn-primary{% endif %}">
+        <span class="btn-icon">{{ icon("layers") }}</span>
+        <span id="btn-toggle-text">{% if overlay_state.visible %}HIDE OVERLAY{% else %}SHOW OVERLAY{% endif %}</span>
+      </button>
+      <button id="btn-save-overlay" class="btn btn-secondary btn-touch" data-tooltip="Save and apply immediately">
+        {{ icon("check", "icon-sm") }}<span>Save &amp; Apply</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- ================================================================ Interactive 16:9 Canvas Preview Card -->
+  <section class="card overlay-preview-card" aria-labelledby="preview-heading">
+    <div class="card-header-flex">
+      <h2 id="preview-heading" class="rack-title">
+        {{ icon("monitor", "icon-sm") }}16:9 Live Broadcast Canvas
+        <span class="rack-title-end">
+          <span class="program-id">DISPLAY :99 DIRECT INJECTION (0% CPU)</span>
+        </span>
+      </h2>
+      <div class="canvas-coords-readout" id="canvas-coords-readout">
+        <span>X: <strong id="readout-x">{{ overlay_state.pos_x }}%</strong></span>
+        <span>Y: <strong id="readout-y">{{ overlay_state.pos_y }}%</strong></span>
+      </div>
+    </div>
+
+    <!-- 16:9 Aspect Ratio Interactive Stage -->
+    <div class="canvas-stage-wrapper">
+      <div class="canvas-stage-16-9" id="canvas-stage">
+        <div class="canvas-grid-lines" aria-hidden="true"></div>
+        <div class="canvas-safe-area" aria-hidden="true" title="Title Safe Boundary (90%)"></div>
+
+        <!-- Draggable Overlay Box -->
+        <div class="draggable-overlay-box" id="draggable-overlay-box" tabindex="0" role="button" aria-label="Draggable text overlay. Click and drag or use arrow keys to position.">
+          <div class="overlay-drag-handle" title="Drag to position">
+            <span class="handle-icon">{{ icon("move", "icon-sm") }}</span>
+          </div>
+          <div class="overlay-content-render" id="overlay-content-render">
+            {{ overlay_state.text }}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Quick Snap-to-Corner Anchors -->
+    <div class="snap-anchors-row mt-3">
+      <span class="eyebrow">Snap to Anchor:</span>
+      <div class="btn-group snap-group">
+        <button type="button" class="btn btn-secondary btn-sm snap-btn" data-snap="top-left">Top-Left</button>
+        <button type="button" class="btn btn-secondary btn-sm snap-btn" data-snap="top-right">Top-Right</button>
+        <button type="button" class="btn btn-secondary btn-sm snap-btn" data-snap="center">Center</button>
+        <button type="button" class="btn btn-secondary btn-sm snap-btn" data-snap="bottom-left">Bottom-Left</button>
+        <button type="button" class="btn btn-secondary btn-sm snap-btn" data-snap="bottom-right">Bottom-Right</button>
+      </div>
+      <span class="hint ml-auto">Drag anywhere on the stage or use snap anchors to position.</span>
+    </div>
+  </section>
+
+  <!-- ================================================================ Advanced Styling Controls Row -->
+  <div class="studio-row studio-row-split">
+
+    <!-- Typography & Color Settings -->
+    <section class="card overlay-controls-card" aria-labelledby="typography-heading">
+      <h2 id="typography-heading" class="rack-title">
+        {{ icon("type", "icon-sm") }}Typography &amp; Content
+      </h2>
+
+      <!-- Text Content -->
+      <div class="field">
+        <label class="label" for="overlay-text-input">Overlay Text / Caption</label>
+        <textarea id="overlay-text-input" class="textarea input" rows="2" placeholder="Enter broadcast text...">{{ overlay_state.text }}</textarea>
+        <span class="hint">Line breaks are preserved on screen.</span>
+      </div>
+
+      <!-- Google Fonts Selector -->
+      <div class="field mt-3">
+        <label class="label" for="overlay-font-family">Google Font Family (15+ Available)</label>
+        <select id="overlay-font-family" class="select input">
+          {% for font in google_fonts %}
+          <option value="{{ font }}" {% if overlay_state.font_family == font %}selected{% endif %} style="font-family: '{{ font }}', sans-serif;">
+            {{ font }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <!-- Font Size Slider -->
+      <div class="field mt-3">
+        <div class="slider-header">
+          <label class="label" for="overlay-font-size">Font Size</label>
+          <span class="slider-readout" id="font-size-val">{{ overlay_state.font_size }} px</span>
+        </div>
+        <input type="range" id="overlay-font-size" class="slider" min="14" max="120" value="{{ overlay_state.font_size }}">
+      </div>
+
+      <!-- Font Color & Opacity -->
+      <div class="field-row mt-3">
+        <div class="field-col">
+          <label class="label" for="overlay-font-color">Font Color</label>
+          <div class="color-picker-group">
+            <input type="color" id="overlay-font-color" class="color-input" value="{{ overlay_state.font_color }}">
+            <input type="text" id="overlay-font-color-hex" class="input input-sm readout color-hex" value="{{ overlay_state.font_color }}" maxlength="7">
+          </div>
+        </div>
+        <div class="field-col">
+          <div class="slider-header">
+            <label class="label" for="overlay-font-opacity">Font Opacity</label>
+            <span class="slider-readout" id="font-opacity-val">{{ overlay_state.font_opacity }}%</span>
+          </div>
+          <input type="range" id="overlay-font-opacity" class="slider" min="0" max="100" value="{{ overlay_state.font_opacity }}">
+        </div>
+      </div>
+
+      <!-- Text Outline / Stroke -->
+      <div class="field-group-box mt-4">
+        <div class="field-group-header">
+          <label class="checkbox-label font-bold" for="toggle-outline">
+            <input type="checkbox" id="toggle-outline" {% if overlay_state.outline_enabled %}checked{% endif %}>
+            <span>Text Outline / Stroke (Anti-Whiteboard)</span>
+          </label>
+        </div>
+        <div class="field-group-body" id="group-outline-body" {% if not overlay_state.outline_enabled %}style="opacity: 0.5; pointer-events: none;"{% endif %}>
+          <div class="field-row mt-2">
+            <div class="field-col">
+              <label class="label" for="overlay-outline-color">Stroke Color</label>
+              <div class="color-picker-group">
+                <input type="color" id="overlay-outline-color" class="color-input" value="{{ overlay_state.outline_color }}">
+                <input type="text" id="overlay-outline-color-hex" class="input input-sm readout color-hex" value="{{ overlay_state.outline_color }}" maxlength="7">
+              </div>
+            </div>
+            <div class="field-col">
+              <div class="slider-header">
+                <label class="label" for="overlay-outline-width">Stroke Thickness</label>
+                <span class="slider-readout" id="outline-width-val">{{ overlay_state.outline_width }} px</span>
+              </div>
+              <input type="range" id="overlay-outline-width" class="slider" min="1" max="12" value="{{ overlay_state.outline_width }}">
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Background Box & Drop Shadow Settings -->
+    <section class="card overlay-controls-card" aria-labelledby="decorations-heading">
+      <h2 id="decorations-heading" class="rack-title">
+        {{ icon("layers", "icon-sm") }}Background Box &amp; Drop Shadow
+      </h2>
+
+      <!-- Background Box Options -->
+      <div class="field-group-box">
+        <div class="field-group-header">
+          <label class="checkbox-label font-bold" for="toggle-box">
+            <input type="checkbox" id="toggle-box" {% if overlay_state.box_enabled %}checked{% endif %}>
+            <span>Background Holding Box</span>
+          </label>
+        </div>
+        <div class="field-group-body" id="group-box-body" {% if not overlay_state.box_enabled %}style="opacity: 0.5; pointer-events: none;"{% endif %}>
+          <div class="field-row mt-2">
+            <div class="field-col">
+              <label class="label" for="overlay-box-color">Box Color</label>
+              <div class="color-picker-group">
+                <input type="color" id="overlay-box-color" class="color-input" value="{{ overlay_state.box_color }}">
+                <input type="text" id="overlay-box-color-hex" class="input input-sm readout color-hex" value="{{ overlay_state.box_color }}" maxlength="7">
+              </div>
+            </div>
+            <div class="field-col">
+              <div class="slider-header">
+                <label class="label" for="overlay-box-opacity">Box Opacity</label>
+                <span class="slider-readout" id="box-opacity-val">{{ overlay_state.box_opacity }}%</span>
+              </div>
+              <input type="range" id="overlay-box-opacity" class="slider" min="0" max="100" value="{{ overlay_state.box_opacity }}">
+            </div>
+          </div>
+
+          <div class="field-row mt-3">
+            <div class="field-col">
+              <div class="slider-header">
+                <label class="label" for="overlay-box-padding">Padding</label>
+                <span class="slider-readout" id="box-padding-val">{{ overlay_state.box_padding }} px</span>
+              </div>
+              <input type="range" id="overlay-box-padding" class="slider" min="0" max="60" value="{{ overlay_state.box_padding }}">
+            </div>
+            <div class="field-col">
+              <div class="slider-header">
+                <label class="label" for="overlay-box-radius">Corner Radius</label>
+                <span class="slider-readout" id="box-radius-val">{{ overlay_state.box_radius }} px</span>
+              </div>
+              <input type="range" id="overlay-box-radius" class="slider" min="0" max="40" value="{{ overlay_state.box_radius }}">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Drop Shadow Options -->
+      <div class="field-group-box mt-4">
+        <div class="field-group-header">
+          <label class="checkbox-label font-bold" for="toggle-shadow">
+            <input type="checkbox" id="toggle-shadow" {% if overlay_state.shadow_enabled %}checked{% endif %}>
+            <span>Drop Shadow</span>
+          </label>
+        </div>
+        <div class="field-group-body" id="group-shadow-body" {% if not overlay_state.shadow_enabled %}style="opacity: 0.5; pointer-events: none;"{% endif %}>
+          <div class="field-row mt-2">
+            <div class="field-col">
+              <label class="label" for="overlay-shadow-color">Shadow Color</label>
+              <div class="color-picker-group">
+                <input type="color" id="overlay-shadow-color" class="color-input" value="{{ overlay_state.shadow_color }}">
+                <input type="text" id="overlay-shadow-color-hex" class="input input-sm readout color-hex" value="{{ overlay_state.shadow_color }}" maxlength="7">
+              </div>
+            </div>
+            <div class="field-col">
+              <div class="slider-header">
+                <label class="label" for="overlay-shadow-blur">Blur Radius</label>
+                <span class="slider-readout" id="shadow-blur-val">{{ overlay_state.shadow_blur }} px</span>
+              </div>
+              <input type="range" id="overlay-shadow-blur" class="slider" min="0" max="40" value="{{ overlay_state.shadow_blur }}">
+            </div>
+          </div>
+
+          <div class="field-row mt-3">
+            <div class="field-col">
+              <div class="slider-header">
+                <label class="label" for="overlay-shadow-x">Offset X</label>
+                <span class="slider-readout" id="shadow-x-val">{{ overlay_state.shadow_x }} px</span>
+              </div>
+              <input type="range" id="overlay-shadow-x" class="slider" min="-30" max="30" value="{{ overlay_state.shadow_x }}">
+            </div>
+            <div class="field-col">
+              <div class="slider-header">
+                <label class="label" for="overlay-shadow-y">Offset Y</label>
+                <span class="slider-readout" id="shadow-y-val">{{ overlay_state.shadow_y }} px</span>
+              </div>
+              <input type="range" id="overlay-shadow-y" class="slider" min="-30" max="30" value="{{ overlay_state.shadow_y }}">
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script type="application/json" id="overlay-state-init">{{ overlay_state | tojson }}</script>
+<script src="/static/js/overlay.js"></script>
+{% endblock %}

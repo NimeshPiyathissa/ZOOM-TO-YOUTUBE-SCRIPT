@@ -120,12 +120,41 @@ def unit_action(unit: str, verb: str) -> dict:
         raise ControlError(f"unknown verb: {verb}")
     argv = [SUDO, "-u", config.ZOOMBOT_USER, SYSTEMCTL, "--user", verb, f"{unit}.service"]
     proc = run_as_zoombot(argv, timeout=25)
-    return {
+    res = {
         "ok": proc.returncode == 0,
         "unit": unit,
         "verb": verb,
         "stderr": proc.stderr.decode(errors="replace").strip(),
     }
+    if res["ok"] and unit == "ffmpeg-stream":
+        try:
+            from . import telegram
+            if verb in ("start", "restart"):
+                telegram.alert_stream_started()
+            elif verb == "stop":
+                telegram.alert_stream_stopped()
+        except Exception:
+            pass
+    return res
+
+
+def record_stream_action(action: str) -> dict:
+    """Controls local MP4 recording: start | stop | status.
+    Saves compressed archive to /home/zoombot/recordings/ with 2.0 GB safety halt.
+    """
+    if action not in ("start", "stop", "status"):
+        raise ControlError(f"invalid record-stream action: {action}")
+    argv = [SUDO, "-u", config.ZOOMBOT_USER, str(config.RECORD_STREAM_SCRIPT), action]
+    proc = run_as_zoombot(argv, timeout=25)
+    out = proc.stdout.decode(errors="replace").strip()
+    if not out:
+        err = proc.stderr.decode(errors="replace").strip()
+        raise ControlError(f"record-stream {action} failed: {err}")
+    try:
+        return json.loads(out)
+    except json.JSONDecodeError:
+        raise ControlError(f"record-stream returned invalid JSON: {out}")
+
 
 
 def unit_show(unit: str) -> dict:

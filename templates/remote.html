@@ -103,6 +103,7 @@
       <button id="r-go-live" class="btn btn-primary btn-touch">{{ icon("play") }}Go Live</button>
       <button id="r-stop" class="btn btn-danger btn-touch" hidden>{{ icon("square") }}Stop</button>
       <button id="r-restart" class="btn btn-secondary btn-touch" data-tooltip="Restart the encoder">{{ icon("rotate-cw") }}Restart</button>
+      <button id="r-brb-slate" class="btn btn-secondary btn-touch" data-tooltip="Emergency 'Stream Will Resume Shortly' holding card">{{ icon("monitor") }}<span id="r-brb-text">BRB Slate</span></button>
     </div>
   </section>
 
@@ -148,8 +149,8 @@
           <select id="ctx-account" class="input input-sm">
             <option value="">Shared stream profile</option>
             {% set signed = accounts | selectattr("state", "equalto", "signed_in") | list %}
-            {% for a in accounts %}<option value="{{ a.id }}" {% if a.state == "never" and not a.identity_masked %}disabled{% endif %}>{{ a.label }}{% if a.identity_masked %} · {{ a.identity_masked }}{% endif %} · {{ "signed in" if a.state == "signed_in" else ("needs re-authentication" if a.needs_reauth else a.state) }}</option>{% endfor %}
-            {% if not signed and not accounts %}<option value="" disabled>No signed-in account yet - sign in on the Accounts page</option>{% endif %}
+            {% for a in accounts %}<option value="{{ a.id }}" {% if a.state != "signed_in" %}disabled{% endif %}>{{ a.label }}{% if a.identity_masked %} · {{ a.identity_masked }}{% endif %} · {{ "signed in" if a.state == "signed_in" else ("needs re-authentication" if a.needs_reauth else "not signed in") }}</option>{% endfor %}
+            {% if not signed %}<option value="" disabled>No signed-in account yet - sign in on the Accounts page</option>{% endif %}
           </select>
         </label>
       </span></h2>

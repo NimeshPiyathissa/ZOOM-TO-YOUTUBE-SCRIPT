@@ -40,6 +40,18 @@
         <span class="btn-action-text" id="btn-action-text">GO LIVE</span>
       </button>
 
+      <!-- Emergency BRB Slate Button -->
+      <button id="btn-studio-brb" class="btn btn-secondary btn-touch" aria-label="Toggle Emergency BRB Slate" data-tooltip="Emergency 'Stream Will Resume Shortly' holding card">
+        {{ icon("monitor") }}
+        <span id="btn-brb-text">BRB Slate</span>
+      </button>
+
+      <!-- Master Panic Audio Mute -->
+      <button id="btn-panic-mute" class="btn btn-secondary btn-touch" aria-label="Master Panic Audio Mute" data-tooltip="Instant PulseAudio monitor sink mute">
+        {{ icon("volume-2") }}
+        <span id="btn-panic-text">Panic Mute</span>
+      </button>
+
       <!-- Quick chat trigger on top bar -->
       <button id="btn-top-chat" class="btn btn-secondary btn-touch btn-chat-toggle" aria-label="Toggle YouTube Live Chat" aria-expanded="false">
         {{ icon("message-square") }}
@@ -294,9 +306,65 @@
           </a>
         </div>
       </div>
-    </section>
-
   </div>
+
+  <!-- ================================================================ Local Recording & Disk Safety Card -->
+  <section class="card studio-recording-card" aria-labelledby="rec-heading">
+    <div class="card-header-flex">
+      <h2 id="rec-heading" class="rack-title">
+        {{ icon("disc", "icon-sm") }}Local MP4 Archive &amp; Storage Maintenance
+        <span class="rack-title-end">
+          <span class="badge badge-inactive" id="rec-status-badge"><span class="dot"></span><span id="rec-status-text">Standby</span></span>
+        </span>
+      </h2>
+      <div class="rec-actions-group">
+        <button id="btn-toggle-recording" class="btn btn-secondary btn-sm btn-touch">
+          {{ icon("disc", "icon-sm") }}<span id="btn-toggle-rec-text">Start Recording</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="telemetry-grid mt-2">
+      <div class="telemetry-tile" id="tile-rec-duration">
+        <span class="eyebrow">Recording Duration</span>
+        <div class="telem-main">
+          <span class="telem-val readout" id="rec-duration">00:00:00</span>
+        </div>
+        <span class="hint telem-sub" id="rec-file-name">No active file</span>
+      </div>
+
+      <div class="telemetry-tile" id="tile-rec-size">
+        <span class="eyebrow">Archive File Size</span>
+        <div class="telem-main">
+          <span class="telem-val readout" id="rec-size">0.0</span>
+          <span class="telem-unit">MB</span>
+        </div>
+        <span class="hint telem-sub">Compressed H.264 / AAC</span>
+      </div>
+
+      <div class="telemetry-tile" id="tile-rec-disk">
+        <span class="eyebrow">Free Disk Space</span>
+        <div class="telem-main">
+          <span class="telem-val readout" id="rec-free-disk">—</span>
+          <span class="telem-unit">GB</span>
+        </div>
+        <span class="hint telem-sub">Safety Halt &lt; 2.0 GB</span>
+      </div>
+
+      <div class="telemetry-tile" id="tile-rec-path">
+        <span class="eyebrow">Archive Destination</span>
+        <div class="telem-main">
+          <span class="chip-glass readout text-xs">/home/zoombot/recordings/</span>
+        </div>
+        <span class="hint telem-sub">Automated Vacuum Active</span>
+      </div>
+    </div>
+
+    <div class="banner banner-danger mt-3" id="rec-alert" hidden role="alert">
+      {{ icon("alert-triangle") }}
+      <div id="rec-alert-msg"></div>
+    </div>
+  </section>
 
 </div>
 

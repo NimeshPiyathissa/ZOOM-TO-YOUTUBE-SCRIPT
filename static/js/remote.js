@@ -18,6 +18,43 @@ document.getElementById("r-go-live").addEventListener("click", (e) => streamActi
 document.getElementById("r-stop").addEventListener("click", (e) => streamAction(e.currentTarget, "stop", "Stop the live YouTube stream now?"));
 document.getElementById("r-restart").addEventListener("click", (e) => streamAction(e.currentTarget, "restart", "Restart the encoder? This briefly interrupts the live stream."));
 
+const rBrbBtn = document.getElementById("r-brb-slate");
+const rBrbText = document.getElementById("r-brb-text");
+let rBrbActive = false;
+
+async function pollRemoteBrb() {
+  try {
+    const res = await apiFetch("/api/slate/brb");
+    rBrbActive = !!res.active;
+    if (rBrbBtn) {
+      rBrbBtn.className = `btn btn-touch ${rBrbActive ? "btn-danger" : "btn-secondary"}`;
+    }
+    if (rBrbText) {
+      rBrbText.textContent = rBrbActive ? "SLATE ACTIVE" : "BRB Slate";
+    }
+  } catch (e) {}
+}
+
+if (rBrbBtn) {
+  rBrbBtn.addEventListener("click", async () => {
+    try {
+      const res = await post("/api/slate/brb", { action: "toggle" });
+      rBrbActive = !!(res && res.state && res.state.active);
+      if (rBrbBtn) {
+        rBrbBtn.className = `btn btn-touch ${rBrbActive ? "btn-danger" : "btn-secondary"}`;
+      }
+      if (rBrbText) {
+        rBrbText.textContent = rBrbActive ? "SLATE ACTIVE" : "BRB Slate";
+      }
+      toast(rBrbActive ? "Emergency BRB Holding Card Active" : "BRB Slate Cleared (Live Program)");
+    } catch (err) {
+      toast(err.message, "err");
+    }
+  });
+  pollRemoteBrb();
+  setInterval(pollRemoteBrb, 3000);
+}
+
 async function streamAction(btn, action, confirmMsg) {
   if (confirmMsg && !(await confirmDialog(confirmMsg, { danger: action !== "go-live" }))) return;
   await withLoading(btn, async () => {

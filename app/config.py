@@ -31,12 +31,17 @@ ROTATE_VNC_SCRIPT = STREAM_SCRIPTS_DIR / "rotate-vnc-password.sh"
 TEST_RECORDING_SCRIPT = STREAM_SCRIPTS_DIR / "test-recording.sh"
 ZOOM_SIGNIN_SCRIPT = STREAM_SCRIPTS_DIR / "zoom-google-signin.sh"
 ZOOM_SIGNOUT_SCRIPT = STREAM_SCRIPTS_DIR / "zoom-signout.sh"
+RECORD_STREAM_SCRIPT = STREAM_SCRIPTS_DIR / "record-stream.sh"
+AUTO_VACUUM_SCRIPT = STREAM_SCRIPTS_DIR / "auto-vacuum.sh"
+RECORDINGS_DIR = ZOOMBOT_HOME / "recordings"
 
 CHROME_PROFILE_DIR = ZOOMBOT_HOME / ".config" / "stream-chrome-profile"
 
 DASHBOARD_HOME = pathlib.Path("/home/dashboard")
 DATA_DIR = DASHBOARD_HOME / "data"
 DB_PATH = DATA_DIR / "dashboard.db"
+OVERLAY_CONFIG_FILE = DATA_DIR / "overlay.json"
+BRB_SLATE_FILE = DATA_DIR / "brb_slate.json"
 CERT_DIR = DASHBOARD_HOME / "certs"
 CERT_FILE = CERT_DIR / "cert.pem"
 KEY_FILE = CERT_DIR / "key.pem"
@@ -80,13 +85,16 @@ ENV_KEY_RESTART_MAP = {
     "X264_PRESET": ["ffmpeg-stream"],
     "RESOLUTION": ["full-pipeline"],
     "DISPLAY_NUM": ["full-pipeline"],
+    "TELEGRAM_BOT_TOKEN": [],
+    "TELEGRAM_CHAT_ID": [],
 }
 # VNC_PASSWORD is handled separately (rotate-vnc-password.sh + restart x11vnc),
 # never through the generic .env restart map.
 
-SECRET_ENV_KEYS = {"ZOOM_LINK", "ZOOM_PASSCODE", "YT_STREAM_KEY", "VNC_PASSWORD"}
+SECRET_ENV_KEYS = {"ZOOM_LINK", "ZOOM_PASSCODE", "YT_STREAM_KEY", "VNC_PASSWORD", "TELEGRAM_BOT_TOKEN"}
 NON_SECRET_ENV_KEYS = [
     "BOT_NAME", "RESOLUTION", "FPS", "VIDEO_BITRATE", "AUDIO_BITRATE", "X264_PRESET", "DISPLAY_NUM", "ZOOM_SIGNIN_MODE",
+    "TELEGRAM_CHAT_ID",
 ]
 # X264_PRESET must live in ALL_ENV_KEYS: env_store.write_updates rewrites
 # .env from exactly these keys, so a key missing here is silently dropped
@@ -96,6 +104,7 @@ NON_SECRET_ENV_KEYS = [
 ALL_ENV_KEYS = [
     "ZOOM_LINK", "ZOOM_PASSCODE", "BOT_NAME", "ZOOM_SIGNIN_MODE", "YT_STREAM_KEY",
     "RESOLUTION", "FPS", "VIDEO_BITRATE", "AUDIO_BITRATE", "X264_PRESET", "VNC_PASSWORD", "DISPLAY_NUM",
+    "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID",
 ]
 ZOOM_SIGNIN_MODES = {"guest", "google"}
 # Which app actually joins the meeting: the desktop Linux client (existing

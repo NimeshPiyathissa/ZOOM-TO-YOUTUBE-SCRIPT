@@ -23,6 +23,7 @@ MAX_RECOVERY_ATTEMPTS_PER_HOUR = 3
 
 _last_alert_ts = 0.0
 _recovery_attempts: list[float] = []
+_prev_zoom_in_meeting = False
 
 
 async def _send_alert(message: str) -> None:
@@ -61,6 +62,54 @@ async def _watchdog() -> None:
                 db.audit(None, "auto_recovery", "restarted ffmpeg-stream")
             except control.ControlError:
                 pass
+
+    # Telemetry and frame drop check
+    try:
+        from . import stats, telegram
+        prog = stats.ffmpeg_progress(show)
+        if prog:
+            drop = int(prog.get("drop") or 0)
+            frame = int(prog.get("frame") or 0)
+            total = frame + drop
+            if total >= 100:
+                drop_pct = (drop / total) * 100.0
+                if drop_pct > 5.0:
+                    telegram.alert_high_dropped_frames(
+                        drop, total, drop_pct,
+                        fps=float(prog.get("fps") or 0.0),
+                        bitrate_kbps=float(prog.get("bitrate_kbps") or 0.0),
+                    )
+    except Exception:
+        pass
+
+    # Zoom disconnect watchdog & BRB failover
+    global _prev_zoom_in_meeting
+    try:
+        from . import telegram, slate
+        if show.get("phase") == control.PHASE_LIVE:
+            cur_source = control.read_current_source()
+            if cur_source.get("SOURCE_TYPE") == "zoom":
+                z_status = control.zoom_meeting_status()
+                st = z_status.get("status")
+                if st == "in_meeting":
+                    _prev_zoom_in_meeting = True
+                elif _prev_zoom_in_meeting and st in ("ended", "removed", "expired", "join_failed", "not_joined"):
+                    _prev_zoom_in_meeting = False
+                    detail = z_status.get("detail") or f"Status: {st}"
+                    telegram.alert_zoom_disconnected(detail)
+                    slate.set_brb_state(True)
+                    await slate.push_brb_to_kiosk()
+    except Exception:
+        pass
+
+    # Sync overlay and BRB holding state to kiosk
+    try:
+        from . import overlay, slate
+        await overlay.push_overlay_to_kiosk()
+        if slate.get_brb_state().get("active"):
+            await slate.push_brb_to_kiosk()
+    except Exception:
+        pass
 
 
 async def _run_scheduled(action: str, source_id: int | None) -> None:

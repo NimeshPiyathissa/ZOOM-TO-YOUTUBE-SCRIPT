@@ -707,16 +707,217 @@
       console.warn("Error parsing initial studio data", e);
     }
 
+    // Elements: BRB Slate, Panic Mute, Local Recording
+    const btnStudioBrb = document.getElementById("btn-studio-brb");
+    const btnBrbText = document.getElementById("btn-brb-text");
+    const btnPanicMute = document.getElementById("btn-panic-mute");
+    const btnPanicText = document.getElementById("btn-panic-text");
+    const btnToggleRecording = document.getElementById("btn-toggle-recording");
+    const btnToggleRecText = document.getElementById("btn-toggle-rec-text");
+    const recStatusBadge = document.getElementById("rec-status-badge");
+    const recStatusText = document.getElementById("rec-status-text");
+    const recDuration = document.getElementById("rec-duration");
+    const recSize = document.getElementById("rec-size");
+    const recFreeDisk = document.getElementById("rec-free-disk");
+    const recFileName = document.getElementById("rec-file-name");
+    const recAlert = document.getElementById("rec-alert");
+    const recAlertMsg = document.getElementById("rec-alert-msg");
+
+    let brbActive = false;
+    async function pollBrb() {
+      try {
+        const res = await fetch("/api/slate/brb");
+        if (res.ok) {
+          const data = await res.json();
+          brbActive = !!data.active;
+          if (btnStudioBrb) {
+            btnStudioBrb.className = `btn btn-touch ${brbActive ? "btn-danger" : "btn-secondary"}`;
+          }
+          if (btnBrbText) {
+            btnBrbText.textContent = brbActive ? "SLATE ACTIVE" : "BRB Slate";
+          }
+        }
+      } catch (e) {}
+    }
+
+    if (btnStudioBrb) {
+      btnStudioBrb.addEventListener("click", async () => {
+        try {
+          const res = await fetch("/api/slate/brb", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-CSRF-Token": getCsrfToken(),
+            },
+            body: JSON.stringify({ action: "toggle" }),
+          });
+          if (res.ok) {
+            const data = await res.json();
+            brbActive = !!(data.state && data.state.active);
+            if (btnStudioBrb) {
+              btnStudioBrb.className = `btn btn-touch ${brbActive ? "btn-danger" : "btn-secondary"}`;
+            }
+            if (btnBrbText) {
+              btnBrbText.textContent = brbActive ? "SLATE ACTIVE" : "BRB Slate";
+            }
+            if (typeof window.toast === "function") {
+              window.toast(brbActive ? "Emergency BRB Holding Card Active" : "BRB Slate Cleared (Live Program)", brbActive ? "warning" : "info");
+            }
+          }
+        } catch (e) {
+          console.warn("BRB toggle error", e);
+        }
+      });
+    }
+
+    let isPanicMuted = false;
+    async function pollPanicMute() {
+      try {
+        const res = await fetch("/api/audio/stream");
+        if (res.ok) {
+          const data = await res.json();
+          isPanicMuted = !!data.muted;
+          if (btnPanicMute) {
+            btnPanicMute.className = `btn btn-touch ${isPanicMuted ? "btn-danger" : "btn-secondary"}`;
+          }
+          if (btnPanicText) {
+            btnPanicText.textContent = isPanicMuted ? "PANIC MUTED" : "Panic Mute";
+          }
+        }
+      } catch (e) {}
+    }
+
+    if (btnPanicMute) {
+      btnPanicMute.addEventListener("click", async () => {
+        try {
+          const action = isPanicMuted ? "unmute" : "mute";
+          const res = await fetch("/api/audio/stream", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-CSRF-Token": getCsrfToken(),
+            },
+            body: JSON.stringify({ action }),
+          });
+          if (res.ok) {
+            const data = await res.json();
+            isPanicMuted = !!data.muted;
+            if (btnPanicMute) {
+              btnPanicMute.className = `btn btn-touch ${isPanicMuted ? "btn-danger" : "btn-secondary"}`;
+            }
+            if (btnPanicText) {
+              btnPanicText.textContent = isPanicMuted ? "PANIC MUTED" : "Panic Mute";
+            }
+            if (typeof window.toast === "function") {
+              window.toast(isPanicMuted ? "Master Audio Panic Muted (Monitor sink silenced)" : "Master Audio Restored", isPanicMuted ? "error" : "success");
+            }
+          }
+        } catch (e) {
+          console.warn("Panic mute error", e);
+        }
+      });
+    }
+
+    let isRecording = false;
+    async function pollRecording() {
+      try {
+        const res = await fetch("/api/record");
+        if (res.ok) {
+          const data = await res.json();
+          isRecording = !!data.recording;
+
+          if (recStatusBadge) {
+            recStatusBadge.className = `badge ${isRecording ? "badge-live" : "badge-inactive"}`;
+          }
+          if (recStatusText) {
+            recStatusText.textContent = isRecording ? "RECORDING" : "Standby";
+          }
+          if (btnToggleRecording) {
+            btnToggleRecording.className = `btn btn-sm btn-touch ${isRecording ? "btn-danger" : "btn-secondary"}`;
+          }
+          if (btnToggleRecText) {
+            btnToggleRecText.textContent = isRecording ? "Stop Recording" : "Start Recording";
+          }
+          if (recDuration) {
+            const dur = parseInt(data.duration, 10) || 0;
+            const h = String(Math.floor(dur / 3600)).padStart(2, "0");
+            const m = String(Math.floor((dur % 3600) / 60)).padStart(2, "0");
+            const s = String(dur % 60).padStart(2, "0");
+            recDuration.textContent = `${h}:${m}:${s}`;
+          }
+          if (recSize) {
+            recSize.textContent = (parseFloat(data.size_mb) || 0).toFixed(1);
+          }
+          if (recFreeDisk) {
+            recFreeDisk.textContent = (parseFloat(data.free_gb) || 0).toFixed(2);
+          }
+          if (recFileName) {
+            const fn = (data.file || "").split("/").pop() || (isRecording ? "stream.mp4" : "No active file");
+            recFileName.textContent = fn;
+          }
+          if (recAlert && recAlertMsg) {
+            if (data.halted_reason === "DISK_LOW_SAFETY_HALT") {
+              recAlertMsg.textContent = "Recording stopped automatically: Free disk space fell below safety threshold (2.0 GB).";
+              recAlert.hidden = false;
+            } else if (parseFloat(data.free_gb) < 2.0 && parseFloat(data.free_gb) > 0) {
+              recAlertMsg.textContent = `Warning: Free disk space low (${data.free_gb} GB). Recording will safety-halt below 2.0 GB.`;
+              recAlert.hidden = false;
+            } else {
+              recAlert.hidden = true;
+            }
+          }
+        }
+      } catch (e) {}
+    }
+
+    if (btnToggleRecording) {
+      btnToggleRecording.addEventListener("click", async () => {
+        try {
+          btnToggleRecording.disabled = true;
+          const action = isRecording ? "stop" : "start";
+          const res = await fetch("/api/record", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-CSRF-Token": getCsrfToken(),
+            },
+            body: JSON.stringify({ action }),
+          });
+          if (res.ok) {
+            await pollRecording();
+            if (typeof window.toast === "function") {
+              window.toast(isRecording ? "Local recording started (/home/zoombot/recordings/)" : "Local recording finalized", isRecording ? "success" : "info");
+            }
+          } else {
+            const err = await res.json();
+            if (typeof window.toast === "function") {
+              window.toast(err.detail || "Recording error", "error");
+            }
+          }
+        } catch (e) {
+          console.warn("Toggle recording error", e);
+        } finally {
+          btnToggleRecording.disabled = false;
+        }
+      });
+    }
+
     // Run initial state poll
     pollState();
     pollAudio();
     pollPreview();
+    pollBrb();
+    pollPanicMute();
+    pollRecording();
 
     // Start background intervals
     uptimeClockTimer = setInterval(tickClock, 1000);
     statePollTimer = setInterval(pollState, 2000);
     audioPollTimer = setInterval(pollAudio, 250);
     previewPollTimer = setInterval(pollPreview, 3000);
+    setInterval(pollBrb, 3000);
+    setInterval(pollPanicMute, 3000);
+    setInterval(pollRecording, 3000);
 
     // Visibility management
     document.addEventListener("visibilitychange", () => {
@@ -724,6 +925,9 @@
         pollState();
         pollAudio();
         pollPreview();
+        pollBrb();
+        pollPanicMute();
+        pollRecording();
       }
     });
   }

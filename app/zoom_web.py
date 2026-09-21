@@ -122,6 +122,84 @@ JS_AUTOPILOT_STEP = """(() => {
   return null;
 })()"""
 
+JS_CLEANFEED_INJECT = """(() => {
+  const suppress = (e) => {
+    if (e) {
+      if (typeof e.preventDefault === 'function') e.preventDefault();
+      if (typeof e.stopPropagation === 'function') e.stopPropagation();
+      if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
+    }
+    return false;
+  };
+  window.addEventListener('contextmenu', suppress, true);
+  document.addEventListener('contextmenu', suppress, true);
+  window.addEventListener('auxclick', (e) => { if (e && e.button === 2) suppress(e); }, true);
+  window.addEventListener('keydown', (e) => { if (e && (e.key === 'ContextMenu' || e.keyCode === 93)) suppress(e); }, true);
+
+  if (!document.getElementById('zoom-cleanfeed-style')) {
+    const style = document.createElement('style');
+    style.id = 'zoom-cleanfeed-style';
+    style.textContent = `
+      .meeting-app-header, #header, .header, .meeting-info-icon__header, .meeting-info-header,
+      .topic, .meeting-topic, [class*="meeting-app-header"], [class*="header__"], [class*="meeting-header"],
+      .footer, .meeting-control-bar, .footer__control-bar, #wc-footer,
+      .meeting-client-inner .footer, [class*="meeting-control-bar"], [class*="footer__control-bar"],
+      [class*="footer-button"], .footer-bar, .room-footer, .more-button, .audio-option-menu,
+      .settings-dialog, .suspension-window, .meeting-client-head, #foot-bar, .security-option-menu,
+      .footer-button-base, .leave-btn-container, [class*="leave-btn"],
+      .participant-name, .speaker-bar, .name-label, [class*="speaker-name"],
+      [class*="participant-name"], [class*="video-avatar__avatar-name"], [class*="video-box__name-tag"],
+      [class*="name-tag"], .video-box__name-tag, .speaker-active-name, .can-hide.participant-name,
+      .aria-label-participant-name {
+        display: none !important;
+        opacity: 0 !important;
+        pointer-events: none !important;
+        visibility: hidden !important;
+        height: 0 !important;
+        min-height: 0 !important;
+        max-height: 0 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+      }
+      html, body {
+        width: 100vw !important;
+        height: 100vh !important;
+        overflow: hidden !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        background-color: #000 !important;
+      }
+      #root, #app, .main-layout, .meeting-client, .meeting-client-inner,
+      .video-container, .gallery-video-container, .speaker-view, .single-view,
+      .full-screen-video, .video-player-container, #video-container, .video-box,
+      .react-draggable, [class*="main-layout"], [class*="meeting-client"], [class*="video-container"] {
+        width: 100vw !important;
+        height: 100vh !important;
+        max-width: 100vw !important;
+        max-height: 100vh !important;
+        position: fixed !important;
+        top: 0 !important;
+        left: 0 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+      }
+      video, canvas {
+        width: 100vw !important;
+        height: 100vh !important;
+        max-width: 100vw !important;
+        max-height: 100vh !important;
+        object-fit: contain !important;
+        position: fixed !important;
+        top: 0 !important;
+        left: 0 !important;
+      }
+    `;
+    (document.head || document.documentElement).appendChild(style);
+  }
+  return true;
+})()"""
+
+
 
 def _classify_text(text: str) -> tuple[str, str]:
     haystack = (text or "").lower()
@@ -188,8 +266,17 @@ async def _join_from_browser_async(bot_name: str, passcode: str | None, timeout:
         step = result.get("value")
         if step:
             steps.append(step)
+        # Actively apply clean-feed patch & context lock during join
+        try:
+            await cdp.evaluate(JS_CLEANFEED_INJECT)
+        except Exception:
+            pass
         last_status = await _status_async()
         if last_status.get("status") == "in_meeting":
+            try:
+                await cdp.evaluate(JS_CLEANFEED_INJECT)
+            except Exception:
+                pass
             return {"ok": True, "steps": steps, "status": last_status}
         if last_status.get("terminal"):
             return {"ok": False, "steps": steps, "status": last_status}

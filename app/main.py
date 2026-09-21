@@ -246,6 +246,25 @@ async def studio_page(request: Request):
     })
 
 
+@app.get("/overlay", response_class=HTMLResponse)
+async def overlay_page(request: Request):
+    """Zero-CPU OBS-Style Text Overlay Studio: interactive 16:9 canvas preview,
+    draggable text positioning, snap-to-corner anchors, rich typography engine
+    with 15+ Google Fonts, font styling, outline/stroke, background box, and drop shadow."""
+    session = _require_page(request)
+    if isinstance(session, RedirectResponse):
+        return session
+    from . import overlay
+    state = overlay.get_overlay_state()
+    return templates.TemplateResponse("overlay.html", {
+        "request": request,
+        "csrf_token": session["csrf_token"],
+        "username": session["username"],
+        "overlay_state": state,
+        "google_fonts": overlay.GOOGLE_FONTS,
+    })
+
+
 @app.get("/accounts", response_class=HTMLResponse)
 async def accounts_page(request: Request):
     session = _require_page(request)
@@ -843,6 +862,94 @@ async def api_studio_settings_save(request: Request):
         "watch_url": db.get_setting("yt_studio_watch_url", ""),
         "control_room_url": db.get_setting("yt_studio_control_room_url", "https://studio.youtube.com/channel/live/livestreaming"),
     }
+
+
+# ---------------------------------------------------------------- api: text overlay studio (Part 2)
+
+@app.get("/api/overlay")
+async def api_overlay_get(request: Request):
+    deps.require_session_api(request)
+    from . import overlay
+    return overlay.get_overlay_state()
+
+
+@app.post("/api/overlay")
+async def api_overlay_save(request: Request):
+    session = deps.require_session_api(request)
+    deps.require_csrf(request, session)
+    data = await request.json()
+    from . import overlay
+    updated = overlay.save_overlay_state(data)
+    await overlay.push_overlay_to_kiosk(updated)
+    db.audit(session["username"], "overlay_update", f"visible={updated.get('visible')}", deps.client_ip(request))
+    return {"ok": True, "state": updated}
+
+
+@app.post("/api/overlay/toggle")
+async def api_overlay_toggle(request: Request):
+    session = deps.require_session_api(request)
+    deps.require_csrf(request, session)
+    from . import overlay
+    updated = overlay.toggle_overlay_visibility()
+    await overlay.push_overlay_to_kiosk(updated)
+    db.audit(session["username"], "overlay_toggle", f"visible={updated.get('visible')}", deps.client_ip(request))
+    return {"ok": True, "state": updated}
+
+
+# ---------------------------------------------------------------- api: emergency failover BRB slate (Part 3)
+
+@app.get("/api/slate/brb")
+async def api_slate_brb_get(request: Request):
+    deps.require_session_api(request)
+    from . import slate
+    return slate.get_brb_state()
+
+
+@app.post("/api/slate/brb")
+async def api_slate_brb_post(request: Request):
+    session = deps.require_session_api(request)
+    deps.require_csrf(request, session)
+    data = await request.json()
+    action = str(data.get("action", "toggle")).lower()
+    from . import slate
+    if action == "show":
+        state = slate.set_brb_state(True, title=data.get("title"), subtitle=data.get("subtitle"))
+    elif action == "hide":
+        state = slate.set_brb_state(False)
+    elif action == "toggle":
+        state = slate.toggle_brb_state()
+    else:
+        raise HTTPException(status_code=400, detail="action must be show, hide, or toggle")
+    await slate.push_brb_to_kiosk(state)
+    db.audit(session["username"], "slate_brb", f"active={state.get('active')}", deps.client_ip(request))
+    return {"ok": True, "state": state}
+
+
+# ---------------------------------------------------------------- api: local stream recording (Part 5)
+
+@app.get("/api/record")
+async def api_record_get(request: Request):
+    deps.require_session_api(request)
+    try:
+        return await run_in_threadpool(control.record_stream_action, "status")
+    except control.ControlError as exc:
+        return _api_error(exc)
+
+
+@app.post("/api/record")
+async def api_record_post(request: Request):
+    session = deps.require_session_api(request)
+    deps.require_csrf(request, session)
+    data = await request.json()
+    action = str(data.get("action", "")).lower()
+    if action not in ("start", "stop"):
+        raise HTTPException(status_code=400, detail="action must be start or stop")
+    try:
+        result = await run_in_threadpool(control.record_stream_action, action)
+    except control.ControlError as exc:
+        return _api_error(exc)
+    db.audit(session["username"], f"record_stream_{action}", "", deps.client_ip(request))
+    return result
 
 
 @app.post("/api/settings")
