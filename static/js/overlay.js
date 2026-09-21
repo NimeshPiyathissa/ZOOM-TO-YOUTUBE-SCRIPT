@@ -632,12 +632,194 @@
     });
   }
 
+  // --- Custom Visual Font Picker ---
+  function initCustomFontPicker() {
+    const picker = document.getElementById('custom-font-picker');
+    if (!picker) return;
+
+    const trigger = document.getElementById('font-picker-trigger');
+    const dropdown = document.getElementById('font-picker-dropdown');
+    const searchInput = document.getElementById('font-picker-search');
+    const searchClear = document.getElementById('font-picker-search-clear');
+    const triggerName = document.getElementById('font-trigger-name');
+    const triggerBadge = document.getElementById('font-trigger-badge');
+    const list = document.getElementById('font-picker-list');
+    const emptyMsg = document.getElementById('font-picker-empty');
+    const items = Array.from(picker.querySelectorAll('.font-picker-item'));
+    const groups = Array.from(picker.querySelectorAll('.font-picker-category-group'));
+
+    function openPicker() {
+      picker.classList.add('is-open');
+      if (trigger) trigger.setAttribute('aria-expanded', 'true');
+      if (dropdown) dropdown.removeAttribute('hidden');
+      if (searchInput) {
+        searchInput.focus();
+        searchInput.select();
+      }
+      const active = picker.querySelector('.font-picker-item.is-selected');
+      if (active) {
+        active.scrollIntoView({ block: 'nearest' });
+      }
+    }
+
+    function closePicker() {
+      picker.classList.remove('is-open');
+      if (trigger) trigger.setAttribute('aria-expanded', 'false');
+      if (dropdown) dropdown.setAttribute('hidden', '');
+    }
+
+    function togglePicker() {
+      if (picker.classList.contains('is-open')) {
+        closePicker();
+      } else {
+        openPicker();
+      }
+    }
+
+    if (trigger) {
+      trigger.addEventListener('click', (e) => {
+        e.stopPropagation();
+        togglePicker();
+      });
+    }
+
+    // Close on outside click
+    document.addEventListener('click', (e) => {
+      if (!picker.contains(e.target)) {
+        closePicker();
+      }
+    });
+
+    // Close on Escape
+    picker.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        closePicker();
+        if (trigger) trigger.focus();
+      }
+    });
+
+    // Selection handler
+    function selectFont(fontName, isSinhala) {
+      if (inputFontFamily) {
+        inputFontFamily.value = fontName;
+        inputFontFamily.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+      if (triggerName) {
+        triggerName.textContent = fontName;
+        triggerName.style.fontFamily = `"${fontName}", sans-serif`;
+      }
+      if (triggerBadge) {
+        triggerBadge.textContent = isSinhala ? 'අආ ශ්‍රී' : 'Ag 123';
+      }
+
+      items.forEach((item) => {
+        const isMatch = item.getAttribute('data-font') === fontName;
+        item.classList.toggle('is-selected', isMatch);
+        item.setAttribute('aria-selected', isMatch ? 'true' : 'false');
+      });
+
+      closePicker();
+      if (trigger) trigger.focus();
+    }
+
+    items.forEach((item) => {
+      item.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const fontName = item.getAttribute('data-font');
+        const isSinhala = item.getAttribute('data-sinhala') === 'true';
+        selectFont(fontName, isSinhala);
+      });
+
+      item.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          const fontName = item.getAttribute('data-font');
+          const isSinhala = item.getAttribute('data-sinhala') === 'true';
+          selectFont(fontName, isSinhala);
+        }
+      });
+    });
+
+    // Search / Filter
+    function filterFonts() {
+      const q = (searchInput.value || '').trim().toLowerCase();
+      if (searchClear) {
+        searchClear.hidden = !q;
+      }
+      let visibleCount = 0;
+
+      groups.forEach((grp) => {
+        const catName = (grp.getAttribute('data-category') || '').toLowerCase();
+        let groupVisible = 0;
+        const grpItems = grp.querySelectorAll('.font-picker-item');
+        grpItems.forEach((item) => {
+          const fontName = (item.getAttribute('data-font') || '').toLowerCase();
+          const match = !q || fontName.includes(q) || catName.includes(q);
+          item.style.display = match ? 'flex' : 'none';
+          if (match) {
+            groupVisible++;
+            visibleCount++;
+          }
+        });
+        grp.style.display = groupVisible > 0 ? '' : 'none';
+      });
+
+      if (emptyMsg) {
+        emptyMsg.hidden = visibleCount > 0;
+      }
+    }
+
+    if (searchInput) {
+      searchInput.addEventListener('input', filterFonts);
+      searchInput.addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          const firstItem = picker.querySelector('.font-picker-item:not([style*="display: none"])');
+          if (firstItem) firstItem.focus();
+        }
+      });
+    }
+
+    if (searchClear) {
+      searchClear.addEventListener('click', (e) => {
+        e.stopPropagation();
+        searchInput.value = '';
+        filterFonts();
+        searchInput.focus();
+      });
+    }
+
+    // Keyboard navigation within list items
+    if (list) {
+      list.addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+          const visibleItems = items.filter((el) => el.style.display !== 'none');
+          const currentIdx = visibleItems.indexOf(document.activeElement);
+          if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            const next = visibleItems[currentIdx + 1] || visibleItems[0];
+            if (next) next.focus();
+          } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            if (currentIdx <= 0) {
+              if (searchInput) searchInput.focus();
+            } else {
+              const prev = visibleItems[currentIdx - 1];
+              if (prev) prev.focus();
+            }
+          }
+        }
+      });
+    }
+  }
+
   // Resize listener to re-scale font and padding proportionally
   window.addEventListener('resize', () => {
     updatePreview();
   });
 
-  // Initial render & status check
+  // Initial render, visual font picker & status check
+  initCustomFontPicker();
   updatePreview();
   checkHardwareStatus();
   setInterval(checkHardwareStatus, 4000);

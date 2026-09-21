@@ -185,6 +185,27 @@ def test_extended_typography_suite(client):
     assert "Noto Sans Sinhala" in html
 
 
+def test_visual_font_picker_suite(client):
+    preview_urls = overlay.get_google_fonts_preview_urls()
+    assert len(preview_urls) >= 3
+    assert all("fonts.googleapis.com/css2" in u for u in preview_urls)
+    assert all("display=swap" in u for u in preview_urls)
+
+    res = client.get("/overlay")
+    assert res.status_code == 200
+    html = res.text
+    assert "custom-font-picker" in html
+    assert "font-picker-trigger" in html
+    assert "font-picker-search" in html
+    assert "specimen-badge" in html
+    assert "අආ ශ්‍රී" in html
+    assert "Ag 123" in html
+    assert 'data-font="Noto Sans Sinhala"' in html
+    assert 'data-font="Anton"' in html
+    assert 'name="fontFamily"' in html
+
+
+
 def test_overlay_api_status(client, monkeypatch):
     from app import cdp
 

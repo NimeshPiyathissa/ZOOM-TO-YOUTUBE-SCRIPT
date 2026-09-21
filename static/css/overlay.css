@@ -356,3 +356,321 @@
   gap: 0.5rem;
   cursor: pointer;
 }
+
+/* ==========================================================================
+   Custom Visual Font Picker Component with Specimen Previews
+   ========================================================================== */
+.font-picker-field {
+  position: relative;
+}
+
+.custom-font-picker {
+  position: relative;
+  width: 100%;
+}
+
+.font-picker-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 48px;
+  padding: 0.5rem 0.85rem;
+  background: var(--color-surface-sunken, #0f172a);
+  border: 1px solid var(--color-border, #334155);
+  border-radius: 8px;
+  color: var(--color-text, #f8fafc);
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
+  text-align: left;
+}
+
+.font-picker-trigger:hover,
+.font-picker-trigger:focus-visible,
+.custom-font-picker.is-open .font-picker-trigger {
+  border-color: var(--color-primary, #3b82f6);
+  background: var(--color-surface, #1e293b);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+  outline: none;
+}
+
+.font-trigger-info {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.font-trigger-name {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #ffffff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  letter-spacing: 0.01em;
+}
+
+.font-trigger-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.15rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  background: rgba(59, 130, 246, 0.15);
+  color: #60a5fa;
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  letter-spacing: 0.02em;
+}
+
+.font-trigger-chevron {
+  display: flex;
+  align-items: center;
+  color: var(--color-text-muted, #94a3b8);
+  transition: transform 0.2s ease;
+  margin-left: 0.5rem;
+}
+
+.custom-font-picker.is-open .font-trigger-chevron {
+  transform: rotate(180deg);
+}
+
+/* Dropdown Container */
+.font-picker-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 1050;
+  background: #0b132b;
+  border: 1px solid #334155;
+  border-radius: 10px;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(255, 255, 255, 0.08);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: fontPickerFadeIn 0.15s ease-out;
+}
+
+.font-picker-dropdown[hidden] {
+  display: none !important;
+}
+
+@keyframes fontPickerFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Search Bar */
+.font-picker-search-box {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.65rem 0.85rem;
+  background: #151e36;
+  border-bottom: 1px solid #283552;
+  position: relative;
+}
+
+.font-picker-search-box .search-icon {
+  color: #94a3b8;
+  display: flex;
+  align-items: center;
+}
+
+.font-picker-search-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: #f8fafc;
+  font-size: 0.875rem;
+  outline: none;
+  width: 100%;
+}
+
+.font-picker-search-input::placeholder {
+  color: #64748b;
+}
+
+.font-search-clear {
+  background: none;
+  border: none;
+  color: #94a3b8;
+  font-size: 1.25rem;
+  cursor: pointer;
+  padding: 0 0.25rem;
+  line-height: 1;
+}
+
+.font-search-clear:hover {
+  color: #f8fafc;
+}
+
+/* Scrollable Font List */
+.font-picker-list {
+  max-height: 380px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0.35rem 0;
+}
+
+.font-picker-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.font-picker-list::-webkit-scrollbar-track {
+  background: #0b132b;
+}
+
+.font-picker-list::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 3px;
+}
+
+.font-picker-list::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}
+
+/* Category Group */
+.font-picker-category-group {
+  margin-bottom: 0.4rem;
+}
+
+.font-picker-category-group:last-child {
+  margin-bottom: 0;
+}
+
+.font-picker-category-header {
+  padding: 0.35rem 1rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #94a3b8;
+  background: rgba(21, 30, 54, 0.85);
+  border-top: 1px solid rgba(51, 65, 85, 0.5);
+  border-bottom: 1px solid rgba(51, 65, 85, 0.5);
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  backdrop-filter: blur(6px);
+}
+
+.font-picker-category-group:first-child .font-picker-category-header {
+  border-top: none;
+}
+
+/* Font Item */
+.font-picker-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.55rem 1rem;
+  cursor: pointer;
+  transition: background-color 0.12s ease, transform 0.12s ease;
+  border-left: 3px solid transparent;
+  gap: 0.75rem;
+  outline: none;
+}
+
+.font-picker-item:hover,
+.font-picker-item:focus-visible,
+.font-picker-item.is-focused {
+  background: rgba(59, 130, 246, 0.14);
+  border-left-color: var(--color-primary, #3b82f6);
+}
+
+.font-picker-item.is-selected {
+  background: rgba(59, 130, 246, 0.22);
+  border-left-color: #60a5fa;
+}
+
+.font-item-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.font-item-name {
+  font-size: 1.05rem;
+  color: #f1f5f9;
+  font-weight: 500;
+  line-height: 1.25;
+}
+
+.font-item-category-tag {
+  font-size: 0.68rem;
+  color: #64748b;
+}
+
+/* Specimen Preview Badge */
+.font-item-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.25rem 0.65rem;
+  border-radius: 6px;
+  background: #18223c;
+  border: 1px solid #2c3c60;
+  min-width: 84px;
+  text-align: center;
+}
+
+.specimen-badge {
+  font-size: 1.15rem;
+  line-height: 1;
+  color: #f8fafc;
+  letter-spacing: 0.02em;
+}
+
+.specimen-sinhala {
+  font-size: 1rem;
+  color: #38bdf8;
+}
+
+/* Checkmark */
+.font-item-check {
+  display: flex;
+  align-items: center;
+  color: #60a5fa;
+  opacity: 0;
+  width: 16px;
+  flex-shrink: 0;
+  transition: opacity 0.15s ease;
+}
+
+.font-picker-item.is-selected .font-item-check {
+  opacity: 1;
+}
+
+/* Empty search result */
+.font-picker-empty {
+  padding: 2rem 1rem;
+  text-align: center;
+  color: #94a3b8;
+  font-size: 0.85rem;
+  font-style: italic;
+}
+
+/* Utility to visually hide select */
+.visually-hidden {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}

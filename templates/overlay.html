@@ -8,6 +8,11 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link id="font-preview-initial" href="https://fonts.googleapis.com/css2?family={{ overlay_state.font_family | replace(' ', '+') }}&display=swap" rel="stylesheet">
+{% if font_preview_urls %}
+  {% for url in font_preview_urls %}
+  <link rel="stylesheet" href="{{ url }}" media="print" onload="this.media='all'">
+  {% endfor %}
+{% endif %}
 {% endblock %}
 
 {% block content %}
@@ -113,10 +118,12 @@
         <span class="hint">Line breaks are preserved on screen.</span>
       </div>
 
-      <!-- Google Fonts Selector -->
-      <div class="field mt-3">
-        <label class="label" for="overlay-font-family">Google Font Family – Broadcast Typography Suite (60+ Fonts)</label>
-        <select id="overlay-font-family" name="fontFamily" class="select input">
+      <!-- Google Fonts Visual Picker Component -->
+      <div class="field mt-3 font-picker-field">
+        <label class="label" id="font-picker-label" for="font-picker-trigger">Google Font Family – Broadcast Typography Suite (60+ Fonts)</label>
+        
+        <!-- Native select element kept in DOM (visually hidden) for backward compatibility and test assertions -->
+        <select id="overlay-font-family" name="fontFamily" class="select input visually-hidden" aria-hidden="true" tabindex="-1">
           {% if font_categories %}
             {% for category, fonts in font_categories.items() %}
             <optgroup label="{{ category }}">
@@ -135,7 +142,72 @@
             {% endfor %}
           {% endif %}
         </select>
-        <span class="hint">Organized into 7 broadcast categories: High-Impact, Modern Sans, Condensed, Sci-Fi/Gaming, Serif, Script &amp; Sinhala.</span>
+
+        <!-- Custom Visual Dropdown Component -->
+        <div class="custom-font-picker" id="custom-font-picker">
+          <button type="button" class="font-picker-trigger" id="font-picker-trigger" aria-haspopup="listbox" aria-expanded="false" aria-labelledby="font-picker-label font-picker-trigger">
+            <div class="font-trigger-info">
+              <span class="font-trigger-name" id="font-trigger-name" style="font-family: '{{ overlay_state.font_family }}', sans-serif;">{{ overlay_state.font_family }}</span>
+              <span class="font-trigger-badge" id="font-trigger-badge">
+                {% if overlay_state.font_family in ['Noto Sans Sinhala', 'Noto Serif Sinhala', 'Abhaya Libre'] %}
+                  අආ ශ්‍රී
+                {% else %}
+                  Ag 123
+                {% endif %}
+              </span>
+            </div>
+            <span class="font-trigger-chevron">{{ icon("chevron-down", "icon-sm") }}</span>
+          </button>
+
+          <div class="font-picker-dropdown" id="font-picker-dropdown" role="listbox" aria-labelledby="font-picker-label" hidden>
+            <!-- Instant Search / Filter -->
+            <div class="font-picker-search-box">
+              <span class="search-icon">{{ icon("search", "icon-xs") }}</span>
+              <input type="text" id="font-picker-search" class="font-picker-search-input" placeholder="Search 60+ fonts or styles (e.g. Sinhala, Bold, Gaming)..." autocomplete="off" spellcheck="false">
+              <button type="button" id="font-picker-search-clear" class="font-search-clear" aria-label="Clear search" hidden>&times;</button>
+            </div>
+
+            <!-- Scrollable List of Font Categories and Items -->
+            <div class="font-picker-list" id="font-picker-list">
+              {% if font_categories %}
+                {% for category, fonts in font_categories.items() %}
+                <div class="font-picker-category-group" data-category="{{ category }}">
+                  <div class="font-picker-category-header">{{ category }}</div>
+                  <div class="font-picker-category-items">
+                    {% for font in fonts %}
+                    {% set is_sinhala = font in ['Noto Sans Sinhala', 'Noto Serif Sinhala', 'Abhaya Libre'] %}
+                    <div class="font-picker-item {% if overlay_state.font_family == font %}is-selected{% endif %}"
+                         role="option"
+                         aria-selected="{{ 'true' if overlay_state.font_family == font else 'false' }}"
+                         data-font="{{ font }}"
+                         data-category="{{ category }}"
+                         data-sinhala="{{ 'true' if is_sinhala else 'false' }}"
+                         tabindex="0">
+                      <div class="font-item-meta">
+                        <span class="font-item-name" style="font-family: '{{ font }}', sans-serif;">{{ font }}</span>
+                        <span class="font-item-category-tag">{{ category }}</span>
+                      </div>
+                      <div class="font-item-preview" style="font-family: '{{ font }}', sans-serif;">
+                        {% if is_sinhala %}
+                          <span class="specimen-badge specimen-sinhala">අආ ශ්‍රී</span>
+                        {% else %}
+                          <span class="specimen-badge">Ag 123</span>
+                        {% endif %}
+                      </div>
+                      <span class="font-item-check" aria-hidden="true">{{ icon("check", "icon-xs") }}</span>
+                    </div>
+                    {% endfor %}
+                  </div>
+                </div>
+                {% endfor %}
+              {% endif %}
+              <div class="font-picker-empty" id="font-picker-empty" hidden>
+                No matching fonts found
+              </div>
+            </div>
+          </div>
+        </div>
+        <span class="hint">Organized into 7 broadcast categories with live typeface specimens.</span>
       </div>
 
       <!-- Font Size Slider -->

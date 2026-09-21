@@ -264,6 +264,7 @@ async def overlay_page(request: Request):
         "overlay_state": state,
         "google_fonts": overlay.GOOGLE_FONTS,
         "font_categories": overlay.GOOGLE_FONT_CATEGORIES,
+        "font_preview_urls": overlay.get_google_fonts_preview_urls(),
     })
 
 

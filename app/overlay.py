@@ -97,6 +97,28 @@ GOOGLE_FONT_CATEGORIES = {
 
 GOOGLE_FONTS = [font for fonts in GOOGLE_FONT_CATEGORIES.values() for font in fonts]
 
+
+def get_google_fonts_preview_urls() -> list[str]:
+    """Returns batched Google Fonts CSS2 URLs to efficiently preload preview fonts."""
+    batches = []
+    chunk = []
+    for f in GOOGLE_FONTS:
+        chunk.append(f.replace(" ", "+"))
+        if len(chunk) >= 15:
+            batches.append(
+                "https://fonts.googleapis.com/css2?"
+                + "&".join(f"family={name}" for name in chunk)
+                + "&display=swap"
+            )
+            chunk = []
+    if chunk:
+        batches.append(
+            "https://fonts.googleapis.com/css2?"
+            + "&".join(f"family={name}" for name in chunk)
+            + "&display=swap"
+        )
+    return batches
+
 DEFAULT_OVERLAY_STATE = {
     "text": "LIVE BROADCAST",
     "font_family": "Montserrat",
