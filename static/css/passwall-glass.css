@@ -260,11 +260,23 @@ main.page,
   opacity: 0.95;
 }
 
-/* 6. Action Buttons: Clean solid dark gray/slate */
+/* 6. Action Buttons & Navigation Tabs (No Vertical Text Clipping) */
+button,
 .btn,
 .btn-secondary,
 .btn-touch,
-.btn-action {
+.btn-action,
+.btn-passwall,
+.tab-btn {
+  min-height: 40px !important;
+  height: auto !important;
+  padding: 8px 16px !important;
+  line-height: 1.4 !important;
+  font-size: 0.92rem !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  box-sizing: border-box !important;
   background: #253342 !important;
   border: 1px solid #334458 !important;
   border-radius: 8px !important;
@@ -275,11 +287,34 @@ main.page,
 .btn:hover,
 .btn-secondary:hover,
 .btn-touch:hover,
-.btn-action:hover {
+.btn-action:hover,
+button:hover {
   background: #2e3e50 !important;
   border-color: #41556e !important;
   color: #ffffff !important;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3) !important;
+}
+
+button.btn-icon,
+.btn.btn-icon {
+  padding: 0 !important;
+  width: 40px !important;
+  min-width: 40px !important;
+  flex: none !important;
+}
+
+button.btn-sm:not(.btn-icon),
+.btn.btn-sm:not(.btn-icon) {
+  min-height: 34px !important;
+  padding: 6px 12px !important;
+  line-height: 1.3 !important;
+}
+
+button.btn-icon.btn-sm,
+.btn.btn-icon.btn-sm {
+  width: 34px !important;
+  min-width: 34px !important;
+  padding: 0 !important;
 }
 
 .btn-primary,
@@ -326,16 +361,26 @@ main.page,
   color: #ffffff !important;
 }
 
-/* 7. Micro Status: Glowing Green Indicator (● Running) */
+/* 7. Micro Status & Badges (Glowing Green Indicator ● Running) */
 .micro-status,
 .status-running,
 .hero-state,
-.topbar-status,
-.badge-active,
-.badge-live {
+.topbar-status {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+}
+
+.badge,
+.status-badge,
+.status-pill {
+  padding: 4px 10px !important;
+  line-height: 1.3 !important;
+  min-height: 24px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  box-sizing: border-box !important;
 }
 
 .dot-LIVE,
@@ -362,6 +407,13 @@ main.page,
   font-weight: 600 !important;
 }
 
+/* Pipeline & Service Row Margins */
+.pipeline-row,
+.node-row,
+.service-row {
+  padding-top: 10px !important;
+  padding-bottom: 10px !important;
+}
 
 /* 8. 16:9 Wide Aspect Ratio Monitors */
 .hero-3d-preview,
@@ -385,25 +437,63 @@ main.page,
   display: block !important;
 }
 
-/* Sub-surfaces, tiles, inputs */
+/* 9. Form Inputs & Select Dropdowns (No Vertical Text Clipping) */
+select,
+.form-select,
 .input,
 select.input,
-textarea.input {
+input[type="text"],
+input[type="password"],
+input[type="search"],
+input[type="url"],
+input[type="number"],
+input.input {
+  min-height: 44px !important;
+  height: auto !important;
+  padding: 10px 14px !important;
+  line-height: 1.5 !important;
+  font-size: 0.95rem !important;
+  display: flex !important;
+  align-items: center !important;
+  box-sizing: border-box !important;
   background: #0f1722 !important;
   border: 1px solid #233142 !important;
   border-radius: 8px !important;
   color: #ffffff !important;
-  padding: 10px 14px !important;
-  font-size: 0.92rem !important;
   box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3) !important;
 }
+
+select,
+select.input {
+  padding-right: 36px !important;
+}
+
+textarea.input {
+  min-height: 70px !important;
+  height: auto !important;
+  padding: 10px 14px !important;
+  line-height: 1.5 !important;
+  font-size: 0.95rem !important;
+  background: #0f1722 !important;
+  border: 1px solid #233142 !important;
+  border-radius: 8px !important;
+  color: #ffffff !important;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3) !important;
+  box-sizing: border-box !important;
+}
+
+
 .input:focus,
 select.input:focus,
-textarea.input:focus {
+select:focus,
+input[type="text"]:focus,
+input[type="password"]:focus,
+input[type="search"]:focus {
   border-color: #38bdf8 !important;
   box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.25), inset 0 2px 4px rgba(0, 0, 0, 0.3) !important;
   outline: none !important;
 }
+
 
 .stat-tile,
 .telemetry-tile {
