@@ -72,16 +72,6 @@
     </div>
 {% endif %}
     <main class="{{ 'page' if username else '' }}">
-      {% if username %}
-      <nav class="passwall-nav" aria-label="Passwall Quick Navigation">
-        <a href="/" class="passwall-nav-link {{ 'active' if request.url.path == '/' }}">{{ icon("layout-dashboard", "icon-sm") | safe }}Overview</a>
-        <a href="/studio" class="passwall-nav-link {{ 'active' if request.url.path == '/studio' }}">{{ icon("youtube", "icon-sm") | safe }}Live Studio</a>
-        <a href="/overlay" class="passwall-nav-link {{ 'active' if request.url.path == '/overlay' }}">{{ icon("type", "icon-sm") | safe }}Overlays</a>
-        <a href="/settings" class="passwall-nav-link {{ 'active' if request.url.path in ['/settings', '/config'] }}">{{ icon("settings", "icon-sm") | safe }}Settings</a>
-        <a href="/remote" class="passwall-nav-link {{ 'active' if request.url.path == '/remote' }}">{{ icon("cast", "icon-sm") | safe }}Remote</a>
-        <a href="/zoom" class="passwall-nav-link {{ 'active' if request.url.path == '/zoom' }}">{{ icon("video", "icon-sm") | safe }}Zoom</a>
-      </nav>
-      {% endif %}
       {% block content %}{% endblock %}
     </main>
 {% if username %}
