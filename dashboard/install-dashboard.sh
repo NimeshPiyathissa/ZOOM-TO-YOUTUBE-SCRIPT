@@ -165,7 +165,21 @@ install -o root -g root -m 440 "${SUDOERS_TMP}" /etc/sudoers.d/dashboard
 rm -f "${SUDOERS_TMP}"
 
 echo "==> [7/8] Installing systemd units"
-cp "${SRC_DIR}/systemd/dashboard.service" /etc/systemd/system/dashboard.service
+# dashboard.service lives in the repo-root systemd/ (a sibling of this
+# script's own dashboard/ directory), not under dashboard/ itself - a
+# leftover from before the repo was consolidated into one tree pointed
+# here instead of at "$(dirname "${SRC_DIR}")", and every run of this
+# script silently failed at exactly this line (set -e aborts here) until
+# caught by testing against production: the unit file was never actually
+# updated/reloaded, so dashboard.service kept running under its old
+# bind address/port no matter how many times "install.sh upgrade" ran.
+REPO_ROOT="$(dirname "${SRC_DIR}")"
+if [[ ! -f "${REPO_ROOT}/systemd/dashboard.service" ]]; then
+  echo "${REPO_ROOT}/systemd/dashboard.service not found - is this script being run from a" >&2
+  echo "checkout with dashboard/ and systemd/ as siblings? (not standalone from inside dashboard/)" >&2
+  exit 1
+fi
+cp "${REPO_ROOT}/systemd/dashboard.service" /etc/systemd/system/dashboard.service
 systemctl daemon-reload
 systemctl enable dashboard.service
 
