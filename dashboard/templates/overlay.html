@@ -1,0 +1,476 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon %}
+{% block title %}Text Overlays Studio – Zoom Stream Dashboard{% endblock %}
+{% block extra_css %}
+<link rel="stylesheet" href="/static/css/rack.css">
+<link rel="stylesheet" href="/static/css/overlay.css">
+<!-- Google Fonts Preconnect & Dynamic Loader -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link id="font-preview-initial" href="https://fonts.googleapis.com/css2?family={{ overlay_state.font_family | replace(' ', '+') }}&display=swap" rel="stylesheet">
+{% if font_preview_urls %}
+  {% for url in font_preview_urls %}
+  <link rel="stylesheet" href="{{ url }}" media="print" onload="this.media='all'">
+  {% endfor %}
+{% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="overlay-container rack-grid">
+
+  <!-- ================================================================ Live Broadcast Controls -->
+  <h2 class="floating-section-title">
+    {{ icon("play-circle", "icon-sm") }}Live Broadcast Controls
+  </h2>
+
+  <!-- Master Header & Output Toggle -->
+  <header class="card overlay-master-bar">
+    <div class="overlay-master-left">
+      <div class="overlay-brand">
+        <span class="overlay-brand-icon">{{ icon("type") }}</span>
+        <div>
+          <h1 class="overlay-title">OBS-Style Text Overlay Studio</h1>
+          <span class="hint m-0">Zero-CPU hardware-accelerated broadcast overlay layer for Display :99</span>
+        </div>
+      </div>
+
+      <div class="overlay-status-badge" id="overlay-status-badge" data-visible="{{ 'true' if overlay_state.visible else 'false' }}">
+        <span class="status-dot"></span>
+        <span class="status-text" id="overlay-status-text">{% if overlay_state.visible %}ON-AIR (VISIBLE){% else %}OFF-AIR (HIDDEN){% endif %}</span>
+      </div>
+
+      <div class="overlay-hw-badge status-waiting" id="overlay-hw-badge" data-tooltip="Real-time Chrome Kiosk Display :99 CDP Status">
+        <span class="status-dot"></span>
+        <span class="status-text" id="overlay-hw-text">PROBING CDP...</span>
+      </div>
+    </div>
+
+    <div class="overlay-master-actions">
+      <button id="btn-reinject-overlay" type="button" class="btn btn-secondary btn-touch" data-tooltip="Force re-injection directly onto Display :99 Chrome kiosk">
+        <span class="btn-icon">{{ icon("refresh-cw", "icon-sm") }}</span>
+        <span id="btn-reinject-text">Force Re-Inject</span>
+      </button>
+      <button id="btn-toggle-overlay" class="btn btn-touch {% if overlay_state.visible %}btn-danger{% else %}btn-primary{% endif %}">
+        <span class="btn-icon">{{ icon("layers") }}</span>
+        <span id="btn-toggle-text">{% if overlay_state.visible %}HIDE OVERLAY{% else %}SHOW OVERLAY{% endif %}</span>
+      </button>
+      <button id="btn-save-overlay" class="btn btn-secondary btn-touch" data-tooltip="Save and apply immediately">
+        {{ icon("check", "icon-sm") }}<span>Save &amp; Apply</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- ================================================================ 16:9 Broadcast Canvas -->
+  <h2 class="floating-section-title">
+    {{ icon("monitor", "icon-sm") }}16:9 Broadcast Canvas (Display :99)
+  </h2>
+
+  <!-- Interactive 16:9 Canvas Preview Card -->
+  <section class="card overlay-preview-card" aria-labelledby="preview-heading">
+    <div class="card-header-flex">
+      <h2 id="preview-heading" class="rack-title">
+        {{ icon("monitor", "icon-sm") }}16:9 Live Broadcast Canvas
+        <span class="rack-title-end">
+          <span class="program-id">DISPLAY :99 DIRECT INJECTION (0% CPU)</span>
+        </span>
+      </h2>
+      <div class="canvas-coords-readout" id="canvas-coords-readout">
+        <span>X: <strong id="readout-x">{{ overlay_state.pos_x }}%</strong></span>
+        <span>Y: <strong id="readout-y">{{ overlay_state.pos_y }}%</strong></span>
+      </div>
+    </div>
+
+    <!-- 16:9 Aspect Ratio Interactive Stage -->
+    <div class="canvas-stage-wrapper">
+      <div class="canvas-stage-16-9" id="canvas-stage">
+        <div class="canvas-grid-lines" aria-hidden="true"></div>
+        <div class="canvas-safe-area" aria-hidden="true" title="Title Safe Boundary (90%)"></div>
+
+        <!-- Draggable Overlay Box -->
+        <div class="draggable-overlay-box" id="draggable-overlay-box" tabindex="0" role="button" aria-label="Draggable text overlay. Click and drag or use arrow keys to position.">
+          <div class="overlay-drag-handle" title="Drag to position">
+            <span class="handle-icon">{{ icon("move", "icon-sm") }}</span>
+          </div>
+          <div class="overlay-content-render" id="overlay-content-render">
+            {{ overlay_state.text }}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Quick Snap-to-Corner Anchors -->
+    <div class="snap-anchors-row mt-3">
+      <span class="eyebrow">Snap to Anchor:</span>
+      <div class="btn-group snap-group">
+        <button type="button" class="btn btn-secondary btn-sm snap-btn" data-snap="top-left">Top-Left</button>
+        <button type="button" class="btn btn-secondary btn-sm snap-btn" data-snap="top-right">Top-Right</button>
+        <button type="button" class="btn btn-secondary btn-sm snap-btn" data-snap="center">Center</button>
+        <button type="button" class="btn btn-secondary btn-sm snap-btn" data-snap="bottom-left">Bottom-Left</button>
+        <button type="button" class="btn btn-secondary btn-sm snap-btn" data-snap="bottom-right">Bottom-Right</button>
+      </div>
+      <span class="hint ml-auto">Drag anywhere on the stage or use snap anchors to position.</span>
+    </div>
+  </section>
+
+  <!-- ================================================================ Real (encoder-burned) watermark -->
+  <h2 class="floating-section-title">
+    {{ icon("video", "icon-sm") }}Encoder Watermark (What Actually Appears On Stream)
+  </h2>
+
+  <section class="card" aria-labelledby="watermark-heading" id="watermark-encoder-card">
+    <h2 id="watermark-heading" class="rack-title">
+      {{ icon("video", "icon-sm") }}Burned Into The Broadcast
+      <span class="rack-title-end">
+        <span class="overlay-hw-badge" id="watermark-encoder-badge" data-tooltip="Is the watermark filter present in the currently-running encoder process right now">
+          <span class="status-dot"></span>
+          <span class="status-text" id="watermark-encoder-text">CHECKING...</span>
+        </span>
+      </span>
+    </h2>
+    <p class="hint">
+      The canvas above is a live <em>preview</em> only (injected into the Chrome kiosk's page, not the
+      broadcast itself) - it can't work at all for a Zoom source, and can be hidden by fullscreen video
+      even for a webpage source. This section controls the watermark FFmpeg actually draws into the
+      output, for every source type. <strong>Changes here require restarting the encoder to take effect</strong> -
+      saving alone does not interrupt the live stream.
+    </p>
+
+    <div id="watermark-restart-banner" class="banner banner-warning mt-2" hidden>
+      <span>{{ icon("alert-triangle", "icon-sm") }}</span>
+      <span>Saved settings don't match what's currently live. Restart the encoder to apply them.</span>
+      <button type="button" id="btn-watermark-restart-encoder" class="btn btn-warning btn-sm ml-auto">Restart Encoder</button>
+    </div>
+
+    <div class="field mt-3">
+      <label class="label">Watermark Type</label>
+      <div class="btn-group segmented" role="radiogroup" aria-label="Watermark type">
+        <button type="button" class="btn btn-secondary btn-sm wm-mode-btn" data-mode="text">Text</button>
+        <button type="button" class="btn btn-secondary btn-sm wm-mode-btn" data-mode="image">Image / Logo</button>
+      </div>
+    </div>
+
+    <div class="field mt-3" id="watermark-font-field">
+      <label class="label" for="watermark-font-select">Encoder Font (text mode)</label>
+      <select id="watermark-font-select" class="select input">
+        <option value="inter">Inter</option>
+        <option value="jetbrains-mono">JetBrains Mono</option>
+      </select>
+      <span class="hint">A small, license-verified set bundled as real font files - not the 60+ preview-only list above.</span>
+    </div>
+
+    <div class="field mt-3" id="watermark-image-field" hidden>
+      <label class="label" for="watermark-image-upload">Watermark Image (PNG/JPG/WEBP, up to 5MB)</label>
+      <input type="file" id="watermark-image-upload" class="input" accept=".png,.jpg,.jpeg,.webp">
+      <span class="hint" id="watermark-image-current"></span>
+    </div>
+
+    <div class="field mt-3">
+      <label class="label">Position (9-point grid)</label>
+      <div class="watermark-anchor-grid" id="watermark-anchor-grid">
+        <button type="button" class="btn btn-secondary btn-sm wm-anchor-btn" data-anchor="top-left">↖</button>
+        <button type="button" class="btn btn-secondary btn-sm wm-anchor-btn" data-anchor="top-center">↑</button>
+        <button type="button" class="btn btn-secondary btn-sm wm-anchor-btn" data-anchor="top-right">↗</button>
+        <button type="button" class="btn btn-secondary btn-sm wm-anchor-btn" data-anchor="middle-left">←</button>
+        <button type="button" class="btn btn-secondary btn-sm wm-anchor-btn" data-anchor="center">•</button>
+        <button type="button" class="btn btn-secondary btn-sm wm-anchor-btn" data-anchor="middle-right">→</button>
+        <button type="button" class="btn btn-secondary btn-sm wm-anchor-btn" data-anchor="bottom-left">↙</button>
+        <button type="button" class="btn btn-secondary btn-sm wm-anchor-btn" data-anchor="bottom-center">↓</button>
+        <button type="button" class="btn btn-secondary btn-sm wm-anchor-btn" data-anchor="bottom-right">↘</button>
+      </div>
+    </div>
+
+    <div class="studio-row">
+      <div class="field">
+        <label class="label" for="watermark-margin-x">Margin X (px)</label>
+        <input type="number" id="watermark-margin-x" class="input" min="0" max="500" value="{{ overlay_state.margin_x }}">
+      </div>
+      <div class="field">
+        <label class="label" for="watermark-margin-y">Margin Y (px)</label>
+        <input type="number" id="watermark-margin-y" class="input" min="0" max="500" value="{{ overlay_state.margin_y }}">
+      </div>
+      <div class="field" id="watermark-size-field">
+        <label class="label" for="watermark-size">Size <span id="watermark-size-unit"></span></label>
+        <input type="range" id="watermark-size" class="range" min="10" max="80" value="{{ overlay_state.font_size }}">
+      </div>
+      <div class="field" id="watermark-opacity-field">
+        <label class="label" for="watermark-opacity">Opacity (%)</label>
+        <input type="range" id="watermark-opacity" class="range" min="0" max="100" value="{{ overlay_state.font_opacity }}">
+      </div>
+    </div>
+  </section>
+
+  <!-- ================================================================ Manage Overlays & Streams -->
+  <h2 class="floating-section-title">
+    {{ icon("layers", "icon-sm") }}Manage Overlays &amp; Typography
+  </h2>
+
+  <!-- Advanced Styling Controls Row -->
+  <div class="studio-row studio-row-split">
+
+    <!-- Typography & Color Settings -->
+    <section class="card overlay-controls-card" aria-labelledby="typography-heading">
+      <h2 id="typography-heading" class="rack-title">
+        {{ icon("type", "icon-sm") }}Typography &amp; Content
+      </h2>
+
+      <!-- Text Content -->
+      <div class="field">
+        <label class="label" for="overlay-text-input">Overlay Text / Caption</label>
+        <textarea id="overlay-text-input" class="textarea input" rows="2" placeholder="Enter broadcast text...">{{ overlay_state.text }}</textarea>
+        <span class="hint">Line breaks are preserved on screen.</span>
+      </div>
+
+      <!-- Google Fonts Visual Picker Component -->
+      <div class="field mt-3 font-picker-field">
+        <label class="label" id="font-picker-label" for="font-picker-trigger">Google Font Family – Broadcast Typography Suite (60+ Fonts)</label>
+        
+        <!-- Native select element kept in DOM (visually hidden) for backward compatibility and test assertions -->
+        <select id="overlay-font-family" name="fontFamily" class="select input visually-hidden" aria-hidden="true" tabindex="-1">
+          {% if font_categories %}
+            {% for category, fonts in font_categories.items() %}
+            <optgroup label="{{ category }}">
+              {% for font in fonts %}
+              <option value="{{ font }}" {% if overlay_state.font_family == font %}selected{% endif %}>
+                {{ font }}
+              </option>
+              {% endfor %}
+            </optgroup>
+            {% endfor %}
+          {% else %}
+            {% for font in google_fonts %}
+            <option value="{{ font }}" {% if overlay_state.font_family == font %}selected{% endif %}>
+              {{ font }}
+            </option>
+            {% endfor %}
+          {% endif %}
+        </select>
+
+        <!-- Custom Visual Dropdown Component -->
+        <div class="custom-font-picker" id="custom-font-picker">
+          <button type="button" class="font-picker-trigger" id="font-picker-trigger" aria-haspopup="listbox" aria-expanded="false" aria-labelledby="font-picker-label font-picker-trigger">
+            <div class="font-trigger-info">
+              <span class="font-trigger-name" id="font-trigger-name" style="font-family: '{{ overlay_state.font_family }}', sans-serif;">{{ overlay_state.font_family }}</span>
+              <span class="font-trigger-badge" id="font-trigger-badge">
+                {% if overlay_state.font_family in ['Noto Sans Sinhala', 'Noto Serif Sinhala', 'Abhaya Libre'] %}
+                  අආ ශ්‍රී
+                {% else %}
+                  Ag 123
+                {% endif %}
+              </span>
+            </div>
+            <span class="font-trigger-chevron">{{ icon("chevron-down", "icon-sm") }}</span>
+          </button>
+
+          <div class="font-picker-dropdown" id="font-picker-dropdown" role="listbox" aria-labelledby="font-picker-label" hidden>
+            <!-- Instant Search / Filter -->
+            <div class="font-picker-search-box">
+              <span class="search-icon">{{ icon("search", "icon-xs") }}</span>
+              <input type="text" id="font-picker-search" class="font-picker-search-input" placeholder="Search 60+ fonts or styles (e.g. Sinhala, Bold, Gaming)..." autocomplete="off" spellcheck="false">
+              <button type="button" id="font-picker-search-clear" class="font-search-clear" aria-label="Clear search" hidden>&times;</button>
+            </div>
+
+            <!-- Scrollable List of Font Categories and Items -->
+            <div class="font-picker-list" id="font-picker-list">
+              {% if font_categories %}
+                {% for category, fonts in font_categories.items() %}
+                <div class="font-picker-category-group" data-category="{{ category }}">
+                  <div class="font-picker-category-header">{{ category }}</div>
+                  <div class="font-picker-category-items">
+                    {% for font in fonts %}
+                    {% set is_sinhala = font in ['Noto Sans Sinhala', 'Noto Serif Sinhala', 'Abhaya Libre'] %}
+                    <div class="font-picker-item {% if overlay_state.font_family == font %}is-selected{% endif %}"
+                         role="option"
+                         aria-selected="{{ 'true' if overlay_state.font_family == font else 'false' }}"
+                         data-font="{{ font }}"
+                         data-category="{{ category }}"
+                         data-sinhala="{{ 'true' if is_sinhala else 'false' }}"
+                         tabindex="0">
+                      <div class="font-item-meta">
+                        <span class="font-item-name" style="font-family: '{{ font }}', sans-serif;">{{ font }}</span>
+                        <span class="font-item-category-tag">{{ category }}</span>
+                      </div>
+                      <div class="font-item-preview" style="font-family: '{{ font }}', sans-serif;">
+                        {% if is_sinhala %}
+                          <span class="specimen-badge specimen-sinhala">අආ ශ්‍රී</span>
+                        {% else %}
+                          <span class="specimen-badge">Ag 123</span>
+                        {% endif %}
+                      </div>
+                      <span class="font-item-check" aria-hidden="true">{{ icon("check", "icon-xs") }}</span>
+                    </div>
+                    {% endfor %}
+                  </div>
+                </div>
+                {% endfor %}
+              {% endif %}
+              <div class="font-picker-empty" id="font-picker-empty" hidden>
+                No matching fonts found
+              </div>
+            </div>
+          </div>
+        </div>
+        <span class="hint">Organized into 7 broadcast categories with live typeface specimens.</span>
+      </div>
+
+      <!-- Font Size Slider -->
+      <div class="field mt-3">
+        <div class="slider-header">
+          <label class="label" for="overlay-font-size">Font Size</label>
+          <span class="slider-readout" id="font-size-val">{{ overlay_state.font_size }} px</span>
+        </div>
+        <input type="range" id="overlay-font-size" class="slider" min="14" max="120" value="{{ overlay_state.font_size }}">
+      </div>
+
+      <!-- Font Color & Opacity -->
+      <div class="field-row mt-3">
+        <div class="field-col">
+          <label class="label" for="overlay-font-color">Font Color</label>
+          <div class="color-picker-group">
+            <input type="color" id="overlay-font-color" class="color-input" value="{{ overlay_state.font_color }}">
+            <input type="text" id="overlay-font-color-hex" class="input input-sm readout color-hex" value="{{ overlay_state.font_color }}" maxlength="7">
+          </div>
+        </div>
+        <div class="field-col">
+          <div class="slider-header">
+            <label class="label" for="overlay-font-opacity">Font Opacity</label>
+            <span class="slider-readout" id="font-opacity-val">{{ overlay_state.font_opacity }}%</span>
+          </div>
+          <input type="range" id="overlay-font-opacity" class="slider" min="0" max="100" value="{{ overlay_state.font_opacity }}">
+        </div>
+      </div>
+
+      <!-- Text Outline / Stroke -->
+      <div class="field-group-box mt-4">
+        <div class="field-group-header">
+          <label class="checkbox-label font-bold" for="toggle-outline">
+            <input type="checkbox" id="toggle-outline" {% if overlay_state.outline_enabled %}checked{% endif %}>
+            <span>Text Outline / Stroke (Anti-Whiteboard)</span>
+          </label>
+        </div>
+        <div class="field-group-body" id="group-outline-body" {% if not overlay_state.outline_enabled %}style="opacity: 0.5; pointer-events: none;"{% endif %}>
+          <div class="field-row mt-2">
+            <div class="field-col">
+              <label class="label" for="overlay-outline-color">Stroke Color</label>
+              <div class="color-picker-group">
+                <input type="color" id="overlay-outline-color" class="color-input" value="{{ overlay_state.outline_color }}">
+                <input type="text" id="overlay-outline-color-hex" class="input input-sm readout color-hex" value="{{ overlay_state.outline_color }}" maxlength="7">
+              </div>
+            </div>
+            <div class="field-col">
+              <div class="slider-header">
+                <label class="label" for="overlay-outline-width">Stroke Thickness</label>
+                <span class="slider-readout" id="outline-width-val">{{ overlay_state.outline_width }} px</span>
+              </div>
+              <input type="range" id="overlay-outline-width" class="slider" min="1" max="12" value="{{ overlay_state.outline_width }}">
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Background Box & Drop Shadow Settings -->
+    <section class="card overlay-controls-card" aria-labelledby="decorations-heading">
+      <h2 id="decorations-heading" class="rack-title">
+        {{ icon("layers", "icon-sm") }}Background Box &amp; Drop Shadow
+      </h2>
+
+      <!-- Background Box Options -->
+      <div class="field-group-box">
+        <div class="field-group-header">
+          <label class="checkbox-label font-bold" for="toggle-box">
+            <input type="checkbox" id="toggle-box" {% if overlay_state.box_enabled %}checked{% endif %}>
+            <span>Background Holding Box</span>
+          </label>
+        </div>
+        <div class="field-group-body" id="group-box-body" {% if not overlay_state.box_enabled %}style="opacity: 0.5; pointer-events: none;"{% endif %}>
+          <div class="field-row mt-2">
+            <div class="field-col">
+              <label class="label" for="overlay-box-color">Box Color</label>
+              <div class="color-picker-group">
+                <input type="color" id="overlay-box-color" class="color-input" value="{{ overlay_state.box_color }}">
+                <input type="text" id="overlay-box-color-hex" class="input input-sm readout color-hex" value="{{ overlay_state.box_color }}" maxlength="7">
+              </div>
+            </div>
+            <div class="field-col">
+              <div class="slider-header">
+                <label class="label" for="overlay-box-opacity">Box Opacity</label>
+                <span class="slider-readout" id="box-opacity-val">{{ overlay_state.box_opacity }}%</span>
+              </div>
+              <input type="range" id="overlay-box-opacity" class="slider" min="0" max="100" value="{{ overlay_state.box_opacity }}">
+            </div>
+          </div>
+
+          <div class="field-row mt-3">
+            <div class="field-col">
+              <div class="slider-header">
+                <label class="label" for="overlay-box-padding">Padding</label>
+                <span class="slider-readout" id="box-padding-val">{{ overlay_state.box_padding }} px</span>
+              </div>
+              <input type="range" id="overlay-box-padding" class="slider" min="0" max="60" value="{{ overlay_state.box_padding }}">
+            </div>
+            <div class="field-col">
+              <div class="slider-header">
+                <label class="label" for="overlay-box-radius">Corner Radius</label>
+                <span class="slider-readout" id="box-radius-val">{{ overlay_state.box_radius }} px</span>
+              </div>
+              <input type="range" id="overlay-box-radius" class="slider" min="0" max="40" value="{{ overlay_state.box_radius }}">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Drop Shadow Options -->
+      <div class="field-group-box mt-4">
+        <div class="field-group-header">
+          <label class="checkbox-label font-bold" for="toggle-shadow">
+            <input type="checkbox" id="toggle-shadow" {% if overlay_state.shadow_enabled %}checked{% endif %}>
+            <span>Drop Shadow</span>
+          </label>
+        </div>
+        <div class="field-group-body" id="group-shadow-body" {% if not overlay_state.shadow_enabled %}style="opacity: 0.5; pointer-events: none;"{% endif %}>
+          <div class="field-row mt-2">
+            <div class="field-col">
+              <label class="label" for="overlay-shadow-color">Shadow Color</label>
+              <div class="color-picker-group">
+                <input type="color" id="overlay-shadow-color" class="color-input" value="{{ overlay_state.shadow_color }}">
+                <input type="text" id="overlay-shadow-color-hex" class="input input-sm readout color-hex" value="{{ overlay_state.shadow_color }}" maxlength="7">
+              </div>
+            </div>
+            <div class="field-col">
+              <div class="slider-header">
+                <label class="label" for="overlay-shadow-blur">Blur Radius</label>
+                <span class="slider-readout" id="shadow-blur-val">{{ overlay_state.shadow_blur }} px</span>
+              </div>
+              <input type="range" id="overlay-shadow-blur" class="slider" min="0" max="40" value="{{ overlay_state.shadow_blur }}">
+            </div>
+          </div>
+
+          <div class="field-row mt-3">
+            <div class="field-col">
+              <div class="slider-header">
+                <label class="label" for="overlay-shadow-x">Offset X</label>
+                <span class="slider-readout" id="shadow-x-val">{{ overlay_state.shadow_x }} px</span>
+              </div>
+              <input type="range" id="overlay-shadow-x" class="slider" min="-30" max="30" value="{{ overlay_state.shadow_x }}">
+            </div>
+            <div class="field-col">
+              <div class="slider-header">
+                <label class="label" for="overlay-shadow-y">Offset Y</label>
+                <span class="slider-readout" id="shadow-y-val">{{ overlay_state.shadow_y }} px</span>
+              </div>
+              <input type="range" id="overlay-shadow-y" class="slider" min="-30" max="30" value="{{ overlay_state.shadow_y }}">
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script type="application/json" id="overlay-state-init">{{ overlay_state | tojson }}</script>
+<script src="/static/js/overlay.js"></script>
+{% endblock %}

@@ -1,0 +1,58 @@
+[Unit]
+Description=FFmpeg capture/relay -> YouTube RTMPS
+# No Requires= here (Change 1): the producer this depends on is whichever
+# one the active source needs - zoom, browser-source, or neither at all
+# for a direct-media source - and that's a runtime choice, not something
+# a static unit dependency can express. The dashboard (app/control.py
+# start_source/pipeline_start) is responsible for starting things in the
+# right order before starting this unit.
+After=zoom.service browser-source.service audio-setup.service
+
+# Incident (2026-09-17/18): this unit ran with Restart=always and no
+# StartLimit* here, which meant systemd fell back to its own defaults
+# (StartLimitIntervalSec=10s, StartLimitBurst=5). With RestartSec=5, at
+# most ~2 restart attempts ever land inside any 10-second window, so the
+# burst threshold was never reachable at this failure's actual cadence -
+# the limit existed on paper but could not mathematically trip. Result:
+# a bad .env value crash-looped this unit ~22,000 times over 1d8h
+# (NRestarts=22083) with the unit never once reaching "failed", so
+# nothing - not systemd, not the dashboard's watchdog (which only fires
+# on active_state=="failed") - ever flagged it.
+#
+# Fix: an explicit, much wider window makes the burst threshold reachable
+# at realistic failure cadences (a script that dies in <1s hits 5 failures
+# in a few seconds; one that dies after a partial ffmpeg startup hits it
+# within a couple of minutes), so systemd actually gives up and marks the
+# unit "failed" instead of retrying forever. Restart=on-failure (not
+# always) so a clean, intentional stop is never treated as a failure to
+# recover from. Proven in an isolated test against a throwaway unit, not
+# against this one - see the commit/session record for that test.
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+Environment=DISPLAY=:99
+# Highest relative priority of the stack: default Nice, higher CPUWeight
+# than Zoom (100) and x11vnc (20), so viewing/controlling never steals
+# cycles from the encoder.
+Nice=0
+CPUWeight=800
+ExecStart=%h/zoom-stream/scripts/stream.sh
+# stream.sh exec's ffmpeg, and ffmpeg's own convention is to exit 255
+# when - and only when - it caught a stop signal and shut down cleanly
+# ("Exiting normally, received signal 15"); genuine errors exit 1 (or a
+# mapped errno) and crashes are "killed", not "exited". Without this
+# line, every deliberate `systemctl stop` landed the unit in "failed"
+# (Result=exit-code, status=255), the dashboard showed ERROR, and the
+# logs page - correctly - found no error to show. Treating 255 as
+# success makes a clean stop read as inactive/Stopped, and means
+# Restart=on-failure correctly does NOT restart something that was told
+# to stop. (Side effect, accepted: a SIGTERM from anything other than
+# systemd is also treated as a deliberate stop.)
+SuccessExitStatus=255
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

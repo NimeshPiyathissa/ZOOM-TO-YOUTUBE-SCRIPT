@@ -1,0 +1,25 @@
+[Unit]
+Description=Chromium kiosk on :99 (webpage source)
+After=xvfb.service openbox.service audio-setup.service network-online.target
+Requires=xvfb.service openbox.service audio-setup.service
+Wants=network-online.target
+# Give up after 5 failures within 5 minutes - see ffmpeg-stream.service.
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+Environment=DISPLAY=:99
+Nice=5
+CPUWeight=100
+# Refuses to start if the DevTools port is held by a foreign process (and
+# clears a leftover Chrome of ours). The wait-for-port readiness gate is
+# inside browser-source.sh - see the comment there for why it cannot be
+# an ExecStartPre.
+ExecStartPre=%h/zoom-stream/scripts/devtools-port-check.sh
+ExecStart=%h/zoom-stream/scripts/browser-source.sh
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target

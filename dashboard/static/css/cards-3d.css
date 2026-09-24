@@ -1,0 +1,139 @@
+/* ============================================================
+   Premium 3D card treatment (Overview redesign, Change 3).
+   Layered depth, a pointer-driven tilt + light sheen on desktop,
+   press feedback, and a LIVE/ERROR glow on the hero card only.
+   Animates only transform/opacity/box-shadow (GPU-friendly); the tilt
+   and sheen are opt-in via JS only when (hover: hover) and (pointer:
+   fine) hold and prefers-reduced-motion doesn't - see overview.js.
+   ============================================================ */
+
+.card-3d {
+  position: relative;
+  border-radius: var(--radius-xl);
+  background:
+    linear-gradient(155deg, var(--bg-elevated), var(--bg-panel) 60%);
+  box-shadow: var(--shadow-md);
+  padding: var(--space-5);
+  transform: perspective(900px) rotateX(var(--tilt-x, 0deg)) rotateY(var(--tilt-y, 0deg))
+             translateY(var(--lift, 0px)) scale(var(--press-scale, 1));
+  transition: transform var(--duration-base) var(--ease-out), box-shadow var(--duration-base) var(--ease-out);
+  transform-style: preserve-3d;
+  will-change: transform;
+}
+.card-3d.is-tracking { transition: box-shadow var(--duration-base) var(--ease-out); }
+
+.card-3d::before {
+  content: "";
+  position: absolute; inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(155deg, var(--card-sheen-1, rgba(255,255,255,0.14)), transparent 40%, var(--card-sheen-2, rgba(255,255,255,0.06)));
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor; mask-composite: exclude;
+  pointer-events: none;
+}
+
+.card-3d::after {
+  content: "";
+  position: absolute; inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(280px circle at var(--mx, 50%) var(--my, 50%), var(--card-glow-color, rgba(255,255,255,0.12)), transparent 60%);
+  opacity: 0;
+  transition: opacity var(--duration-base) var(--ease-out);
+  pointer-events: none;
+}
+.card-3d.is-hovered::after { opacity: 1; }
+.card-3d.is-hovered { box-shadow: var(--shadow-lg); }
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --card-sheen-1: rgba(16, 19, 24, 0.08);
+    --card-sheen-2: rgba(16, 19, 24, 0.02);
+    --card-glow-color: rgba(16, 19, 24, 0.06);
+  }
+}
+:root[data-theme="light"] {
+  --card-sheen-1: rgba(16, 19, 24, 0.08);
+  --card-sheen-2: rgba(16, 19, 24, 0.02);
+  --card-glow-color: rgba(16, 19, 24, 0.06);
+}
+
+@media (hover: none), (prefers-reduced-motion: reduce) {
+  .card-3d { transform: none !important; }
+  .card-3d::after { display: none; }
+}
+
+/* ---------------------------------------------------------------- hero card */
+
+.hero-3d {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-5);
+  padding: var(--space-6);
+}
+@media (min-width: 768px) {
+  .hero-3d { grid-template-columns: minmax(0, 1fr) minmax(280px, 380px); align-items: center; }
+}
+
+.hero-3d.state-LIVE {
+  box-shadow: var(--shadow-lg), 0 0 0 1px var(--accent-ring), 0 0 48px -8px var(--accent-tint);
+}
+.hero-3d.state-ERROR {
+  box-shadow: var(--shadow-lg), 0 0 0 1px var(--live), 0 0 48px -8px var(--live-tint);
+}
+.hero-3d.state-STARTING, .hero-3d.state-RECONNECTING {
+  box-shadow: var(--shadow-lg), 0 0 0 1px var(--warning), 0 0 48px -8px var(--warning-tint);
+}
+.hero-3d.state-LIVE.is-hovered { box-shadow: var(--shadow-lg), 0 0 0 1px var(--accent-ring), 0 0 64px -6px var(--accent-tint); }
+.hero-3d.state-ERROR.is-hovered { box-shadow: var(--shadow-lg), 0 0 0 1px var(--live), 0 0 64px -6px var(--live-tint); }
+.hero-3d.state-STARTING.is-hovered, .hero-3d.state-RECONNECTING.is-hovered {
+  box-shadow: var(--shadow-lg), 0 0 0 1px var(--warning), 0 0 64px -6px var(--warning-tint);
+}
+
+.hero-3d-main { min-width: 0; }
+.hero-3d-source {
+  display: flex; align-items: center; gap: var(--space-2);
+  margin-top: var(--space-2); color: var(--text-dim); font-size: var(--text-sm);
+  min-width: 0;
+}
+.hero-3d-source .src-url { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hero-3d-source .copy-url-btn { flex: none; }
+
+.hero-3d-preview {
+  position: relative; border-radius: var(--radius-md); overflow: hidden;
+  aspect-ratio: 16 / 9; background: var(--bg); border: 1px solid var(--border);
+}
+.hero-3d-preview img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+/* ---------------------------------------------------------------- dashboard grid */
+
+.dash-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-5);
+}
+@media (min-width: 640px) { .dash-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (min-width: 1024px) { .dash-grid { grid-template-columns: repeat(12, 1fr); } }
+
+.dash-health { grid-column: 1 / -1; }
+@media (min-width: 640px) { .dash-health { grid-column: span 1; } }
+@media (min-width: 1024px) { .dash-health { grid-column: span 4; } }
+
+.dash-services-wrap { grid-column: 1 / -1; }
+.grid-col-full { grid-column: 1 / -1; }
+
+.health-card-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--space-3); }
+.health-card-head h3 { font-size: var(--text-base); margin: 0; }
+
+.service-grid {
+  display: grid; gap: var(--space-3);
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+}
+.service-card-3d { padding: var(--space-4); }
+.service-card-3d .service-card-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); margin-bottom: var(--space-2); }
+.service-card-3d .service-card-name { font-weight: var(--weight-medium); font-size: var(--text-sm); }
+.service-card-3d .service-card-meta { display: flex; gap: var(--space-4); font-size: var(--text-xs); color: var(--text-dim); margin-bottom: var(--space-3); }
+.service-card-3d .service-card-actions { display: flex; gap: var(--space-1); }
+
+/* ---------------------------------------------------------------- mobile sticky bar keeps working unchanged (base.html/layout.css) */

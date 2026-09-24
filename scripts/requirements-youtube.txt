@@ -1,0 +1,4 @@
+# Only needed if you use create_youtube_broadcast.py (optional).
+# Run on your own machine, not the VPS: pip install --user -r requirements-youtube.txt
+google-api-python-client>=2.100
+google-auth-oauthlib>=1.2

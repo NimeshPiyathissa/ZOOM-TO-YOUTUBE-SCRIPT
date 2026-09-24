@@ -1,0 +1,19 @@
+[Unit]
+Description=Virtual X11 display :99 for Zoom stream bot
+# Give up after 5 failures within 5 minutes instead of restarting forever
+# (see ffmpeg-stream.service for the incident this fixes - a unit with
+# Restart=on-failure but no StartLimit* here would loop indefinitely
+# whenever RestartSec is small relative to systemd's own 10s/5-burst
+# default, since that default window never accumulates enough failures
+# to trip).
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+ExecStart=%h/zoom-stream/scripts/start-xvfb.sh
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target

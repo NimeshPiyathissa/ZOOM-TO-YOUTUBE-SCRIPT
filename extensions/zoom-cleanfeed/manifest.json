@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "Zoom Web Kiosk Clean-Feed",
+  "version": "1.0.0",
+  "description": "Clean-feed UI patch for Zoom Web Kiosk: permanently removes header/footer bars, participant tags, disables right-click context menu, and forces 100vw x 100vh full-canvas fit.",
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.zoom.us/*",
+        "*://zoom.us/*",
+        "*://*.zoomgov.com/*",
+        "*://zoomgov.com/*",
+        "*://app.zoom.us/*",
+        "*://pwa.zoom.us/*"
+      ],
+      "css": ["cleanfeed.css"],
+      "js": ["content.js"],
+      "run_at": "document_start",
+      "all_frames": true
+    }
+  ]
+}

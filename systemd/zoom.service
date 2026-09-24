@@ -1,0 +1,32 @@
+[Unit]
+Description=Zoom client joined to the target meeting (bot)
+After=xvfb.service openbox.service audio-setup.service network-online.target
+Requires=xvfb.service openbox.service audio-setup.service
+Wants=network-online.target
+# Give up after 5 failures within 5 minutes - see ffmpeg-stream.service.
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+Environment=DISPLAY=:99
+Environment=QT_SCALE_FACTOR=1
+Environment=QT_AUTO_SCREEN_SCALE_FACTOR=0
+# Zoom's Qt client exposes no AT-SPI accessibility tree at all without
+# this - needed for the dashboard's best-effort mic-mute-state check
+# (app/control.py's zoom_mic_state_heuristic / scripts/
+# zoom-mic-atspi-check.py). Read-only accessibility introspection, not
+# input automation - xdotool (toggle-zoom-mic.sh) is unaffected either way.
+Environment=QT_LINUX_ACCESSIBILITY_ALWAYS_ON=1
+# Zoom hands "Sign in with Google"/SSO URLs to xdg-open, which honors
+# $BROWSER under Openbox - route them into the Chrome profile of the
+# account bound to the active source (see scripts/open-url-with-account.sh).
+Environment=BROWSER=%h/zoom-stream/scripts/open-url-with-account.sh
+Nice=5
+CPUWeight=100
+ExecStart=%h/zoom-stream/scripts/join-zoom.sh
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target

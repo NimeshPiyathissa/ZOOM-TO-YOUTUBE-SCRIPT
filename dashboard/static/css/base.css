@@ -1,0 +1,126 @@
+/* ============================================================
+   Base: resets and element defaults. No component classes here.
+   ============================================================ */
+
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: var(--leading-normal);
+  font-feature-settings: "cv11", "ss01", "cv02", "cv03", "cv04";
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-top: env(safe-area-inset-top, 0px);
+  transition: background var(--duration-base) var(--ease-out), color var(--duration-base) var(--ease-out);
+}
+
+h1, h2, h3, h4 {
+  margin: 0;
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-tight);
+  line-height: var(--leading-tight);
+}
+h1 { font-size: var(--text-2xl); }
+h2 { font-size: var(--text-lg); }
+h3 { font-size: var(--text-md); }
+h4 { font-size: var(--text-base); }
+
+p { margin: 0 0 var(--space-3); }
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+a:hover { text-decoration: underline; }
+
+.mono, code, kbd {
+  font-family: var(--font-mono);
+  font-variant-ligatures: none;
+}
+
+.tnum {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+::selection {
+  background: var(--accent-tint);
+  color: var(--text);
+}
+
+/* scrollbars: thin, theme-matched, non-intrusive */
+* { scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: var(--radius-full); border: 2px solid var(--bg-panel); }
+
+/* focus-visible ring, applied consistently to every interactive element */
+:focus { outline: none; }
+:focus-visible {
+  outline: 2px solid var(--accent-ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+[hidden] { display: none !important; }
+
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+}
+
+.icon {
+  width: 16px; height: 16px;
+  flex: none;
+  display: inline-block;
+  vertical-align: middle;
+}
+.icon-sm { width: 14px; height: 14px; }
+.icon-lg { width: 20px; height: 20px; }
+.icon-sprite { display: none; }
+
+/* ---------------------------------------------------------------- utilities
+   A small, closed set of layout utilities - used instead of inline
+   style="" attributes, which the dashboard's CSP (style-src 'self',
+   no unsafe-inline) silently strips. */
+
+.m-0 { margin: 0; }
+.mt-0 { margin-top: 0; }
+.mt-3 { margin-top: var(--space-3); }
+.mb-3 { margin-bottom: var(--space-3); }
+.mb-4 { margin-bottom: var(--space-4); }
+.mb-6 { margin-bottom: var(--space-6); }
+.p-0 { padding: 0; }
+.w-full { width: 100%; }
+.gap-2 { gap: var(--space-2); }
+.max-w-sm { max-width: 320px; }
+.input-fixed-sm { width: 90px; flex: none; }
+.text-normal { text-transform: none; font-weight: var(--weight-normal); }
+.cursor-default { cursor: default; }
+.stat-unit { font-size: var(--text-md); font-weight: var(--weight-medium); }
+.text-xs { font-size: var(--text-xs); }
+.grid-cols-main-side { grid-template-columns: 1.3fr 1fr; }
+.grid-cols-3 { grid-template-columns: repeat(3, 1fr); }
+.card-danger { border-color: var(--live); }
+.vnc-frame-box {
+  border-radius: var(--radius-md); overflow: hidden; border: 1px solid var(--border);
+  background: #000; min-height: 60vh;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

@@ -1,0 +1,44 @@
+# --- Secrets - never commit ---
+# Plaintext secrets: the Zoom passcode, YouTube stream key, and VNC
+# password all belong in the encrypted vault (Part 0), not here - but the
+# non-secret .env this repo ships as a template, and any real .env an
+# install produces, still must never be committed. See scripts/lib.sh's
+# load_env_file() for how these are loaded and scripts/write-env.sh for
+# how they're written.
+.env
+.env.bak
+.env.bak.*
+current-source.env
+current-source.env.bak
+current-source.env.bak.*
+dashboard/settings.json
+dashboard/settings.json.pre-vault-backup.*
+dashboard/app/data/
+dashboard/data/
+*.pre-vault-backup.*
+*.enc.json
+vault.locked
+
+# Runtime logs - ffmpeg.log includes the YouTube RTMP URL (stream key and
+# all) in its normal startup output; zoom.log/browser.log can include the
+# Zoom meeting link/passcode.
+logs/
+
+# Session backups of Chrome account profiles (chrome-account.sh backup) - cookies inside, never commit.
+backups/
+
+# --- Editor/OS/tooling clutter ---
+*.bak
+*.bak.*
+.DS_Store
+Thumbs.db
+
+# --- Python ---
+__pycache__/
+*.pyc
+.pytest_cache/
+dashboard/venv/
+dashboard/.venv/
+
+# --- Install-time artifacts (not source, generated per-install) ---
+dashboard/certs/

@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  shellcheck:
+    name: Shell script lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: shellcheck (already installed on ubuntu-latest runners)
+        run: |
+          shellcheck --version
+          find scripts -name '*.sh' -print0 > /tmp/sh_files
+          printf '%s\0' install.sh dashboard/install-dashboard.sh >> /tmp/sh_files
+          # --severity=error only for this first CI pass: shellcheck isn't
+          # installed on the dev machine that wrote this workflow, so the
+          # warning/info-level output was never actually seen or triaged
+          # before this shipped. Tighten to `warning` once someone runs it
+          # locally and either fixes or explicitly disables what it finds.
+          xargs -0 shellcheck --severity=error < /tmp/sh_files
+
+  python-lint:
+    name: Python lint (ruff)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: dashboard
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - run: pip install -r requirements-dev.txt
+      - run: ruff check app/ tests/
+
+  test:
+    name: Test suite (includes env-parser round-trip tests)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: dashboard
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - run: pip install -r requirements-dev.txt
+      # The round-trip tests in tests/test_env_parser_roundtrip.py actually
+      # invoke scripts/write-env.sh (which itself shells out to a real
+      # python3) and scripts/lib.sh's load_env_file() - both need to be on
+      # PATH and present, which ubuntu-latest already provides.
+      - run: pytest -q --strict-markers
+      - name: Fail if the round-trip tests were skipped
+        run: |
+          out="$(pytest -q tests/test_env_parser_roundtrip.py -v 2>&1)"
+          echo "$out"
+          if echo "$out" | grep -q "SKIPPED"; then
+            echo "::error::env-parser round-trip tests were skipped in CI - python3/bash detection is broken here, not just on a dev machine" >&2
+            exit 1
+          fi

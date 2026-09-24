@@ -1,0 +1,19 @@
+[Unit]
+Description=x11vnc remote GUI for :99 (localhost only, view+control)
+After=xvfb.service
+Requires=xvfb.service
+# Give up after 5 failures within 5 minutes - see ffmpeg-stream.service.
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+Environment=DISPLAY=:99
+Nice=10
+CPUWeight=20
+ExecStart=%h/zoom-stream/scripts/start-vnc.sh
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

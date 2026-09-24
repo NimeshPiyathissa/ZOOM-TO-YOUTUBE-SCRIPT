@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# In-place edit backups (*.bak.<timestamp>) made outside git before this
+# repo existed - superseded by git history from here on.
+*.bak
+*.bak.*
+
+# TLS cert/key, session DB, and the venv all live outside this directory
+# (in /home/dashboard/, one level up from app/) so they're already outside
+# this repo's tree - listed here anyway in case that ever changes.
+certs/
+*.pem
+*.db
+venv/

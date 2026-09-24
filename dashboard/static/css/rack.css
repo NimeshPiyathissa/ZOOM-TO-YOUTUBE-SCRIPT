@@ -1,0 +1,118 @@
+/* ============================================================
+   Rack modules - the control-room card treatment shared by /remote and
+   /zoom: page-scoped depth tokens, a layered card with a hairline
+   highlight and top sheen, engraved (tracked uppercase) module labels,
+   glass chips for anything sitting on black. Everything derives from
+   tokens.css; only the depth values below are new, and they are scoped
+   to .rack-grid so nothing else in the dashboard changes.
+   ============================================================ */
+
+.rack-grid {
+  --rm-ink: #07090c;                              /* monitor bezel + glass */
+  --rm-edge: rgba(255, 255, 255, 0.07);           /* hairline highlight on every module */
+  --rm-edge-strong: rgba(255, 255, 255, 0.12);
+  --rm-sheen: linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0) 38%);
+  --rm-rule: rgba(255, 255, 255, 0.06);           /* dividers */
+  --rm-tally-off: #2a303b;
+  --rm-label: var(--text-faint);
+  --rm-glow-live: 0 0 14px 2px rgba(255, 107, 107, 0.55);
+  --rm-glow-accent: 0 0 18px -2px var(--accent-ring);
+
+  display: grid;
+  gap: var(--space-4);
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) .rack-grid {
+    --rm-ink: #0f1216;
+    --rm-edge: rgba(16, 19, 24, 0.08);
+    --rm-edge-strong: rgba(16, 19, 24, 0.14);
+    --rm-sheen: linear-gradient(180deg, rgba(255, 255, 255, 0.6), rgba(255, 255, 255, 0) 40%);
+    --rm-rule: rgba(16, 19, 24, 0.08);
+    --rm-tally-off: #cfd4dc;
+    --rm-glow-live: 0 0 14px 1px rgba(220, 38, 38, 0.45);
+  }
+}
+:root[data-theme="light"] .rack-grid {
+  --rm-ink: #0f1216;
+  --rm-edge: rgba(16, 19, 24, 0.08);
+  --rm-edge-strong: rgba(16, 19, 24, 0.14);
+  --rm-sheen: linear-gradient(180deg, rgba(255, 255, 255, 0.6), rgba(255, 255, 255, 0) 40%);
+  --rm-rule: rgba(16, 19, 24, 0.08);
+  --rm-tally-off: #cfd4dc;
+  --rm-glow-live: 0 0 14px 1px rgba(220, 38, 38, 0.45);
+}
+
+.rack-grid > .card {
+  position: relative;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--rm-edge);
+  background: var(--bg-panel);
+  background-image: var(--rm-sheen);
+  box-shadow: var(--shadow-md);
+  padding: var(--space-5);
+  min-width: 0;   /* grid items must shrink below their content's min width - never widen the page */
+}
+
+/* Engraved module label: small, tracked, quiet - the icon carries the
+   accent so the label itself can stay neutral. */
+.rack-title, .remote-section-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-4);
+  font-size: 11px;
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--rm-label);
+}
+.rack-title .icon, .remote-section-title .icon { width: 14px; height: 14px; color: var(--accent); }
+.rack-title .hint, .remote-section-title .hint { text-transform: none; letter-spacing: 0; font-weight: var(--weight-normal); margin-left: var(--space-1); }
+h3.rack-title, h3.remote-section-title { margin-top: var(--space-6); }
+.rack-title .rack-title-end { margin-left: auto; display: inline-flex; gap: var(--space-2); align-items: center; letter-spacing: 0; text-transform: none; font-weight: var(--weight-normal); }
+
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* Monospace readouts (IDs, tokens, timers) */
+.readout { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; letter-spacing: 0.02em; }
+
+/* Glass chip for anything sitting on black */
+.chip-glass { background: rgba(0, 0, 0, 0.5); color: #fff; border: 1px solid rgba(255, 255, 255, 0.18); backdrop-filter: blur(6px); }
+
+/* No horizontal scroll on rack pages; value updates never reflow. */
+body:has(.rack-grid) { overflow-x: hidden; }
+
+/* ---------------------------------------------------------------- shared form pieces (Zoom page + YouTube deck): kind chips, notes, option rows, segmented */
+.zm-kind .icon { width: 13px; height: 13px; }
+.zm-kind-webinar { color: var(--info); background: var(--info-tint); }
+.zm-kind-pmi { color: var(--warning); background: var(--warning-tint); }
+.zm-kind-meeting { color: var(--accent); background: var(--accent-tint); }
+.zm-seg .seg-btn { padding: 6px 12px; font-size: var(--text-xs); min-height: 32px; white-space: nowrap; }
+.zm-notes { list-style: none; padding: 0; margin: var(--space-3) 0 0; display: grid; gap: var(--space-2); }
+.zm-notes li { display: flex; gap: var(--space-2); align-items: flex-start; font-size: var(--text-xs); line-height: var(--leading-normal); color: var(--text-dim); }
+.zm-notes li .icon { flex: none; margin-top: 1px; }
+.zm-notes li.tone-bad { color: var(--live); }
+.zm-notes li.tone-warn .icon { color: var(--warning); }
+.zm-form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0 var(--space-4); }
+.zm-options { display: grid; gap: var(--space-2); margin-top: var(--space-2); }
+.zm-opt-main { display: inline-flex; align-items: center; gap: var(--space-2); font-size: var(--text-sm); }
+.zm-opt-main .icon { color: var(--text-dim); }
+.zm-opt-end { display: inline-flex; align-items: center; gap: var(--space-2); }
+.zm-num { width: 64px; text-align: center; font-family: var(--font-mono); }
+.zm-dt { max-width: 220px; font-family: var(--font-mono); font-size: var(--text-sm); }
+.zm-save-row .btn { flex: 1 1 180px; }
+.zm-kind {
+  display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: var(--radius-full);
+  font-size: 11px; font-weight: var(--weight-semibold); letter-spacing: 0.06em; text-transform: uppercase;
+  background: var(--bg-hover); color: var(--text-dim); border: 1px solid var(--rm-edge); white-space: nowrap;
+}
+.zm-opt {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--space-3);
+  min-height: 56px; padding: var(--space-2) var(--space-3); border-radius: var(--radius-md);
+  border: 1px solid var(--rm-edge); background: var(--bg-elevated); cursor: pointer;
+}
+@media (max-width: 480px) { .zm-opt { flex-wrap: wrap; } .zm-opt-end { margin-left: auto; } .zm-dt { max-width: 100%; } }

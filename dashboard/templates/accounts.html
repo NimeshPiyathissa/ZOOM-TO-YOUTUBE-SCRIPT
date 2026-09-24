@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon %}
+{% block title %}Accounts - Zoom Stream Dashboard{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="/static/css/rack.css"><link rel="stylesheet" href="/static/css/remote.css"><link rel="stylesheet" href="/static/css/accounts.css">{% endblock %}
+{% block content %}
+
+<div class="ac-grid rack-grid">
+
+  <section class="card ac-list-card" aria-labelledby="ac-list-h">
+    <h2 id="ac-list-h" class="rack-title">{{ icon("user", "icon-sm") }}Google accounts
+      <span class="rack-title-end hint m-0">one shared list - used by the Zoom page and the web source on Remote</span></h2>
+    <div class="banner banner-info mb-4" role="note">
+      {{ icon("shield-check") }}
+      <div>
+        <strong>No password, 2-step code, cookie or token is ever stored, typed or transmitted by this system.</strong>
+        An account is a label plus its own private Chrome profile directory on the VPS (0700, owned by the streaming user).
+        You sign in yourself, by hand, in that Chrome window on the remote screen; afterwards the dashboard only asks Google
+        whether a session exists. The session lives in the profile's cookies, survives Chrome and service restarts and
+        reboots, and is what YouTube's player and Zoom's "Sign in with Google" use. Removing an account deletes the directory.
+      </div>
+    </div>
+
+    <div class="account-list" id="account-list">
+      {% for a in accounts %}
+      <article class="account-card" data-account-id="{{ a.id }}" data-label="{{ a.label }}" data-state="{{ a.state }}">
+        <div class="account-card-main">
+          <div class="account-card-head">
+            <span class="account-label">{{ a.label }}</span>
+            <span class="badge account-state" data-state="{{ 'needs_reauth' if a.needs_reauth else a.state }}"><span class="dot"></span><span class="account-state-text">{{ a.state }}</span></span>
+          </div>
+          <div class="account-meta">
+            <span class="readout account-identity">{{ a.identity_masked or "identity unknown" }}</span>
+            <span class="hint account-verified tnum" data-ts="{{ a.last_verified_at or '' }}">{{ "never verified" if not a.last_verified_at else "" }}</span>
+          </div>
+          <div class="hint account-result">{{ a.last_result or "" }}</div>
+        </div>
+        <div class="account-card-actions">
+          <button class="btn btn-primary btn-touch act-signin" data-account-id="{{ a.id }}">{{ icon("log-in") }}<span>{{ "Re-authenticate" if a.needs_reauth or a.state in ("signed_out", "inconclusive") else "Sign in" }}</span></button>
+          <button class="btn btn-secondary btn-touch act-verify" data-account-id="{{ a.id }}">{{ icon("shield-check") }}Verify now</button>
+          <div class="menu-wrap ac-more">
+            <button class="btn btn-secondary btn-touch btn-icon menu-trigger" aria-label="More actions for {{ a.label }}">{{ icon("more-vertical") }}</button>
+            <div class="menu" role="menu" inert>
+              <button class="menu-item act-backup" role="menuitem" data-account-id="{{ a.id }}">{{ icon("download", "icon-sm") }}Back up session</button>
+              <button class="menu-item act-restore" role="menuitem" data-account-id="{{ a.id }}">{{ icon("upload", "icon-sm") }}Restore newest backup</button>
+              <button class="menu-item act-rename" role="menuitem" data-account-id="{{ a.id }}">{{ icon("pencil", "icon-sm") }}Rename</button>
+              <button class="menu-item act-signout" role="menuitem" data-account-id="{{ a.id }}">{{ icon("log-out", "icon-sm") }}Sign out (clear profile)</button>
+              <button class="menu-item act-remove ac-danger" role="menuitem" data-account-id="{{ a.id }}">{{ icon("trash-2", "icon-sm") }}Remove account</button>
+            </div>
+          </div>
+        </div>
+      </article>
+      {% else %}
+      <div class="empty-state" id="account-empty">{{ icon("user") }}<div class="empty-sub">No accounts yet. Import the session the stream browser already has, or add one and sign in.</div></div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="card ac-add-card" aria-labelledby="ac-add-h">
+    <h2 id="ac-add-h" class="rack-title">{{ icon("plus", "icon-sm") }}Add an account</h2>
+    <div class="ac-add-grid">
+      <div class="ac-add-option">
+        <div class="ac-add-title">{{ icon("sparkles", "icon-sm") }}Import the stream browser's session</div>
+        <p class="hint">The shared stream profile (used by the YouTube kiosk and Zoom's Google sign-in) may already be signed in. This copies that session - cookies and login data only, no caches - into a new account, then verifies it with Google. Nothing is read or shown from it here.</p>
+        <div class="input-group mt-2">
+          <input type="text" id="account-import-label" class="input" placeholder="Label (e.g. Main channel)" maxlength="60">
+          <button id="account-import" class="btn btn-primary btn-touch">{{ icon("sparkles") }}Import</button>
+        </div>
+      </div>
+      <div class="ac-add-option">
+        <div class="ac-add-title">{{ icon("log-in", "icon-sm") }}Sign in to a new account</div>
+        <p class="hint">Creates an empty Chrome profile. Nothing is signed in until you do it yourself on the remote screen in the next step.</p>
+        <div class="input-group mt-2">
+          <input type="text" id="account-new-label" class="input" placeholder="Label (e.g. Church channel)" maxlength="60">
+          <button id="account-add" class="btn btn-secondary btn-touch">{{ icon("plus") }}Add</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Zoom client: its own session (in ~/.zoom), separate from Chrome -->
+  <section class="card ac-zoom-card" aria-labelledby="ac-zoom-h">
+    <h2 id="ac-zoom-h" class="rack-title">{{ icon("video", "icon-sm") }}Zoom client sign-in
+      <span class="rack-title-end hint m-0">separate from the Chrome accounts above</span></h2>
+    <p class="hint">The Zoom client keeps its own session in its data directory (persistent across restarts and reboots). When a meeting is set to join with a Google account, Zoom's "Sign in with Google" opens in <em>that account's</em> Chrome profile - already signed in - and returns to Zoom. Confirm the result here; the dashboard can't read Zoom's session, so this is your word.</p>
+    <div class="ac-zoom-row">
+      <span class="badge" id="ac-zoom-badge"><span class="dot"></span><span id="ac-zoom-text">checking…</span></span>
+      <span class="hint m-0" id="ac-zoom-detail"></span>
+    </div>
+    <div class="btn-row mt-3">
+      <button id="ac-zoom-signin" class="btn btn-secondary btn-touch">{{ icon("log-in") }}Open Zoom sign-in</button>
+      <button id="ac-zoom-confirm" class="btn btn-secondary btn-touch">{{ icon("check") }}I signed in</button>
+      <button id="ac-zoom-signout" class="btn btn-ghost btn-touch">{{ icon("log-out") }}Sign Zoom out</button>
+    </div>
+  </section>
+
+</div>
+
+<section class="section" id="signin-panel" hidden aria-labelledby="signin-title" aria-live="polite">
+  <div class="section-head"><h2 id="signin-title">Sign in: <span id="signin-account-label"></span></h2></div>
+  <div class="signin-grid">
+    <div class="vnc-frame-box signin-vnc" id="signin-vnc"></div>
+    <div class="card signin-guide">
+      <ol class="signin-steps">
+        <li><strong>A Chrome window has opened on the remote screen</strong> at Google's sign-in page, maximized. If you only see black, wait a few seconds.</li>
+        <li><strong>Sign in there exactly as on a phone:</strong> email, password, then any 2-Step prompt. Type into the remote screen, not this page - nothing you type is seen or kept by the dashboard.</li>
+        <li><strong>"This browser or app may not be secure"</strong> - Google's automation check. This window has no automation hooks (that is why sign-in never happens in the streaming kiosk, which is remote-controlled). What usually trips it is a new device on a datacenter IP: tap <em>Try another way</em> and approve on your phone, or use a backup code. If it still refuses, sign in to the same account once from your phone, then retry here within a few minutes.</li>
+        <li><strong>"Verify it's you" / device confirmation</strong> - expected on a first sign-in from this machine. Approve the prompt on your phone or enter the code; that confirmation is remembered in this profile.</li>
+        <li><strong>"Couldn't sign you in"</strong> - a wrong password, a suspended account, or Google blocking the IP for now. Check the account from your phone; if it works there, wait 10-15 minutes and retry here.</li>
+        <li><strong>Session expired later</strong> (the account shows <em>needs re-authentication</em>): Google ends sessions after inactivity or a password change. Tap <em>Re-authenticate</em> - same window, same steps.</li>
+        <li>When you can see your account avatar top-right on Google, tap <strong>I'm done</strong>. The window closes so the session is written to disk, then the dashboard loads a signed-in-only Google page in that profile and reads the account identity - it never assumes success.</li>
+      </ol>
+      <div class="btn-row mt-4">
+        <button id="signin-done" class="btn btn-primary btn-touch">{{ icon("check") }}I'm done - verify</button>
+        <button id="signin-cancel" class="btn btn-secondary btn-touch">{{ icon("x") }}Cancel</button>
+        <a href="/remote" class="btn btn-ghost btn-touch">{{ icon("keyboard", "icon-sm") }}Touch keyboard on Remote</a>
+      </div>
+      <p class="hint mt-3" id="signin-status"></p>
+    </div>
+  </div>
+</section>
+
+{% endblock %}
+{% block scripts %}
+<script type="module" src="/static/js/accounts.js"></script>
+{% endblock %}

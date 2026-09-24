@@ -1,0 +1,7 @@
+# Force LF regardless of the committer's platform/autocrlf setting - a
+# CRLF-terminated shell script fails on Linux with a "bad interpreter"
+# error on its shebang line, so this isn't just cosmetic.
+*.sh text eol=lf
+*.py text eol=lf
+*.service text eol=lf
+*.timer text eol=lf

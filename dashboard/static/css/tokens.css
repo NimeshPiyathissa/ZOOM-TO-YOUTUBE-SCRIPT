@@ -1,0 +1,188 @@
+/* ============================================================
+   Design tokens. Every color, size, and timing value used by the
+   dashboard is defined here as a CSS custom property. Nothing else
+   in the codebase should hard-code a hex value, px size, or ms
+   duration - change the look by changing a token.
+   ============================================================ */
+
+:root {
+  /* ---- typography ---- */
+  --font-sans: "Inter var", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono var", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-base: 14px;
+  --text-md: 16px;
+  --text-lg: 20px;
+  --text-xl: 24px;
+  --text-2xl: 32px;
+
+  --weight-normal: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+
+  --leading-tight: 1.2;
+  --leading-normal: 1.45;
+  --leading-relaxed: 1.6;
+
+  --tracking-tight: -0.02em;
+  --tracking-normal: 0;
+  --tracking-wide: 0.06em;
+
+  /* ---- spacing (4px grid) ---- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* ---- radii ---- */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --radius-full: 999px;
+
+  /* ---- motion ---- */
+  --duration-fast: 150ms;
+  --duration-base: 200ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* ---- layout ---- */
+  --sidebar-w: 240px;
+  --sidebar-w-collapsed: 68px;
+  --topbar-h: 56px;
+  --content-max-w: 1320px;
+
+  /* ---- z-index ---- */
+  --z-sticky: 10;
+  --z-dropdown: 50;
+  --z-toast: 100;
+  --z-modal: 200;
+
+  /* ================= color: dark theme (default) ================= */
+  --gray-0: #0b0d11;
+  --bg: #101318;
+  --bg-panel: #15181e;
+  --bg-elevated: #1b1f27;
+  --bg-hover: #1e222a;
+  --border: #262b34;
+  --border-strong: #333a46;
+
+  --text: #e9ebf0;
+  --text-dim: #9aa1b0;
+  --text-faint: #6b7280;
+  --text-on-accent: #ffffff;
+
+  --accent: #22d3ee;
+  --accent-solid: #0e7490;
+  --accent-solid-hover: #109cb0;
+  --accent-tint: rgba(34, 211, 238, 0.14);
+  --accent-ring: rgba(34, 211, 238, 0.45);
+
+  --live: #ff6b6b;
+  --live-solid: #c92a2a;
+  --live-solid-hover: #a61e1e;
+  --live-tint: rgba(255, 107, 107, 0.14);
+
+  --success: #34d399;
+  --success-tint: rgba(52, 211, 153, 0.14);
+  --warning: #fbbf24;
+  --warning-tint: rgba(251, 191, 36, 0.14);
+  --info: #60a5fa;
+  --info-tint: rgba(96, 165, 250, 0.14);
+
+  --shadow-sm: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 4px 16px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 16px 48px rgba(0, 0, 0, 0.55);
+
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: #f6f7f9;
+    --bg-panel: #ffffff;
+    --bg-elevated: #ffffff;
+    --bg-hover: #f0f1f4;
+    --border: #e4e7ec;
+    --border-strong: #d0d5dd;
+
+    --text: #12141a;
+    --text-dim: #5b6270;
+    --text-faint: #8b93a1;
+    --text-on-accent: #ffffff;
+
+    --accent: #0b7285;
+    --accent-solid: #0e7490;
+    --accent-solid-hover: #0c8599;
+    --accent-tint: rgba(11, 114, 133, 0.1);
+    --accent-ring: rgba(11, 114, 133, 0.35);
+
+    --live: #dc2626;
+    --live-solid: #c92a2a;
+    --live-solid-hover: #a61e1e;
+    --live-tint: rgba(220, 38, 38, 0.1);
+
+    --success: #047857;
+    --success-tint: rgba(4, 120, 87, 0.1);
+    --warning: #b45309;
+    --warning-tint: rgba(180, 83, 9, 0.1);
+    --info: #2563eb;
+    --info-tint: rgba(37, 99, 235, 0.1);
+
+    --shadow-sm: 0 1px 2px rgba(16, 19, 24, 0.04);
+    --shadow-md: 0 4px 16px rgba(16, 19, 24, 0.08);
+    --shadow-lg: 0 16px 48px rgba(16, 19, 24, 0.14);
+
+    color-scheme: light;
+  }
+}
+
+:root[data-theme="light"] {
+  --bg: #f6f7f9;
+  --bg-panel: #ffffff;
+  --bg-elevated: #ffffff;
+  --bg-hover: #f0f1f4;
+  --border: #e4e7ec;
+  --border-strong: #d0d5dd;
+
+  --text: #12141a;
+  --text-dim: #5b6270;
+  --text-faint: #8b93a1;
+  --text-on-accent: #ffffff;
+
+  --accent: #0b7285;
+  --accent-solid: #0e7490;
+  --accent-solid-hover: #0c8599;
+  --accent-tint: rgba(11, 114, 133, 0.1);
+  --accent-ring: rgba(11, 114, 133, 0.35);
+
+  --live: #dc2626;
+  --live-solid: #c92a2a;
+  --live-solid-hover: #a61e1e;
+  --live-tint: rgba(220, 38, 38, 0.1);
+
+  --success: #047857;
+  --success-tint: rgba(4, 120, 87, 0.1);
+  --warning: #b45309;
+  --warning-tint: rgba(180, 83, 9, 0.1);
+  --info: #2563eb;
+  --info-tint: rgba(37, 99, 235, 0.1);
+
+  --shadow-sm: 0 1px 2px rgba(16, 19, 24, 0.04);
+  --shadow-md: 0 4px 16px rgba(16, 19, 24, 0.08);
+  --shadow-lg: 0 16px 48px rgba(16, 19, 24, 0.14);
+
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+}

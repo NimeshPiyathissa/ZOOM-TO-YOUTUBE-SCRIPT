@@ -1,0 +1,31 @@
+[Unit]
+Description=Zoom Stream Dashboard (FastAPI)
+After=network.target
+
+[Service]
+Type=simple
+User=dashboard
+Group=dashboard
+WorkingDirectory=/home/dashboard/app
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/dashboard/venv/bin/uvicorn app.main:app \
+  --host 127.0.0.1 --port 8443 --workers 1 \
+  --ssl-keyfile /home/dashboard/certs/key.pem --ssl-certfile /home/dashboard/certs/cert.pem
+Restart=always
+RestartSec=5
+# Lower scheduling priority than the encoder (ffmpeg-stream runs at
+# Nice=0 under zoombot) so watching the dashboard never steals cycles
+# from the stream. No filesystem sandboxing here (ProtectHome/
+# ProtectSystem/NoNewPrivileges) - this service works entirely through
+# `sudo -u zoombot <allowlisted command>`, which needs to both invoke a
+# setuid binary (breaks under NoNewPrivileges) and let the sudo'd child
+# write into zoombot's home (breaks under a namespace-inherited
+# read-only ProtectHome). The real privilege boundary here is the
+# sudoers allowlist, not systemd sandboxing.
+Nice=10
+CPUWeight=50
+MemoryMax=512M
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

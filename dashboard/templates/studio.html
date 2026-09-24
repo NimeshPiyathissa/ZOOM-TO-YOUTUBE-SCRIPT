@@ -1,0 +1,484 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon %}
+{% block title %}Live Studio – Zoom Stream Dashboard{% endblock %}
+{% block extra_css %}
+<link rel="stylesheet" href="/static/css/rack.css">
+<link rel="stylesheet" href="/static/css/remote.css">
+<link rel="stylesheet" href="/static/css/studio.css">
+{% endblock %}
+
+{% block content %}
+<div class="studio-container rack-grid">
+
+  <!-- ================================================================ Live Broadcast Controls -->
+  <h2 class="floating-section-title">
+    {{ icon("play-circle", "icon-sm") }}Live Broadcast Controls
+  </h2>
+
+  <!-- Master Broadcast Header & Tally -->
+  <header class="card studio-master-bar" aria-labelledby="studio-master-heading">
+    <div class="studio-master-left">
+      <div class="studio-brand">
+        <span class="studio-live-icon">{{ icon("broadcast") }}</span>
+        <div>
+          <h1 id="studio-master-heading" class="studio-title">YouTube Live Studio</h1>
+          <span class="hint m-0">Master Control &amp; Broadcast Telemetry</span>
+        </div>
+      </div>
+
+      <!-- Studio Tally Strip -->
+      <div class="studio-tally-strip" id="studio-tally-strip" data-state="off-air" role="status" aria-live="polite">
+        <div class="tally-indicator">
+          <span class="tally-dot"></span>
+          <span class="tally-label" id="tally-label">OFF-AIR</span>
+        </div>
+        <div class="tally-timecode" id="tally-timecode" title="Broadcast elapsed time">
+          <span class="tnum" id="tally-elapsed">00:00:00</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="studio-master-actions">
+      <!-- Master Action Button -->
+      <button id="btn-master-action" class="btn btn-studio-action btn-touch" data-action="go-live">
+        <span class="btn-action-icon">{{ icon("play") }}</span>
+        <span class="btn-action-text" id="btn-action-text">GO LIVE</span>
+      </button>
+
+      <!-- Independent Recording Button next to Go Live -->
+      <button id="btn-studio-record" class="btn btn-rec btn-touch" type="button">
+        <span id="studio-rec-icon" class="rec-icon">⏺</span>
+        <span id="studio-rec-text">Start Recording</span>
+      </button>
+      <span id="studio-rec-pill" class="rec-duration-pill" style="display: none;">
+        <span class="rec-pulse-dot">🔴</span> REC <span id="studio-rec-timer">00:00:00</span>
+      </span>
+
+      <!-- Emergency BRB Slate Button -->
+      <button id="btn-studio-brb" class="btn btn-secondary btn-touch" aria-label="Toggle Emergency BRB Slate" data-tooltip="Emergency 'Stream Will Resume Shortly' holding card">
+        {{ icon("monitor") }}
+        <span id="btn-brb-text">BRB Slate</span>
+      </button>
+
+      <!-- Instant Clean Feed CDP Button -->
+      <button id="btn-clean-feed" class="btn btn-secondary btn-touch" aria-label="Force Zero-Controls Clean Feed" data-tooltip="Instant purge of Zoom UI controls and black borders">
+        {{ icon("sparkles") }}
+        <span id="btn-clean-feed-text">Clean Feed</span>
+      </button>
+
+      <!-- Master Panic Audio Mute -->
+      <button id="btn-panic-mute" class="btn btn-secondary btn-touch" aria-label="Master Panic Audio Mute" data-tooltip="Instant PulseAudio monitor sink mute">
+        {{ icon("volume-2") }}
+        <span id="btn-panic-text">Panic Mute</span>
+      </button>
+
+      <!-- Quick chat trigger on top bar -->
+      <button id="btn-top-chat" class="btn btn-secondary btn-touch btn-chat-toggle" aria-label="Toggle YouTube Live Chat" aria-expanded="false">
+        {{ icon("message-square") }}
+        <span class="chat-toggle-label">Chat</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- ================================================================ Program Monitor (16:9) -->
+  <h2 class="floating-section-title">
+    {{ icon("monitor", "icon-sm") }}Program Monitor (16:9)
+  </h2>
+
+  <section class="card studio-preview-card" aria-labelledby="studio-preview-h">
+    <h2 id="studio-preview-h" class="rack-title">
+      {{ icon("monitor", "icon-sm") }}Program Monitor
+      <span class="rack-title-end"><span class="program-id" aria-hidden="true">DISPLAY :99</span></span>
+    </h2>
+    <div class="panel-preview" id="studio-preview" data-phase="STOPPED">
+      <div class="monitor-tally" aria-hidden="true"></div>
+      <img id="studio-preview-img" alt="Live preview of display :99" hidden>
+      <div class="empty-state p-0" id="studio-preview-placeholder">{{ icon("video") }}<div class="empty-sub">No preview yet</div></div>
+      <div class="panel-preview-overlay">
+        <span class="badge badge-inactive panel-state" id="studio-preview-state"><span class="dot"></span><span id="studio-preview-state-text">—</span></span>
+        <span class="tnum panel-elapsed" id="studio-preview-elapsed"></span>
+        <span class="hint tnum panel-preview-age" id="studio-preview-age"></span>
+      </div>
+    </div>
+    <p class="hint mt-2">Passive thumbnail, refreshed every 3 s. For touch control of the desktop, use the Program monitor on <a href="/remote">/remote</a>.</p>
+  </section>
+
+  <!-- ================================================================ Telemetry & Audio Monitor Row -->
+  <h2 class="floating-section-title">
+    {{ icon("activity", "icon-sm") }}Broadcast Telemetry &amp; Audio Peak Monitor
+  </h2>
+
+  <div class="studio-row studio-row-split">
+
+    <!-- Telemetry: Ingest Bitrate, FPS, Dropped Frames, CPU Load -->
+    <section class="card studio-telemetry-card" aria-labelledby="telem-heading">
+      <h2 id="telem-heading" class="rack-title">
+        {{ icon("activity", "icon-sm") }}Live Stream Health
+        <span class="rack-title-end">
+          <span class="badge badge-inactive" id="telem-status-badge"><span class="dot"></span><span id="telem-status-text">Standby</span></span>
+        </span>
+      </h2>
+
+      <div class="telemetry-grid">
+        <div class="telemetry-tile" id="tile-bitrate">
+          <span class="eyebrow">Ingest Bitrate</span>
+          <div class="telem-main">
+            <span class="telem-val readout" id="telem-bitrate">—</span>
+            <span class="telem-unit">kbps</span>
+          </div>
+          <span class="hint telem-sub" id="telem-bitrate-sub">Target 6000 kbps</span>
+        </div>
+
+        <div class="telemetry-tile" id="tile-fps">
+          <span class="eyebrow">Encoder FPS</span>
+          <div class="telem-main">
+            <span class="telem-val readout" id="telem-fps">—</span>
+            <span class="telem-unit">fps</span>
+          </div>
+          <span class="hint telem-sub" id="telem-fps-sub">Target 30.0 fps</span>
+        </div>
+
+        <div class="telemetry-tile" id="tile-drop">
+          <span class="eyebrow">Dropped Frames</span>
+          <div class="telem-main">
+            <span class="telem-val readout" id="telem-drop">0</span>
+            <span class="telem-unit">frames</span>
+          </div>
+          <span class="hint telem-sub" id="telem-drop-sub">0.0% loss</span>
+        </div>
+
+        <div class="telemetry-tile" id="tile-cpu">
+          <span class="eyebrow">Encoder CPU Load</span>
+          <div class="telem-main">
+            <span class="telem-val readout" id="telem-cpu">—</span>
+            <span class="telem-unit">%</span>
+          </div>
+          <span class="hint telem-sub" id="telem-cpu-sub">libx264 process</span>
+        </div>
+      </div>
+
+      <div class="banner banner-warning mt-3" id="telem-alert" hidden role="alert">
+        {{ icon("alert-triangle") }}
+        <div id="telem-alert-msg"></div>
+      </div>
+    </section>
+
+    <!-- Dual-Channel LED Audio Peak Ladder -->
+    <section class="card studio-audio-card" aria-labelledby="audio-heading">
+      <h2 id="audio-heading" class="rack-title">
+        {{ icon("volume-2", "icon-sm") }}PulseAudio Peak Monitor
+        <span class="rack-title-end">
+          <span class="badge badge-inactive" id="audio-live-badge"><span class="dot"></span><span id="audio-live-text">Sampler offline</span></span>
+        </span>
+      </h2>
+
+      <div class="audio-meter-panel">
+        <div class="dual-ladder-wrap">
+          <!-- Left Channel (CH 1) -->
+          <div class="channel-column" id="channel-l">
+            <div class="channel-header">
+              <span class="channel-name">CH 1 · L</span>
+              <span class="channel-peak-readout readout" id="ch-l-val">-∞</span>
+            </div>
+            <div class="ladder-body" role="meter" aria-label="Left audio peak level" aria-valuemin="-24" aria-valuemax="0" id="ladder-l">
+              <div class="led-bar led-red" data-db="0"><span class="led-light"></span><span class="led-tag">0dB CLIP</span></div>
+              <div class="led-bar led-amber" data-db="-1"><span class="led-light"></span><span class="led-tag">-1</span></div>
+              <div class="led-bar led-amber" data-db="-2"><span class="led-light"></span><span class="led-tag">-2</span></div>
+              <div class="led-bar led-amber" data-db="-4"><span class="led-light"></span><span class="led-tag">-4</span></div>
+              <div class="led-bar led-green" data-db="-6"><span class="led-light"></span><span class="led-tag">-6</span></div>
+              <div class="led-bar led-green" data-db="-8"><span class="led-light"></span><span class="led-tag">-8</span></div>
+              <div class="led-bar led-green" data-db="-10"><span class="led-light"></span><span class="led-tag">-10</span></div>
+              <div class="led-bar led-green" data-db="-14"><span class="led-light"></span><span class="led-tag">-14</span></div>
+              <div class="led-bar led-green" data-db="-18"><span class="led-light"></span><span class="led-tag">-18</span></div>
+              <div class="led-bar led-green" data-db="-24"><span class="led-light"></span><span class="led-tag">-24</span></div>
+            </div>
+          </div>
+
+          <!-- Decibel Scale Center Indicator -->
+          <div class="scale-column" aria-hidden="true">
+            <div class="scale-mark mark-clip">0 dB</div>
+            <div class="scale-mark mark-amber">-1</div>
+            <div class="scale-mark mark-amber">-2</div>
+            <div class="scale-mark mark-amber">-4</div>
+            <div class="scale-mark mark-green">-6</div>
+            <div class="scale-mark mark-green">-8</div>
+            <div class="scale-mark mark-green">-10</div>
+            <div class="scale-mark mark-green">-14</div>
+            <div class="scale-mark mark-green">-18</div>
+            <div class="scale-mark mark-green">-24 dB</div>
+          </div>
+
+          <!-- Right Channel (CH 2) -->
+          <div class="channel-column" id="channel-r">
+            <div class="channel-header">
+              <span class="channel-name">CH 2 · R</span>
+              <span class="channel-peak-readout readout" id="ch-r-val">-∞</span>
+            </div>
+            <div class="ladder-body" role="meter" aria-label="Right audio peak level" aria-valuemin="-24" aria-valuemax="0" id="ladder-r">
+              <div class="led-bar led-red" data-db="0"><span class="led-light"></span><span class="led-tag">0dB CLIP</span></div>
+              <div class="led-bar led-amber" data-db="-1"><span class="led-light"></span><span class="led-tag">-1</span></div>
+              <div class="led-bar led-amber" data-db="-2"><span class="led-light"></span><span class="led-tag">-2</span></div>
+              <div class="led-bar led-amber" data-db="-4"><span class="led-light"></span><span class="led-tag">-4</span></div>
+              <div class="led-bar led-green" data-db="-6"><span class="led-light"></span><span class="led-tag">-6</span></div>
+              <div class="led-bar led-green" data-db="-8"><span class="led-light"></span><span class="led-tag">-8</span></div>
+              <div class="led-bar led-green" data-db="-10"><span class="led-light"></span><span class="led-tag">-10</span></div>
+              <div class="led-bar led-green" data-db="-14"><span class="led-light"></span><span class="led-tag">-14</span></div>
+              <div class="led-bar led-green" data-db="-18"><span class="led-light"></span><span class="led-tag">-18</span></div>
+              <div class="led-bar led-green" data-db="-24"><span class="led-light"></span><span class="led-tag">-24</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="audio-meta-row">
+          <div class="audio-stat">
+            <span class="eyebrow">RMS Master</span>
+            <span class="readout" id="audio-rms-val">— dBFS</span>
+          </div>
+          <div class="audio-stat">
+            <span class="eyebrow">Peak Hold</span>
+            <span class="readout" id="audio-peak-val">— dBFS</span>
+          </div>
+          <div class="audio-stat">
+            <span class="eyebrow">Monitor Source</span>
+            <span class="chip-glass readout text-xs">zoom_out.monitor</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </div>
+
+  <!-- ================================================================ Source & Stream Key Row -->
+  <h2 class="floating-section-title">
+    {{ icon("shuffle", "icon-sm") }}RTMP Ingest &amp; Active Feed
+  </h2>
+
+  <div class="studio-row studio-row-split">
+
+    <!-- Stream Key & RTMP Manager -->
+    <section class="card studio-stream-key-card" aria-labelledby="sk-heading">
+      <h2 id="sk-heading" class="rack-title">
+        {{ icon("key-round", "icon-sm") }}RTMP &amp; Stream Key Manager
+      </h2>
+
+      <!-- RTMP Ingest URL -->
+      <div class="field">
+        <label class="label" for="rtmp-ingest-url">RTMP Ingest URL</label>
+        <div class="input-action-group">
+          <input type="text" id="rtmp-ingest-url" class="input readout" value="{{ rtmp_ingest_url }}" readonly spellcheck="false">
+          <button id="btn-copy-rtmp" class="btn btn-secondary btn-touch btn-icon" aria-label="Copy RTMP Ingest URL" data-tooltip="Copy RTMP URL">
+            {{ icon("copy") }}
+          </button>
+        </div>
+        <span class="hint">Primary YouTube ingest endpoint for ffmpeg-stream.</span>
+      </div>
+
+      <!-- Stream Key -->
+      <div class="field mt-3">
+        <label class="label" for="sk-input">YouTube Stream Key</label>
+        <div class="input-action-group">
+          <input type="password" id="sk-input" class="input readout" placeholder="{{ stream_key_hint }}" spellcheck="false" autocomplete="off">
+          <button id="btn-reveal-sk" class="btn btn-secondary btn-touch btn-icon" aria-label="Reveal or hide stream key" data-tooltip="Reveal stream key">
+            {{ icon("eye") }}
+          </button>
+          <button id="btn-copy-sk" class="btn btn-secondary btn-touch btn-icon" aria-label="Copy stream key" data-tooltip="Copy stream key">
+            {{ icon("copy") }}
+          </button>
+        </div>
+        <div class="sk-action-row mt-2">
+          <button id="btn-save-sk" class="btn btn-primary btn-sm btn-touch" disabled>
+            {{ icon("check", "icon-sm") }}Save Key to .env
+          </button>
+          <span class="hint m-0" id="sk-status-msg">
+            {% if stream_key_configured %}Key configured in .env{% else %}No stream key configured{% endif %}
+          </span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Source Feed Indicator & Navigation -->
+    <section class="card studio-source-card" aria-labelledby="source-heading">
+      <h2 id="source-heading" class="rack-title">
+        {{ icon("shuffle", "icon-sm") }}Active Video Source Feed
+      </h2>
+
+      <div class="source-feed-display" id="source-feed-display">
+        <div class="source-badge-wrap">
+          <span class="source-status-badge" id="source-status-badge">
+            <span class="source-badge-icon" id="source-badge-icon">{{ icon("video") }}</span>
+            <span class="source-badge-text" id="source-badge-text">Checking source…</span>
+          </span>
+          <span class="source-feed-name readout" id="source-feed-name">—</span>
+        </div>
+
+        <p class="source-feed-desc hint mt-2" id="source-feed-desc">
+          Current video program fed to the encoder and display :99.
+        </p>
+
+        <!-- One-Tap Redirection Buttons -->
+        <div class="source-nav-actions mt-3">
+          <a href="/zoom" id="btn-open-zoom" class="btn btn-secondary btn-touch source-nav-btn">
+            {{ icon("video") }}<span>Zoom Controls (/zoom)</span>
+          </a>
+          <a href="/remote" id="btn-open-remote" class="btn btn-secondary btn-touch source-nav-btn">
+            {{ icon("cast") }}<span>Web Kiosk Controls (/remote)</span>
+          </a>
+          <button id="btn-source-clean-feed" class="btn btn-secondary btn-touch source-nav-btn" aria-label="Clean Feed" data-tooltip="Instant CDP purge of Zoom controls">
+            {{ icon("sparkles") }}<span>Clean Feed (CDP)</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Quick Launch Triggers -->
+      <div class="studio-quick-triggers mt-4">
+        <span class="eyebrow">Studio Quick Triggers</span>
+        <div class="btn-row mt-2">
+          <a href="{{ studio_settings.control_room_url }}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-touch">
+            {{ icon("external-link") }}<span>Live Control Room</span>
+          </a>
+          <a href="{{ studio_settings.watch_url if studio_settings.watch_url else 'https://www.youtube.com' }}" target="_blank" rel="noopener noreferrer" id="btn-public-watch" class="btn btn-secondary btn-touch">
+            {{ icon("play") }}<span>Public Watch URL</span>
+          </a>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- ================================================================ Local Recording & Disk Safety Card -->
+  <h2 class="floating-section-title">
+    {{ icon("disc", "icon-sm") }}Local MP4 Archive &amp; Storage Maintenance
+  </h2>
+
+  <section class="card studio-recording-card" aria-labelledby="rec-heading">
+    <div class="card-header-flex">
+      <h2 id="rec-heading" class="rack-title">
+        {{ icon("disc", "icon-sm") }}Local MP4 Archive &amp; Storage Maintenance
+        <span class="rack-title-end">
+          <span class="badge badge-inactive" id="rec-status-badge"><span class="dot"></span><span id="rec-status-text">Standby</span></span>
+        </span>
+      </h2>
+      <div class="rec-actions-group">
+        <button id="btn-toggle-recording" class="btn btn-secondary btn-sm btn-touch">
+          {{ icon("disc", "icon-sm") }}<span id="btn-toggle-rec-text">Start Recording</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="telemetry-grid mt-2">
+      <div class="telemetry-tile" id="tile-rec-duration">
+        <span class="eyebrow">Recording Duration</span>
+        <div class="telem-main">
+          <span class="telem-val readout" id="rec-duration">00:00:00</span>
+        </div>
+        <span class="hint telem-sub" id="rec-file-name">No active file</span>
+      </div>
+
+      <div class="telemetry-tile" id="tile-rec-size">
+        <span class="eyebrow">Archive File Size</span>
+        <div class="telem-main">
+          <span class="telem-val readout" id="rec-size">0.0</span>
+          <span class="telem-unit">MB</span>
+        </div>
+        <span class="hint telem-sub">Compressed H.264 / AAC</span>
+      </div>
+
+      <div class="telemetry-tile" id="tile-rec-disk">
+        <span class="eyebrow">Free Disk Space</span>
+        <div class="telem-main">
+          <span class="telem-val readout" id="rec-free-disk">—</span>
+          <span class="telem-unit">GB</span>
+        </div>
+        <span class="hint telem-sub">Safety Halt &lt; 2.0 GB</span>
+      </div>
+
+      <div class="telemetry-tile" id="tile-rec-path">
+        <span class="eyebrow">Archive Destination</span>
+        <div class="telem-main">
+          <span class="chip-glass readout text-xs">/home/dashboard/recordings/</span>
+        </div>
+        <span class="hint telem-sub">Automated Vacuum Active</span>
+      </div>
+    </div>
+
+    <div class="banner banner-danger mt-3" id="rec-alert" hidden role="alert">
+      {{ icon("alert-triangle") }}
+      <div id="rec-alert-msg"></div>
+    </div>
+  </section>
+
+</div>
+
+<!-- ================================================================ Slide-Over Live Chat Panel -->
+<div class="studio-chat-backdrop" id="chat-backdrop" hidden></div>
+<aside class="studio-chat-drawer" id="chat-drawer" aria-labelledby="chat-drawer-title" aria-hidden="true">
+  <div class="chat-drawer-header">
+    <div class="chat-drawer-title-group">
+      {{ icon("message-square") }}
+      <h2 id="chat-drawer-title" class="chat-drawer-title">YouTube Live Chat</h2>
+    </div>
+    <div class="chat-drawer-header-actions">
+      <a href="#" target="_blank" rel="noopener noreferrer" id="btn-chat-popout" class="btn btn-ghost btn-icon" aria-label="Popout chat in new tab" data-tooltip="Popout chat">
+        {{ icon("external-link") }}
+      </a>
+      <button id="btn-close-chat" class="btn btn-ghost btn-icon" aria-label="Close live chat drawer">
+        {{ icon("x") }}
+      </button>
+    </div>
+  </div>
+
+  <div class="chat-drawer-config">
+    <div class="chat-config-row">
+      <label class="visually-hidden" for="chat-video-id">YouTube Video ID or Watch URL</label>
+      <input type="text" id="chat-video-id" class="input input-sm readout" placeholder="Video ID (e.g. dQw4w9WgXcQ) or Watch URL" value="{{ studio_settings.video_id }}" spellcheck="false" autocomplete="off">
+      <button id="btn-save-chat-id" class="btn btn-primary btn-sm btn-touch">Connect</button>
+    </div>
+    <span class="hint text-xs" id="chat-config-hint">Connect your broadcast to embed live chat.</span>
+  </div>
+
+  <div class="chat-drawer-frame-wrap" id="chat-frame-wrap">
+    {% if studio_settings.video_id %}
+    <iframe
+      id="chat-iframe"
+      class="chat-iframe"
+      src="https://www.youtube.com/live_chat?v={{ studio_settings.video_id }}&embed_domain={{ request.headers.get('host', 'localhost').split(':')[0] }}"
+      title="YouTube Live Chat"
+      loading="lazy">
+    </iframe>
+    {% else %}
+    <div class="chat-placeholder" id="chat-placeholder">
+      {{ icon("message-square") }}
+      <p class="chat-placeholder-title">No Live Chat Connected</p>
+      <p class="hint">Enter your broadcast Video ID or Watch URL above to view the live audience chat, or launch YouTube Live Control Room.</p>
+      <a href="{{ studio_settings.control_room_url }}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-sm mt-2">
+        {{ icon("external-link", "icon-sm") }}Open Live Control Room
+      </a>
+    </div>
+    {% endif %}
+  </div>
+</aside>
+
+<!-- ================================================================ Accidental-Press Safety Confirmation Modal -->
+<div class="studio-modal-backdrop" id="safety-modal-backdrop" hidden>
+  <div class="studio-modal" id="safety-modal" role="dialog" aria-modal="true" aria-labelledby="safety-modal-title">
+    <div class="studio-modal-icon" id="safety-modal-icon">
+      {{ icon("alert-triangle") }}
+    </div>
+    <div class="studio-modal-content">
+      <h3 class="studio-modal-title" id="safety-modal-title">Confirm Broadcast Action</h3>
+      <p class="studio-modal-body" id="safety-modal-body">
+        Are you sure you want to proceed with this broadcast action?
+      </p>
+      <div class="studio-modal-actions">
+        <button id="modal-confirm-btn" class="btn btn-touch">Confirm</button>
+        <button id="modal-cancel-btn" class="btn btn-secondary btn-touch">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script type="application/json" id="studio-settings-data">{{ studio_settings | tojson }}</script>
+<script type="application/json" id="active-source-init">{{ active_source | tojson }}</script>
+<script src="/static/js/studio.js"></script>
+{% endblock %}

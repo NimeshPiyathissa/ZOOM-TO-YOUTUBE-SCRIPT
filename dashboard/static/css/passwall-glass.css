@@ -1,0 +1,652 @@
+/* ============================================================
+   Passwall-N Solid Dark Design System
+   Full restoration of original multi-column desktop grid,
+   wide 16:9 Program Monitor, fixed left sidebar,
+   top navigation bar spanning the top, and 100% opaque
+   solid dark slate panels (#17212c).
+   ============================================================ */
+
+/* 1. Global Canvas & Background Wash */
+html, body {
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: linear-gradient(rgba(10, 14, 20, 0.72), rgba(10, 14, 20, 0.85)), url('/static/img/bg_nature.jpg') no-repeat center center fixed !important;
+  background-size: cover !important;
+  background-attachment: fixed !important;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+  color: #ffffff !important;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* 2. Desktop Layout & Viewport Restoration */
+.app-shell {
+  display: flex !important;
+  min-height: 100vh !important;
+  background: transparent !important;
+}
+
+.app-main {
+  flex: 1 !important;
+  min-width: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  background: transparent !important;
+}
+
+/* Sidebar permanently fixed on the left on desktop */
+@media (min-width: 1024px) {
+  .sidebar {
+    position: sticky !important;
+    top: 0 !important;
+    height: 100vh !important;
+    width: var(--sidebar-w, 240px) !important;
+    flex-shrink: 0 !important;
+    transform: none !important;
+    display: flex !important;
+    flex-direction: column !important;
+    background: #121922 !important;
+    border-right: 1px solid #1f2a37 !important;
+    z-index: 100 !important;
+    box-shadow: 2px 0 16px rgba(0, 0, 0, 0.45) !important;
+  }
+}
+
+.sidebar {
+  background: #121922 !important;
+  border-right: 1px solid #1f2a37 !important;
+}
+
+.sidebar-brand {
+  border-bottom: 1px solid #1f2a37 !important;
+  color: #ffffff !important;
+}
+
+.sidebar-nav a {
+  color: #94a3b8 !important;
+  border-radius: 8px !important;
+  transition: all 0.15s ease !important;
+}
+.sidebar-nav a:hover {
+  background: #1e293b !important;
+  color: #ffffff !important;
+}
+.sidebar-nav a.active {
+  background: #253342 !important;
+  color: #38bdf8 !important;
+  border: 1px solid #334458 !important;
+}
+.sidebar-foot {
+  border-top: 1px solid #1f2a37 !important;
+}
+
+/* Topbar spanning the top */
+.topbar {
+  position: sticky !important;
+  top: 0 !important;
+  z-index: 90 !important;
+  width: 100% !important;
+  background: #121922 !important;
+  border-bottom: 1px solid #1f2a37 !important;
+  box-shadow: 0 2px 14px rgba(0, 0, 0, 0.35) !important;
+}
+
+/* Main Content Area: Eliminate all artificial max-width: 500px narrow strips */
+main.page,
+.dash-container,
+.main-container,
+.overlay-container,
+.studio-container,
+.config-container,
+.remote-grid {
+  max-width: 1360px !important;
+  width: 100% !important;
+  margin: 0 auto !important;
+  padding: 24px 28px 80px 28px !important;
+  box-sizing: border-box !important;
+}
+
+@media (max-width: 768px) {
+  main.page,
+  .dash-container,
+  .main-container,
+  .overlay-container,
+  .studio-container,
+  .config-container,
+  .remote-grid {
+    padding: 16px 14px 90px 14px !important;
+  }
+}
+
+/* 3. Multi-Column Desktop Grids */
+.dash-grid {
+  display: grid !important;
+  grid-template-columns: repeat(12, 1fr) !important;
+  gap: 20px !important;
+  width: 100% !important;
+}
+
+@media (max-width: 1023px) {
+  .dash-grid {
+    grid-template-columns: repeat(6, 1fr) !important;
+  }
+}
+
+@media (max-width: 640px) {
+  .dash-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+.grid-col-full,
+.dash-services-wrap {
+  grid-column: 1 / -1 !important;
+}
+
+.hero-3d {
+  grid-column: 1 / -1 !important;
+  display: grid !important;
+  grid-template-columns: 1fr !important;
+  gap: 24px !important;
+}
+
+@media (min-width: 768px) {
+  .hero-3d {
+    grid-template-columns: minmax(0, 1.25fr) minmax(320px, 460px) !important;
+    align-items: center !important;
+  }
+}
+
+.dash-health {
+  grid-column: span 4 !important;
+}
+
+@media (max-width: 1023px) and (min-width: 641px) {
+  .dash-health {
+    grid-column: span 3 !important;
+  }
+}
+
+@media (max-width: 640px) {
+  .dash-health {
+    grid-column: 1 / -1 !important;
+  }
+}
+
+/* Studio & Overlay Multi-Column Split Rows */
+.studio-row-split {
+  display: grid !important;
+  grid-template-columns: repeat(2, 1fr) !important;
+  gap: 20px !important;
+  width: 100% !important;
+}
+
+@media (max-width: 900px) {
+  .studio-row-split {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* Quick Nav Multi-Column Grid */
+.quick-nav-grid {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)) !important;
+  gap: 16px !important;
+  width: 100% !important;
+}
+
+/* 4. Passwall-N Solid Dark Cards (100% Opaque, No Bleed) */
+.card,
+.dashboard-card,
+.glass-card,
+.card-3d,
+.studio-master-bar,
+.overlay-master-bar,
+.studio-preview-card,
+.studio-telemetry-card,
+.studio-audio-card,
+.studio-stream-key-card,
+.studio-source-card,
+.studio-recording-card,
+.overlay-preview-card,
+.overlay-controls-card,
+.overlay-config-card,
+.dash-health,
+.panel,
+.login-card {
+  background: #17212c !important; /* Solid dark slate, 100% opaque */
+  border: 1px solid #233142 !important;
+  border-radius: 14px !important;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45) !important;
+  padding: 20px !important;
+  margin-bottom: 20px !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  box-sizing: border-box !important;
+}
+
+.card-3d::before,
+.card-3d::after {
+  display: none !important;
+}
+
+/* 5. Section Titles: Clean Standalone Floating Category Labels */
+.floating-section-title,
+.category-header,
+.studio-section-title,
+.overlay-section-title {
+  font-size: 0.92rem !important;
+  font-weight: 600 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.06em !important;
+  color: #94a3b8 !important;
+  margin: 22px 0 10px 4px !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  grid-column: 1 / -1 !important;
+  width: 100% !important;
+}
+.floating-section-title:first-child {
+  margin-top: 4px !important;
+}
+.floating-section-title .icon,
+.category-header .icon {
+  color: #38bdf8 !important;
+  opacity: 0.95;
+}
+
+/* 6. Action Buttons & Navigation Tabs (No Vertical Text Clipping) */
+button,
+.btn,
+.btn-secondary,
+.btn-touch,
+.btn-action,
+.btn-passwall,
+.tab-btn {
+  min-height: 40px !important;
+  height: auto !important;
+  padding: 8px 16px !important;
+  line-height: 1.4 !important;
+  font-size: 0.92rem !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  box-sizing: border-box !important;
+  background: #253342 !important;
+  border: 1px solid #334458 !important;
+  border-radius: 8px !important;
+  color: #fff !important;
+  font-weight: 500 !important;
+  transition: all 0.15s ease !important;
+}
+.btn:hover,
+.btn-secondary:hover,
+.btn-touch:hover,
+.btn-action:hover,
+button:hover {
+  background: #2e3e50 !important;
+  border-color: #41556e !important;
+  color: #ffffff !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3) !important;
+}
+
+button.btn-icon,
+.btn.btn-icon {
+  padding: 0 !important;
+  width: 40px !important;
+  min-width: 40px !important;
+  flex: none !important;
+}
+
+button.btn-sm:not(.btn-icon),
+.btn.btn-sm:not(.btn-icon) {
+  min-height: 34px !important;
+  padding: 6px 12px !important;
+  line-height: 1.3 !important;
+}
+
+button.btn-icon.btn-sm,
+.btn.btn-icon.btn-sm {
+  width: 34px !important;
+  min-width: 34px !important;
+  padding: 0 !important;
+}
+
+.btn-primary,
+.btn-studio-action[data-action="go-live"] {
+  background: linear-gradient(135deg, #2563eb, #1d4ed8) !important;
+  border: 1px solid #3b82f6 !important;
+  border-radius: 8px !important;
+  color: #ffffff !important;
+  font-weight: 500 !important;
+  box-shadow: 0 2px 10px rgba(37, 99, 235, 0.35) !important;
+}
+.btn-primary:hover,
+.btn-studio-action[data-action="go-live"]:hover {
+  background: linear-gradient(135deg, #3b82f6, #2563eb) !important;
+  border-color: #60a5fa !important;
+  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.5) !important;
+}
+
+.btn-danger,
+.btn-studio-action[data-action="stop"] {
+  background: linear-gradient(135deg, #dc2626, #b91c1c) !important;
+  border: 1px solid #ef4444 !important;
+  border-radius: 8px !important;
+  color: #ffffff !important;
+  font-weight: 500 !important;
+  box-shadow: 0 2px 10px rgba(220, 38, 38, 0.35) !important;
+}
+.btn-danger:hover,
+.btn-studio-action[data-action="stop"]:hover {
+  background: linear-gradient(135deg, #ef4444, #dc2626) !important;
+  border-color: #f87171 !important;
+  box-shadow: 0 4px 14px rgba(220, 38, 38, 0.5) !important;
+}
+
+.btn-ghost {
+  background: transparent !important;
+  border: 1px solid transparent !important;
+  border-radius: 8px !important;
+  color: #94a3b8 !important;
+}
+.btn-ghost:hover {
+  background: #253342 !important;
+  border-color: #334458 !important;
+  color: #ffffff !important;
+}
+
+/* 7. Micro Status & Badges (Glowing Green Indicator ● Running) */
+.micro-status,
+.status-running,
+.hero-state,
+.topbar-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.badge,
+.status-badge,
+.status-pill {
+  padding: 4px 10px !important;
+  line-height: 1.3 !important;
+  min-height: 24px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  box-sizing: border-box !important;
+}
+
+.dot-LIVE,
+.dot.running,
+.state-LIVE .dot-lg,
+.badge-active .dot,
+.badge-live .dot,
+.tally-indicator .tally-dot.on-air,
+.studio-tally-strip[data-state="on-air"] .tally-dot {
+  width: 9px !important;
+  height: 9px !important;
+  border-radius: 50% !important;
+  background: #10b981 !important;
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.85), 0 0 4px #10b981 !important;
+  display: inline-block !important;
+}
+
+.state-LIVE .state-text,
+.hero-state .state-text,
+.topbar-status .state-label,
+.badge-active,
+.badge-live {
+  color: #ffffff !important;
+  font-weight: 600 !important;
+}
+
+/* Pipeline & Service Row Margins */
+.pipeline-row,
+.node-row,
+.service-row {
+  padding-top: 10px !important;
+  padding-bottom: 10px !important;
+}
+
+/* 8. 16:9 Wide Aspect Ratio Monitors */
+.hero-3d-preview,
+.panel-preview,
+.canvas-stage-wrapper {
+  position: relative !important;
+  border-radius: 10px !important;
+  overflow: hidden !important;
+  aspect-ratio: 16 / 9 !important;
+  background: #0d131a !important;
+  border: 1px solid #233142 !important;
+  width: 100% !important;
+}
+
+.hero-3d-preview img,
+.panel-preview img,
+.canvas-stage-16-9 {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: contain !important;
+  display: block !important;
+}
+
+/* 9. Form Inputs & Select Dropdowns (No Vertical Text Clipping) */
+select,
+.form-select,
+.input,
+select.input,
+input[type="text"],
+input[type="password"],
+input[type="search"],
+input[type="url"],
+input[type="number"],
+input.input {
+  min-height: 44px !important;
+  height: auto !important;
+  padding: 10px 14px !important;
+  line-height: 1.5 !important;
+  font-size: 0.95rem !important;
+  display: flex !important;
+  align-items: center !important;
+  box-sizing: border-box !important;
+  background: #0f1722 !important;
+  border: 1px solid #233142 !important;
+  border-radius: 8px !important;
+  color: #ffffff !important;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3) !important;
+}
+
+select,
+select.input {
+  padding-right: 36px !important;
+}
+
+textarea.input {
+  min-height: 70px !important;
+  height: auto !important;
+  padding: 10px 14px !important;
+  line-height: 1.5 !important;
+  font-size: 0.95rem !important;
+  background: #0f1722 !important;
+  border: 1px solid #233142 !important;
+  border-radius: 8px !important;
+  color: #ffffff !important;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3) !important;
+  box-sizing: border-box !important;
+}
+
+
+.input:focus,
+select.input:focus,
+select:focus,
+input[type="text"]:focus,
+input[type="password"]:focus,
+input[type="search"]:focus {
+  border-color: #38bdf8 !important;
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.25), inset 0 2px 4px rgba(0, 0, 0, 0.3) !important;
+  outline: none !important;
+}
+
+
+.stat-tile,
+.telemetry-tile {
+  background: #0f1722 !important;
+  border: 1px solid #233142 !important;
+  border-radius: 10px !important;
+  padding: 12px 16px !important;
+}
+
+.audio-peak-meter,
+.audio-meter-panel {
+  background: #0f1722 !important;
+  border: 1px solid #233142 !important;
+  border-radius: 10px !important;
+  padding: 14px !important;
+}
+
+.glass-row,
+.setting-row,
+.card-item-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 0;
+  border-bottom: 1px solid #1f2a37;
+  gap: 16px;
+}
+.glass-row:last-child,
+.setting-row:last-child,
+.card-item-row:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+.glass-row:first-child,
+.setting-row:first-child,
+.card-item-row:first-child {
+  padding-top: 0;
+}
+.glass-row-title, .setting-label {
+  font-size: 0.92rem;
+  font-weight: 500;
+  color: #ffffff;
+  display: block;
+}
+.glass-row-subtitle, .setting-desc {
+  font-size: 0.78rem;
+  color: #94a3b8;
+  display: block;
+  margin-top: 2px;
+}
+
+/* Modals & Dialogs */
+.studio-modal,
+.vnc-overlay {
+  background: #17212c !important;
+  border: 1px solid #233142 !important;
+  border-radius: 16px !important;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6) !important;
+}
+
+/* Live Chat Drawer */
+.studio-chat-drawer {
+  background: #121922 !important;
+  border-left: 1px solid #1f2a37 !important;
+}
+.chat-drawer-header,
+.chat-drawer-config {
+  background: #17212c !important;
+  border-bottom: 1px solid #1f2a37 !important;
+}
+
+/* Service Grid */
+.service-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+}
+.service-card-3d,
+.service-row {
+  background: #0f1722 !important;
+  border: 1px solid #233142 !important;
+  border-radius: 8px !important;
+}
+
+/* ==============================================================================
+   Dedicated Stream Recording Controls & Glowing REC Duration Pill
+   ============================================================================== */
+.btn-rec {
+  background: #172433 !important;
+  border: 1px solid #293d52 !important;
+  color: #e2e8f0 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  transition: all 0.2s ease !important;
+}
+.btn-rec:hover {
+  background: #1e3044 !important;
+  border-color: #3b5573 !important;
+  color: #ffffff !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4) !important;
+}
+
+.btn-rec-active {
+  background: #341419 !important;
+  border: 1px solid #991b1b !important;
+  color: #fecaca !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  box-shadow: 0 0 14px rgba(220, 38, 38, 0.35) !important;
+  transition: all 0.2s ease !important;
+}
+.btn-rec-active:hover {
+  background: #451a21 !important;
+  border-color: #dc2626 !important;
+  box-shadow: 0 0 18px rgba(220, 38, 38, 0.5) !important;
+}
+
+.rec-duration-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  background: rgba(185, 28, 28, 0.18);
+  border: 1px solid rgba(239, 68, 68, 0.45);
+  color: #fecaca;
+  border-radius: 9999px;
+  font-family: var(--font-mono, monospace);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  box-shadow: 0 0 16px rgba(220, 38, 38, 0.28);
+  vertical-align: middle;
+  line-height: 1;
+}
+
+.rec-pulse-dot {
+  display: inline-block;
+  font-size: 0.8rem;
+  animation: rec-pulse-glow 1.5s infinite ease-in-out;
+}
+
+@keyframes rec-pulse-glow {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+    filter: drop-shadow(0 0 5px #ef4444);
+  }
+  50% {
+    opacity: 0.35;
+    transform: scale(0.85);
+    filter: drop-shadow(0 0 1px #ef4444);
+  }
+}
+

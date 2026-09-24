@@ -1,0 +1,270 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon %}
+{% block title %}Zoom - Zoom Stream Dashboard{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="/static/css/rack.css"><link rel="stylesheet" href="/static/css/zoom.css">{% endblock %}
+{% block content %}
+
+<div class="zm-grid rack-grid">
+
+  <!-- ============================================================ meeting state + join flow -->
+  <section class="card zm-meeting" aria-labelledby="zm-meeting-h">
+    <h2 id="zm-meeting-h" class="rack-title">{{ icon("video", "icon-sm") }}Meeting
+      <span class="rack-title-end hint m-0" id="zm-status-source">read from Zoom's windows, never assumed</span></h2>
+
+    <!-- Status hero: one icon + word, then Zoom's own words. -->
+    <div class="zm-status" id="zm-status" data-status="unknown" role="status" aria-live="polite">
+      <div class="zm-status-icon" id="zm-status-icon">{{ icon("circle-help") }}</div>
+      <div class="zm-status-body">
+        <div class="zm-status-label" id="zm-status-label">Checking…</div>
+        <div class="zm-status-detail" id="zm-status-detail"></div>
+      </div>
+      <div class="zm-status-side">
+        <span class="badge" id="zm-service-badge"><span class="dot"></span><span id="zm-service-text">zoom.service</span></span>
+        <span class="badge" id="zm-via-badge" hidden><span id="zm-via-text"></span></span>
+      </div>
+    </div>
+
+    <!-- The active meeting (the source on the canvas), or none -->
+    <div class="zm-active" id="zm-active" hidden>
+      <span class="zm-kind" id="zm-active-kind"></span>
+      <span class="zm-active-name" id="zm-active-name"></span>
+      <span class="readout zm-active-id" id="zm-active-id"></span>
+      <span class="hint m-0" id="zm-active-meta"></span>
+      <div class="zm-card-warning" id="zm-active-warning" hidden></div>
+    </div>
+    <div class="zm-active zm-active-empty" id="zm-active-empty">
+      {{ icon("info", "icon-sm") }}<span>No Zoom meeting is the active source. Pick one from the library below, or add one.</span>
+    </div>
+
+    <!-- Per-state guidance with its one-tap action -->
+    <div class="banner zm-guidance" id="zm-guidance" hidden role="status">
+      <span class="zm-guidance-icon" id="zm-guidance-icon">{{ icon("info") }}</span>
+      <div class="zm-guidance-body">
+        <div id="zm-guidance-text"></div>
+        <div class="hint mt-1" id="zm-guidance-quote"></div>
+        <div class="btn-row mt-2" id="zm-guidance-actions"></div>
+      </div>
+    </div>
+
+    <div class="zm-join-row" id="zm-join-row">
+      <button id="zm-join" class="btn btn-primary btn-touch zm-join-btn">{{ icon("play") }}Join meeting</button>
+      <button id="zm-rejoin" class="btn btn-secondary btn-touch">{{ icon("rotate-cw") }}Rejoin</button>
+      <button id="zm-leave-slate" class="btn btn-secondary btn-touch">{{ icon("door-open") }}Leave, keep stream</button>
+      <button id="zm-leave-stop" class="btn btn-danger btn-touch">{{ icon("square") }}Leave &amp; stop</button>
+    </div>
+    <div class="btn-row mt-3">
+      <button id="zm-reset" class="btn btn-ghost btn-touch" data-tooltip="Dismiss stale dialogs; if Zoom is still stuck, quit it to the slate">{{ icon("refresh-ccw-dot") }}Reset Zoom window</button>
+      <button id="zm-dismiss" class="btn btn-ghost btn-touch" hidden>{{ icon("x") }}Dismiss dialog</button>
+    </div>
+
+    <!-- In-meeting controls with read-back -->
+    <h3 class="rack-title">{{ icon("sliders-horizontal", "icon-sm") }}In the meeting
+      <span class="rack-title-end hint m-0" id="zm-controls-note">state read back from Zoom's toolbar</span></h3>
+    <div class="zm-controls" id="zm-controls">
+      <button id="zm-mic" class="zm-ctl" data-state="unknown" aria-pressed="false" aria-label="Toggle microphone">
+        <span class="zm-ctl-icon" id="zm-mic-icon">{{ icon("mic") }}</span>
+        <span class="zm-ctl-label">Mic</span>
+        <span class="zm-ctl-state readout" id="zm-mic-state">Unknown</span>
+      </button>
+      <button id="zm-camera" class="zm-ctl" data-state="unknown" aria-pressed="false" aria-label="Toggle camera">
+        <span class="zm-ctl-icon" id="zm-camera-icon">{{ icon("video") }}</span>
+        <span class="zm-ctl-label">Camera</span>
+        <span class="zm-ctl-state readout" id="zm-camera-state">Unknown</span>
+      </button>
+      <div class="zm-ctl zm-ctl-view">
+        <span class="zm-ctl-icon">{{ icon("layout-grid") }}</span>
+        <span class="zm-ctl-label">View</span>
+        <div class="segmented zm-seg" id="zm-view-seg" role="group" aria-label="View mode">
+          <button class="seg-btn" data-value="speaker">Speaker</button>
+          <button class="seg-btn" data-value="gallery">Gallery</button>
+        </div>
+        <span class="zm-ctl-state readout">not readable</span>
+      </div>
+    </div>
+    <div class="zm-apply-row">
+      <button id="zm-apply-options" class="btn btn-secondary btn-sm">{{ icon("sparkles", "icon-sm") }}Apply this meeting's saved mic / camera / view</button>
+      <span class="hint m-0" id="zm-apply-result"></span>
+    </div>
+  </section>
+
+  <!-- ============================================================ embedded remote screen -->
+  <section class="card zm-screen" aria-labelledby="zm-screen-h">
+    <h2 id="zm-screen-h" class="rack-title">{{ icon("monitor", "icon-sm") }}Remote screen
+      <span class="rack-title-end"><span class="hint m-0" id="zm-vnc-status">not connected</span></span></h2>
+    <div class="zm-vnc" id="zm-vnc">
+      <div class="zm-vnc-stage" id="zm-vnc-stage"></div>
+      <div class="zm-vnc-idle" id="zm-vnc-idle">
+        {{ icon("monitor") }}
+        <div class="empty-sub">Sign-in, CAPTCHA, registration forms and waiting-room prompts happen here - connect only when a human step is needed.</div>
+        <button id="zm-vnc-connect" class="btn btn-primary btn-touch mt-3">{{ icon("pointer") }}Connect to :99</button>
+      </div>
+    </div>
+    <div class="rd-toolbar zm-vnc-toolbar">
+      <button id="zm-vnc-disconnect" class="btn btn-secondary btn-touch" hidden>{{ icon("x") }}Disconnect</button>
+      <button id="zm-vnc-fullscreen" class="btn btn-secondary btn-touch btn-icon" aria-label="Full screen" hidden>{{ icon("maximize") }}</button>
+      <a href="/remote" class="btn btn-ghost btn-touch">{{ icon("keyboard") }}Touch keyboard &amp; gestures on Remote</a>
+    </div>
+  </section>
+
+  <!-- ============================================================ add / edit -->
+  <section class="card zm-editor" id="zm-editor" aria-labelledby="zm-editor-h">
+    <h2 id="zm-editor-h" class="rack-title">{{ icon("plus", "icon-sm") }}<span id="zm-editor-title">Add a meeting</span>
+      <span class="rack-title-end"><button id="zm-edit-cancel" class="btn btn-ghost btn-sm" hidden>{{ icon("x", "icon-sm") }}Cancel edit</button></span></h2>
+
+    <div class="field">
+      <label class="label" for="zm-paste">Paste anything from the invite</label>
+      <textarea id="zm-paste" class="input zm-paste" rows="3" spellcheck="false" autocapitalize="off"
+        placeholder="Join link, personal (tk=) link, registration page, meeting ID, personal room URL, zoommtg:// link - or the whole email"></textarea>
+      <div class="zm-paste-row">
+        <div class="zm-secret">
+          <input type="password" id="zm-passcode" class="input" placeholder="Passcode (if not in the link)" autocomplete="off" maxlength="128" aria-label="Passcode">
+          <button type="button" class="btn btn-ghost btn-icon zm-reveal" data-for="zm-passcode" aria-label="Show passcode" aria-pressed="false">{{ icon("eye") }}</button>
+        </div>
+        <button id="zm-parse" class="btn btn-secondary btn-touch">{{ icon("sparkles") }}Detect</button>
+      </div>
+    </div>
+
+    <!-- What was understood -->
+    <div class="zm-parsed" id="zm-parsed" hidden aria-live="polite">
+      <div class="zm-parsed-head">
+        <span class="zm-kind" id="zm-parsed-input"></span>
+        <span class="zm-kind" id="zm-parsed-kind"></span>
+        <span class="hint m-0" id="zm-parsed-url"></span>
+      </div>
+      <div class="zm-parsed-grid">
+        <div class="field">
+          <label class="label" for="zm-mid">Meeting ID</label>
+          <input id="zm-mid" class="input readout" inputmode="numeric" placeholder="000 0000 0000" maxlength="14" autocomplete="off">
+        </div>
+        <div class="field">
+          <span class="label">Passcode</span>
+          <div class="zm-pass-status" id="zm-pass-status"></div>
+        </div>
+        <div class="field">
+          <span class="label">Type</span>
+          <div class="segmented zm-seg" id="zm-kind-seg" role="group" aria-label="Meeting type">
+            <button class="seg-btn" data-value="meeting">Meeting</button>
+            <button class="seg-btn" data-value="webinar">Webinar</button>
+            <button class="seg-btn" data-value="pmi">Personal room</button>
+          </div>
+        </div>
+      </div>
+      <ul class="zm-notes" id="zm-parsed-notes"></ul>
+    </div>
+
+    <div class="zm-form" id="zm-form">
+      <div class="zm-form-grid">
+        <div class="field">
+          <label class="label" for="zm-name">Name in the library</label>
+          <input id="zm-name" class="input" maxlength="64" placeholder="Monday town hall">
+        </div>
+        <div class="field">
+          <label class="label" for="zm-bot-name">Bot's display name</label>
+          <input id="zm-bot-name" class="input" maxlength="64" value="Stream Bot">
+        </div>
+      </div>
+
+      <div class="field">
+        <span class="label">Join as</span>
+        <div class="zm-joinas">
+          <div class="segmented zm-seg" id="zm-signin-seg" role="group" aria-label="Join as">
+            <button class="seg-btn is-active" data-value="guest">Guest</button>
+            <button class="seg-btn" data-value="google">Google account</button>
+          </div>
+          <select id="zm-account" class="input" hidden aria-label="Google account">
+            <option value="">Choose an account…</option>
+{% set signed = accounts | selectattr("state", "equalto", "signed_in") | list %}
+            {% for a in accounts %}<option value="{{ a.id }}" {% if a.state == "never" and not a.identity_masked %}disabled{% endif %}>{{ a.label }}{% if a.identity_masked %} · {{ a.identity_masked }}{% endif %} · {{ "signed in" if a.state == "signed_in" else ("needs re-authentication" if a.needs_reauth else a.state) }}</option>{% endfor %}
+            {% if not signed and not accounts %}<option value="" disabled>No signed-in account yet - sign in on the Accounts page</option>{% endif %}
+          </select>
+          <a href="/accounts" class="hint m-0" id="zm-account-hint" hidden>{{ "Manage or add accounts on the Accounts page" if (signed or accounts) else "No signed-in account yet - sign in on the Accounts page first" }}</a>
+        </div>
+      </div>
+
+      <div class="field">
+        <span class="label">Join via</span>
+        <div class="segmented zm-seg" id="zm-joinvia-seg" role="group" aria-label="Join via">
+          <button class="seg-btn is-active" data-value="client">Desktop client</button>
+          <button class="seg-btn" data-value="web">Web client</button>
+          <button class="seg-btn" data-value="auto">Auto</button>
+        </div>
+        <div class="hint mt-1">Auto tries the desktop client first and falls back to the web client only if the
+          client itself fails to launch - not if the meeting rejects the join (wrong passcode, locked, etc.),
+          since the web client would hit the same wall.</div>
+      </div>
+
+      <div class="field" id="zm-registrant-field">
+        <label class="label" for="zm-registrant-email">Registered with (Gmail address)</label>
+        <input id="zm-registrant-email" class="input" type="email" maxlength="254" autocomplete="off"
+          placeholder="Only for a per-registrant (tk=) link - leave blank otherwise">
+        <div class="hint mt-1">Used only to warn if the Google account bound to this source doesn't match - Zoom
+          doesn't expose a way to verify this token actually belongs to that address.</div>
+      </div>
+
+      <div class="zm-options">
+        <label class="zm-opt">
+          <span class="zm-opt-main">{{ icon("mic", "icon-sm") }}<span>Audio on at join</span></span>
+          <span class="switch"><input type="checkbox" id="zm-audio-on"><span class="track"></span></span>
+        </label>
+        <label class="zm-opt">
+          <span class="zm-opt-main">{{ icon("video", "icon-sm") }}<span>Video on at join</span></span>
+          <span class="switch"><input type="checkbox" id="zm-video-on"><span class="track"></span></span>
+        </label>
+        <div class="zm-opt">
+          <span class="zm-opt-main">{{ icon("layout-grid", "icon-sm") }}<span>View</span></span>
+          <div class="segmented zm-seg" id="zm-form-view-seg" role="group" aria-label="View mode">
+            <button class="seg-btn is-active" data-value="speaker">Speaker</button>
+            <button class="seg-btn" data-value="gallery">Gallery</button>
+          </div>
+        </div>
+        <label class="zm-opt">
+          <span class="zm-opt-main">{{ icon("refresh-ccw-dot", "icon-sm") }}<span>Auto-rejoin if disconnected</span></span>
+          <span class="zm-opt-end">
+            <input type="number" id="zm-rejoin-max" class="input zm-num" min="1" max="20" value="5" aria-label="Maximum automatic rejoins">
+            <span class="hint m-0">tries</span>
+            <span class="switch"><input type="checkbox" id="zm-auto-rejoin" checked><span class="track"></span></span>
+          </span>
+        </label>
+        <label class="zm-opt">
+          <span class="zm-opt-main">{{ icon("calendar-plus", "icon-sm") }}<span>Join at a scheduled time</span></span>
+          <span class="zm-opt-end">
+            <input type="datetime-local" id="zm-join-at" class="input zm-dt" aria-label="Scheduled join time">
+            <span class="hint m-0">{{ timezone }}</span>
+          </span>
+        </label>
+      </div>
+      <div class="hint" id="zm-join-at-hint" hidden>At that time the meeting becomes the active source and Zoom joins; if the stream isn't running, the encoder starts too (same as tapping the meeting's tile).</div>
+      <div class="hint">Mic, camera and view are applied after the join from what Zoom reports - the join link itself can't set them.</div>
+
+      <div class="field-error mt-2" id="zm-form-error" hidden></div>
+      <div class="btn-row mt-3 zm-save-row">
+        <button id="zm-save" class="btn btn-primary btn-touch">{{ icon("check") }}Save meeting</button>
+        <button id="zm-save-join" class="btn btn-secondary btn-touch">{{ icon("play") }}Save &amp; join</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ library (= zoom rows of the shared source store) -->
+  <section class="card zm-library-card" aria-labelledby="zm-library-h">
+    <h2 id="zm-library-h" class="rack-title">{{ icon("list-checks", "icon-sm") }}Saved meetings
+      <span class="rack-title-end hint m-0" id="zm-library-sync">same list as Sources on Remote</span></h2>
+    <div class="zm-library" id="zm-library" role="list" aria-label="Saved meetings"></div>
+    <div class="empty-state" id="zm-library-empty" hidden>{{ icon("video") }}<div class="empty-sub">No meetings yet - paste an invite above.</div></div>
+  </section>
+
+</div>
+
+<!-- Sticky join/leave bar for phones (sits above the global program bar) -->
+<div class="zm-sticky" id="zm-sticky" role="toolbar" aria-label="Meeting controls">
+  <button id="zm-sticky-join" class="btn btn-primary">{{ icon("play", "icon-sm") }}Join</button>
+  <button id="zm-sticky-leave" class="btn btn-secondary" hidden>{{ icon("door-open", "icon-sm") }}Leave</button>
+  <span class="zm-sticky-status readout" id="zm-sticky-status">—</span>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script type="application/json" id="zm-data-meetings">{{ meetings | tojson }}</script>
+<script type="application/json" id="zm-data-active">{{ active_source_id | tojson }}</script>
+<script type="application/json" id="zm-data-rev">{{ sources_rev | tojson }}</script>
+<script type="module" src="/static/js/zoom.js"></script>
+{% endblock %}

@@ -1,0 +1,170 @@
+/* ============================================================
+   Layout: app shell, sidebar, topbar, page grid, responsive rules.
+   ============================================================ */
+
+.app-shell { display: flex; min-height: 100vh; }
+
+/* ---------------------------------------------------------------- sidebar */
+
+.sidebar {
+  width: var(--sidebar-w);
+  flex: none;
+  background: var(--bg-panel);
+  border-right: 1px solid var(--border);
+  display: flex; flex-direction: column;
+  position: sticky; top: 0; height: 100vh;
+  transition: width var(--duration-base) var(--ease-out), transform var(--duration-base) var(--ease-out);
+  z-index: var(--z-sticky);
+}
+.app-shell.is-collapsed .sidebar { width: var(--sidebar-w-collapsed); }
+
+.sidebar-brand {
+  display: flex; align-items: center; gap: var(--space-2);
+  height: var(--topbar-h); padding: 0 var(--space-4); flex: none;
+  font-weight: var(--weight-semibold); font-size: var(--text-sm); letter-spacing: var(--tracking-tight);
+  color: var(--text); border-bottom: 1px solid var(--border); overflow: hidden; white-space: nowrap;
+}
+.sidebar-brand .icon { color: var(--accent); }
+
+.sidebar-nav { flex: 1; overflow-y: auto; padding: var(--space-3) var(--space-2); display: flex; flex-direction: column; gap: 2px; }
+.sidebar-nav a {
+  display: flex; align-items: center; gap: var(--space-3);
+  padding: 8px var(--space-3); border-radius: var(--radius-sm);
+  color: var(--text-dim); font-size: var(--text-sm); font-weight: var(--weight-medium);
+  text-decoration: none; white-space: nowrap; overflow: hidden;
+  transition: background var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
+}
+.sidebar-nav a .icon { flex: none; }
+.sidebar-nav a:hover { background: var(--bg-hover); color: var(--text); }
+.sidebar-nav a.active { background: var(--accent-tint); color: var(--accent); }
+.app-shell.is-collapsed .sidebar-nav a span.label,
+.app-shell.is-collapsed .sidebar-brand span.label { display: none; }
+.app-shell.is-collapsed .sidebar-nav a { justify-content: center; }
+
+.sidebar-foot { border-top: 1px solid var(--border); padding: var(--space-2); flex: none; }
+
+/* ---------------------------------------------------------------- topbar */
+
+.topbar {
+  position: sticky; top: 0; z-index: var(--z-sticky);
+  display: flex; align-items: center; gap: var(--space-3);
+  height: var(--topbar-h); padding: 0 var(--space-4);
+  background: color-mix(in srgb, var(--bg-panel) 92%, transparent);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--border);
+}
+.topbar-status { display: flex; align-items: center; gap: var(--space-2); margin-right: auto; min-width: 0; }
+.topbar-status .state-label { font-size: var(--text-sm); font-weight: var(--weight-semibold); white-space: nowrap; }
+.topbar-status .uptime { font-size: var(--text-xs); color: var(--text-dim); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.topbar-actions { display: flex; align-items: center; gap: var(--space-2); flex: none; }
+.sidebar-toggle { display: none; }
+
+/* ---------------------------------------------------------------- page content */
+
+.app-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+main.page {
+  max-width: var(--content-max-w); width: 100%; margin: 0 auto;
+  padding: var(--space-6) var(--space-6) var(--space-16);
+}
+
+.section { margin-top: var(--space-6); }
+.section:first-child { margin-top: 0; }
+.section-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-3); }
+.section-head h2 { font-size: var(--text-md); }
+.section-head .hint { margin: 0; }
+
+/* ---------------------------------------------------------------- hero status panel */
+
+.hero {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); flex-wrap: wrap;
+  background: var(--bg-panel); border: 1px solid var(--border); border-radius: var(--radius-lg);
+  padding: var(--space-6); margin-bottom: var(--space-6); box-shadow: var(--shadow-sm);
+}
+.hero-state { display: flex; align-items: center; gap: var(--space-3); }
+.hero-state .dot-lg { width: 12px; height: 12px; border-radius: 50%; flex: none; }
+.hero-state .state-text { font-size: var(--text-xl); font-weight: var(--weight-semibold); letter-spacing: var(--tracking-tight); line-height: 1; }
+.state-LIVE .state-text { color: var(--live); }
+.state-STOPPED .state-text { color: var(--text-dim); }
+.state-ERROR .state-text { color: var(--live); }
+.state-STARTING .state-text { color: var(--warning); }
+.state-RECONNECTING .state-text { color: var(--warning); }
+.dot-LIVE { background: var(--live); animation: pulse-ring 1.8s var(--ease-out) infinite; }
+.dot-STOPPED { background: var(--text-faint); }
+.dot-ERROR { background: var(--live); }
+.dot-STARTING { background: var(--warning); animation: pulse 1.4s var(--ease-out) infinite; }
+/* Not pulse-ring here: that keyframe's ring color is hardcoded to
+   --live-tint (red), which would look wrong against an amber dot - the
+   plain opacity pulse (same as badge-activating elsewhere) stays
+   correctly amber. */
+.dot-RECONNECTING { background: var(--warning); animation: pulse 1.4s var(--ease-out) infinite; }
+
+.restart-rate-badge { margin-left: auto; }
+.restart-rate-badge.is-alarm .dot { animation: pulse 1s var(--ease-out) infinite; }
+.is-stale { opacity: 0.45; transition: opacity 0.3s var(--ease-out); }
+
+/* ---------------------------------------------------------------- responsive */
+
+.mobile-only { display: none; }
+.mobile-bar { display: none; }
+.sidebar-backdrop { display: none; }
+
+@media (max-width: 1023px) {
+  .sidebar {
+    position: fixed; left: 0; top: 0; transform: translateX(-100%);
+    box-shadow: var(--shadow-lg);
+  }
+  .app-shell.is-drawer-open .sidebar { transform: translateX(0); }
+  .app-shell.is-collapsed .sidebar { width: var(--sidebar-w); }
+  .app-shell.is-collapsed .sidebar-nav a span.label,
+  .app-shell.is-collapsed .sidebar-brand span.label { display: inline; }
+  .app-shell.is-collapsed .sidebar-nav a { justify-content: flex-start; }
+
+  .sidebar-backdrop {
+    display: block; position: fixed; inset: 0; background: rgba(8, 10, 14, 0.5);
+    z-index: calc(var(--z-sticky) - 1); opacity: 0; pointer-events: none;
+    transition: opacity var(--duration-base) var(--ease-out);
+  }
+  .app-shell.is-drawer-open .sidebar-backdrop { opacity: 1; pointer-events: auto; }
+
+  .sidebar-toggle { display: inline-flex; }
+  main.page { padding: var(--space-4) var(--space-4) calc(var(--space-16) + 64px); }
+
+  .mobile-bar {
+    display: flex; gap: var(--space-2); align-items: center;
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: var(--z-sticky);
+    padding: var(--space-3) var(--space-4) calc(var(--space-3) + env(safe-area-inset-bottom, 0px));
+    background: color-mix(in srgb, var(--bg-panel) 96%, transparent);
+    backdrop-filter: blur(8px);
+    border-top: 1px solid var(--border);
+  }
+  .mobile-bar .btn { flex: 1; height: 56px; font-size: var(--text-base); }
+  .mobile-bar .btn-icon { flex: 0 0 56px; width: 56px; }
+}
+
+@media (max-width: 767px) {
+  .hero { flex-direction: column; align-items: stretch; }
+  .hero .btn-row { width: 100%; }
+  .hero .btn-row .btn { flex: 1; }
+  .topbar-status .uptime { display: none; }
+  .form-grid, .grid { grid-template-columns: 1fr; }
+  .service-row { flex-wrap: wrap; }
+  .service-row .service-meta { margin-left: 0; order: 3; width: 100%; }
+}
+
+@media (min-width: 1440px) {
+  main.page { padding-left: var(--space-8); padding-right: var(--space-8); }
+}
+
+/* ---------------------------------------------------------------- remote-desktop overlay (Part 4) */
+
+.vnc-overlay { position: fixed; inset: 0; z-index: var(--z-modal); background: #000; display: flex; flex-direction: column; }
+.vnc-overlay[hidden] { display: none; }
+.vnc-overlay-bar {
+  display: flex; align-items: center; gap: var(--space-3);
+  padding: var(--space-2) var(--space-3) var(--space-2) var(--space-4);
+  background: var(--bg-panel); border-bottom: 1px solid var(--border);
+  padding-top: calc(var(--space-2) + env(safe-area-inset-top, 0px));
+}
+.vnc-overlay-title { display: inline-flex; align-items: center; gap: var(--space-2); font-weight: var(--weight-semibold); flex: 1; min-width: 0; }
+.vnc-overlay-screen { flex: 1; min-height: 0; }
+.vnc-overlay-screen > * { width: 100%; height: 100%; }

@@ -1,0 +1,22 @@
+/* /accounts - layout on top of rack.css modules; the .account-* card
+   styles themselves live in remote.css (shared, unchanged). */
+@media (min-width: 1024px) {
+  .ac-grid { grid-template-columns: minmax(0, 3fr) minmax(320px, 2fr); grid-template-areas: "list add" "list zoom"; align-items: start; }
+  .ac-list-card { grid-area: list; }
+  .ac-add-card { grid-area: add; }
+  .ac-zoom-card { grid-area: zoom; }
+}
+.account-card { padding: var(--space-4); border-radius: var(--radius-md); border: 1px solid var(--rm-edge); background: var(--bg-elevated); }
+.account-card[data-state="signed_in"] { border-color: rgba(52, 211, 153, 0.35); }
+.account-state[data-state="needs_reauth"] { background: var(--warning-tint); color: var(--warning); }
+.account-state[data-state="needs_reauth"] .dot { background: var(--warning); animation: pulse 1.2s var(--ease-out) infinite; }
+@media (prefers-reduced-motion: reduce) { .account-state[data-state="needs_reauth"] .dot { animation: none; } }
+.ac-more .menu { min-width: 220px; }
+.ac-danger { color: var(--live); }
+.ac-add-grid { display: grid; gap: var(--space-3); }
+.ac-add-option { padding: var(--space-3); border-radius: var(--radius-md); border: 1px solid var(--rm-edge); background: var(--bg-elevated); }
+.ac-add-title { display: flex; align-items: center; gap: var(--space-2); font-weight: var(--weight-semibold); }
+.ac-add-title .icon { color: var(--accent); }
+.ac-add-option .input-group .btn { flex: none; }
+.ac-zoom-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); min-height: 28px; }
+.signin-vnc { background: var(--rm-ink, #07090c); border-radius: var(--radius-md); overflow: hidden; }

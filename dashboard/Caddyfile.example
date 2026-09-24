@@ -1,0 +1,34 @@
+# OPTIONAL - not used in the SSH-tunnel-only setup. Only relevant if you
+# later get a domain and want public HTTPS instead of tunneling.
+#
+# What this changes if you switch to it:
+#   1. Run the dashboard on plain HTTP on loopback instead of terminating
+#      TLS itself: edit systemd/dashboard.service's ExecStart to drop
+#      --ssl-keyfile/--ssl-certfile and change --port to 8000.
+#   2. Set TRUST_FORWARDED_PROTO = True in app/config.py and redeploy -
+#      this makes the "Secure" cookie flag trust Caddy's X-Forwarded-Proto
+#      instead of assuming the app itself is doing TLS.
+#   3. Install Caddy (apt), put this file at /etc/caddy/Caddyfile, replace
+#      the domain below, `systemctl restart caddy`.
+#   4. Open the firewall: `ufw allow 443/tcp` and add an inbound rule for
+#      443 (and 80 for the ACME HTTP challenge) in the AWS Security Group.
+#      Do NOT do this without deciding you want the dashboard reachable
+#      from the public internet (still behind its own login + rate
+#      limiting + CSRF + lockout, but it's a bigger attack surface than
+#      SSH-tunnel-only).
+#
+# Caddy gets automatic Let's Encrypt TLS for the domain below and adds
+# the security headers on top of what the app already sends.
+
+your-dashboard-domain.example.com {
+	reverse_proxy 127.0.0.1:8000
+
+	header {
+		Strict-Transport-Security "max-age=63072000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+	}
+
+	encode gzip
+}

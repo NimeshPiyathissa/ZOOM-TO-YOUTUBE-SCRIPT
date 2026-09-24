@@ -1,0 +1,104 @@
+{% from "_macros.html" import icon %}
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>{% block title %}Zoom Stream Dashboard{% endblock %}</title>
+{% if csrf_token %}<meta name="csrf-token" content="{{ csrf_token }}">{% endif %}
+<link rel="stylesheet" href="/static/css/fonts.css">
+<link rel="stylesheet" href="/static/css/tokens.css">
+<link rel="stylesheet" href="/static/css/base.css">
+<link rel="stylesheet" href="/static/css/components.css">
+<link rel="stylesheet" href="/static/css/cards-3d.css">
+<link rel="stylesheet" href="/static/css/layout.css">
+<link rel="stylesheet" href="/static/css/passwall-glass.css">
+{% block extra_css %}{% endblock %}
+<link rel="icon" href="data:,">
+</head>
+<body>
+{% include "_icons.html" %}
+{% if username %}
+<div class="app-shell">
+  <div class="sidebar-backdrop"></div>
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      {{ icon("radio") | safe }}
+      <span class="label">Zoom&nbsp;Stream</span>
+    </div>
+    <nav class="sidebar-nav">
+      <a href="/" class="{{ 'active' if request.url.path == '/' }}">{{ icon("layout-dashboard") | safe }}<span class="label">Overview</span></a>
+      <a href="/studio" class="{{ 'active' if request.url.path == '/studio' }}">{{ icon("youtube") | safe }}<span class="label">Live Studio</span></a>
+      <a href="/overlay" class="{{ 'active' if request.url.path == '/overlay' }}">{{ icon("type") | safe }}<span class="label">Text Overlays</span></a>
+      <a href="/settings" class="{{ 'active' if request.url.path in ['/settings', '/config'] }}">{{ icon("settings") | safe }}<span class="label">Settings</span></a>
+      <a href="/controls" class="{{ 'active' if request.url.path == '/controls' }}">{{ icon("sliders-horizontal") | safe }}<span class="label">Controls</span></a>
+      <a href="/remote" class="{{ 'active' if request.url.path == '/remote' }}">{{ icon("cast") | safe }}<span class="label">Remote</span></a>
+      <a href="/zoom" class="{{ 'active' if request.url.path == '/zoom' }}">{{ icon("video") | safe }}<span class="label">Zoom</span></a>
+      <a href="/accounts" class="{{ 'active' if request.url.path == '/accounts' }}">{{ icon("user") | safe }}<span class="label">Accounts</span></a>
+      <a href="/logs" class="{{ 'active' if request.url.path == '/logs' }}">{{ icon("terminal") | safe }}<span class="label">Logs</span></a>
+      <a href="/vnc" class="{{ 'active' if request.url.path == '/vnc' }}">{{ icon("monitor") | safe }}<span class="label">Remote GUI</span></a>
+      <a href="/schedule" class="{{ 'active' if request.url.path == '/schedule' }}">{{ icon("calendar-clock") | safe }}<span class="label">Schedule</span></a>
+      <a href="/audit" class="{{ 'active' if request.url.path == '/audit' }}">{{ icon("list-checks") | safe }}<span class="label">Audit</span></a>
+    </nav>
+    <div class="sidebar-foot">
+      <button id="sidebar-collapse" class="btn btn-ghost btn-icon" aria-label="Collapse sidebar" data-tooltip="Collapse sidebar">
+        {{ icon("chevron-left") | safe }}
+      </button>
+    </div>
+  </aside>
+
+  <div class="app-main">
+    <div class="topbar">
+      <button id="sidebar-toggle" class="btn btn-ghost btn-icon sidebar-toggle" aria-label="Open navigation">{{ icon("menu") | safe }}</button>
+      <div class="topbar-status" id="topbar-status">
+        <span class="badge badge-inactive" id="topbar-state-badge"><span class="dot"></span>-</span>
+        <span class="uptime tnum" id="topbar-uptime"></span>
+      </div>
+      <div class="topbar-actions">
+        <button id="topbar-go-live" class="btn btn-primary btn-sm">{{ icon("play", "icon-sm") | safe }}Go Live</button>
+        <button id="topbar-stop" class="btn btn-danger btn-sm" hidden>{{ icon("square", "icon-sm") | safe }}Stop</button>
+        <button id="topbar-desktop" class="btn btn-ghost btn-icon" aria-label="Open remote desktop" data-tooltip="Remote desktop">{{ icon("monitor") | safe }}</button>
+        <button id="theme-toggle" class="btn btn-ghost btn-icon" aria-label="Toggle theme" data-tooltip="Toggle theme"></button>
+        <div class="menu-wrap">
+          <button class="btn btn-ghost btn-icon menu-trigger" aria-label="Account menu" data-tooltip="Account">{{ icon("user") | safe }}</button>
+          <div class="menu" role="menu" inert>
+            <div class="menu-item cursor-default" role="none">{{ icon("lock", "icon-sm") | safe }}{{ username }}</div>
+            <form method="post" action="/logout" class="m-0">
+              <button class="menu-item" type="submit" role="menuitem">{{ icon("log-out", "icon-sm") | safe }}Log out</button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+{% endif %}
+    <main class="{{ 'page' if username else '' }}">
+      {% block content %}{% endblock %}
+    </main>
+{% if username %}
+    <div class="mobile-bar" role="toolbar" aria-label="Program controls">
+      <button id="mobile-go-live" class="btn btn-primary">{{ icon("play", "icon-sm") | safe }}Go Live</button>
+      <button id="mobile-stop" class="btn btn-danger" hidden>{{ icon("square", "icon-sm") | safe }}Stop</button>
+      <button id="mobile-restart" class="btn btn-secondary btn-icon" aria-label="Restart encoder">{{ icon("rotate-cw") | safe }}</button>
+      <button id="mobile-desktop" class="btn btn-secondary btn-icon" aria-label="Open remote desktop">{{ icon("monitor") | safe }}</button>
+    </div>
+  </div>
+</div>
+<!-- Remote-desktop escape hatch: full-screen noVNC overlay, one tap from
+     anywhere (topbar / mobile bar). Connects only when opened. -->
+<div id="vnc-overlay" class="vnc-overlay" hidden role="dialog" aria-modal="true" aria-labelledby="vnc-overlay-title">
+  <div class="vnc-overlay-bar">
+    <span id="vnc-overlay-title" class="vnc-overlay-title">{{ icon("monitor", "icon-sm") | safe }}Remote desktop (:99)</span>
+    <span class="hint m-0" id="vnc-overlay-status">connecting…</span>
+    <button id="vnc-overlay-close" class="btn btn-secondary btn-touch" aria-label="Close remote desktop">{{ icon("x") | safe }}Close</button>
+  </div>
+  <div id="vnc-overlay-screen" class="vnc-overlay-screen"></div>
+</div>
+{% endif %}
+<div id="toasts"></div>
+<script src="/static/app.js"></script>
+{% block scripts %}{% endblock %}
+{% if username %}
+<script src="/static/js/base.js"></script>
+{% endif %}
+</body>
+</html>

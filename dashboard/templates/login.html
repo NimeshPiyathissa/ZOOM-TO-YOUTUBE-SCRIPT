@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon %}
+{% block title %}Log in - Zoom Stream Dashboard{% endblock %}
+{% block content %}
+<div class="login-wrap">
+  <div class="login-card">
+    <div class="login-brand">{{ icon("radio", "icon-lg") }}</div>
+    <h1>Zoom Stream Dashboard</h1>
+    {% if error %}<div class="error-box">{{ icon("alert-circle", "icon-sm") }} {{ error }}</div>{% endif %}
+    <form method="post" action="/login">
+      <div class="field">
+        <label class="label" for="username">Username</label>
+        <input class="input" id="username" name="username" autocomplete="username" required autofocus>
+      </div>
+      <div class="field">
+        <label class="label" for="password">Password</label>
+        <input class="input" id="password" name="password" type="password" autocomplete="current-password" required>
+      </div>
+      <button type="submit" class="btn btn-primary btn-lg w-full">Log in</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

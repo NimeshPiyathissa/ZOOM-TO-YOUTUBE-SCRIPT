@@ -1,0 +1,270 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon %}
+{% block title %}Configuration - Zoom Stream Dashboard{% endblock %}
+{% block content %}
+
+<div class="config-container">
+
+  <!-- ================================================================ Basic settings -->
+  <h2 class="floating-section-title">
+    {{ icon("sliders-horizontal", "icon-sm") }}Basic settings
+  </h2>
+
+  <!-- Zoom Account & Identity Card -->
+  <div class="card" id="zoom-account">
+    <div class="health-card-head mb-2">
+      <h3 class="glass-row-title">{{ icon("user", "icon-sm") }}Zoom Account &amp; Identity</h3>
+    </div>
+    <p class="hint mb-3">
+      Google Sign-In is completed by hand over Remote GUI - nothing here ever reads, stores, or logs a Google
+      password, 2FA code, or OAuth token.
+    </p>
+    <div class="secret-row mb-3">
+      {{ icon("at-sign") }}
+      <span class="hint m-0" id="zoom-account-status">
+        {% if zoom_account.confirmed_signed_in %}Signed in as <strong>{{ zoom_account.label }}</strong>{% else %}Signed out (guest join){% endif %}
+      </span>
+    </div>
+    <div class="btn-row mb-3">
+      <button id="btn-zoom-google-signin" class="btn btn-primary">{{ icon("log-in", "icon-sm") }}Sign in with Google&hellip;</button>
+      <a class="btn btn-secondary" href="/vnc">{{ icon("monitor", "icon-sm") }}Open Remote GUI</a>
+      <button id="btn-zoom-signout" class="btn btn-danger">{{ icon("log-out", "icon-sm") }}Sign out</button>
+    </div>
+    <div class="field max-w-sm" id="zoom-confirm-row" hidden>
+      <label class="label" for="zoom-account-label">Account label (what you'll see in dashboard)</label>
+      <div class="input-action-group">
+        <input class="input" id="zoom-account-label" placeholder="e.g. Work account (alice@example.com)">
+        <button id="btn-zoom-confirm" class="btn btn-primary">{{ icon("check", "icon-sm") }}Confirm signed in</button>
+      </div>
+      <span class="hint">Click this once the Google Sign-In flow in the browser is finished and Zoom is showing its home screen.</span>
+    </div>
+  </div>
+
+  <!-- Video Sources Card -->
+  <div class="section-head mt-4">
+    <h2 class="floating-section-title">
+      {{ icon("shuffle", "icon-sm") }}Video &amp; Stream Sources
+    </h2>
+  </div>
+
+  <div class="card">
+    {% if sources %}
+    <div class="table-wrap">
+      <table id="sources-table">
+        <thead><tr><th>Type</th><th>Name</th><th>URL</th><th></th></tr></thead>
+        <tbody>
+        {% for s in sources %}
+          <tr data-id="{{ s.id }}">
+            <td>{{ icon("video" if s.type == "zoom" else ("globe" if s.type == "webpage" else "cast"), "icon-sm") }}{{ s.type }}</td>
+            <td>{{ s.name }}{% if s.id == active_source_id %} <span class="badge badge-active">active</span>{% endif %}</td>
+            <td class="mono">{{ s.url }}</td>
+            <td class="actions-cell">
+              <button class="btn btn-ghost btn-icon btn-sm switch-source" data-id="{{ s.id }}" aria-label="Switch to {{ s.name }}" data-tooltip="Switch to this source">{{ icon("shuffle", "icon-sm") }}</button>
+              <button class="btn btn-ghost btn-icon btn-sm delete-source" data-id="{{ s.id }}" aria-label="Delete {{ s.name }}" data-tooltip="Delete">{{ icon("trash-2", "icon-sm") }}</button>
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty-state">{{ icon("link") }}<div class="empty-sub">No saved sources yet.</div></div>
+    {% endif %}
+
+    <h3 class="mt-4 mb-3">Add source</h3>
+    <div class="form-grid">
+      <div class="field"><label class="label">Name</label><input class="input" id="src-name"></div>
+      <div class="field">
+        <label class="label" for="src-url">URL</label>
+        <input class="input" id="src-url" placeholder="https://zoom.us/j/... or https://meet.google.com/... or https://example.com/stream.m3u8">
+        <div class="hint" id="src-detect"></div>
+      </div>
+    </div>
+    <div class="field">
+      <label class="label">Type</label>
+      <div class="segmented" id="src-type-group">
+        <button type="button" class="seg-btn" data-type="zoom">{{ icon("video", "icon-sm") }}Zoom meeting</button>
+        <button type="button" class="seg-btn" data-type="webpage">{{ icon("globe", "icon-sm") }}Web page</button>
+        <button type="button" class="seg-btn" data-type="direct">{{ icon("cast", "icon-sm") }}Direct media</button>
+      </div>
+    </div>
+
+    <div class="field max-w-sm" id="src-account-field">
+      <label class="label" for="src-account">Google account (Chrome profile) to play / join as</label>
+      <select id="src-account" class="input">
+        <option value="">Shared profile (no account)</option>
+        {% for a in accounts %}<option value="{{ a.id }}">{{ a.label }}{% if a.identity_masked %} - {{ a.identity_masked }}{% endif %} ({{ a.state }})</option>{% endfor %}
+      </select>
+      <div class="hint mt-1">Web pages play in that account's browser profile; Zoom's "Sign in with Google" opens in it too. Manage accounts on the <a href="/accounts">Accounts</a> page.</div>
+    </div>
+
+    <div id="src-fields-zoom" class="source-type-fields" hidden>
+      <div class="banner banner-info mb-3" id="src-zoom-kind" hidden><span id="src-zoom-kind-text"></span></div>
+      <div class="form-grid">
+        <div class="field"><label class="label">Passcode (fallback, only used if the link has no pwd=)</label><input class="input" id="src-zoom-passcode"></div>
+        <div class="field"><label class="label">Bot display name</label><input class="input" id="src-zoom-botname" value="Stream Bot" maxlength="64"></div>
+      </div>
+      <div class="field">
+        <label class="label">Sign-in</label>
+        <div class="segmented" id="src-zoom-signin-group">
+          {% for m in signin_modes %}<button type="button" class="seg-btn {{ 'is-active' if m == 'guest' }}" data-value="{{ m }}">{{ m }}</button>{% endfor %}
+        </div>
+        <div class="hint mt-1">"google" joins using whatever Zoom account is currently signed in on the bot - set that up below first.</div>
+      </div>
+    </div>
+
+    <div id="src-fields-webpage" class="source-type-fields" hidden>
+      <div class="form-grid">
+        <div class="field"><label class="label">Zoom level (0.5&ndash;2.0)</label><input class="input" id="src-webpage-zoom" type="number" min="0.5" max="2.0" step="0.05" value="1.0"></div>
+        <div class="field"><label class="label">Reload every N seconds (0 = never)</label><input class="input" id="src-webpage-reload" type="number" min="0" value="0"></div>
+      </div>
+      <div class="switch-row mb-2">
+        <span class="switch"><input type="checkbox" id="src-webpage-click"><span class="track"></span></span>
+        <div><div class="switch-label">Click on center of page after load</div><div class="hint">Helps with pages that require an initial tap to start playing video</div></div>
+      </div>
+      <div class="switch-row mb-2">
+        <span class="switch"><input type="checkbox" id="src-webpage-kiosk" checked><span class="track"></span></span>
+        <div><div class="switch-label">Hide headers and footers</div><div class="hint">Removes top bars, cookie banners, and navigation from common meeting tools</div></div>
+      </div>
+    </div>
+
+    <div id="src-fields-direct" class="source-type-fields" hidden>
+      <div class="switch-row mb-2">
+        <span class="switch"><input type="checkbox" id="src-direct-loop" checked><span class="track"></span></span>
+        <div><div class="switch-label">Loop</div><div class="hint">Restart from the beginning when the file ends (local MP4/MKV)</div></div>
+      </div>
+    </div>
+
+    <div class="btn-row mt-4">
+      <button id="btn-add-source" class="btn btn-primary">{{ icon("plus", "icon-sm") }}Add source</button>
+    </div>
+  </div>
+
+  <!-- YouTube Ingest & Secrets Card -->
+  <div class="section-head mt-4">
+    <h2 class="floating-section-title">
+      {{ icon("key-round", "icon-sm") }}YouTube Ingest &amp; Stream Keys
+    </h2>
+  </div>
+
+  <div class="card">
+    <div class="field max-w-lg">
+      <label class="label" for="cfg-yt-key">YouTube stream key</label>
+      <div class="input-action-group">
+        <input type="password" class="input readout" id="cfg-yt-key" placeholder="{{ yt_key_hint }}" autocomplete="off">
+        <button id="btn-reveal-yt" class="btn btn-secondary btn-icon" aria-label="Reveal or hide stream key" data-tooltip="Reveal stream key">{{ icon("eye") }}</button>
+      </div>
+      <span class="hint">Stored in /home/zoombot/zoom-stream/.env. Never shown in plain text unless revealed.</span>
+    </div>
+    <div class="field max-w-lg mt-3">
+      <label class="label" for="cfg-yt-url">RTMP ingest URL</label>
+      <input class="input readout" id="cfg-yt-url" value="{{ yt_url }}" readonly>
+      <span class="hint">Primary YouTube ingest endpoint.</span>
+    </div>
+    <div class="btn-row mt-3">
+      <button id="btn-save-secrets" class="btn btn-primary" disabled>{{ icon("check", "icon-sm") }}Save secrets</button>
+    </div>
+  </div>
+
+  <!-- Telegram Suite & Cloud Storage Card -->
+  <div class="section-head mt-4">
+    <h2 class="floating-section-title">
+      {{ icon("send", "icon-sm") }}Telegram Suite &amp; Cloud Storage
+    </h2>
+  </div>
+
+  <div class="card" id="telegram-suite-card">
+    <p class="hint mb-4">
+      Configure Telegram alerts, channel broadcasts, and high-speed MTProto Telethon cloud uploader (supporting up to 4GB files with Telegram Premium).
+    </p>
+
+    <h3 class="mb-3">Telegram Credentials &amp; Bot Setup</h3>
+    <div class="form-grid">
+      <div class="field">
+        <label class="label" for="cfg-tg-bot-token">Telegram Bot Token</label>
+        <div class="input-action-group">
+          <input type="password" class="input readout" id="cfg-tg-bot-token" placeholder="{{ telegram_cfg.telegram_bot_token or '123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ' }}" autocomplete="off">
+          <button type="button" class="btn btn-secondary btn-icon" id="btn-reveal-tg-token" aria-label="Reveal or hide Bot Token">{{ icon("eye") }}</button>
+        </div>
+        <span class="hint">Obtained from @BotFather. Used for instant alerts &amp; standard uploads.</span>
+      </div>
+
+      <div class="field">
+        <label class="label" for="cfg-tg-chat-id">Telegram Chat / Channel ID</label>
+        <input class="input" id="cfg-tg-chat-id" value="{{ telegram_cfg.telegram_chat_id }}" placeholder="-1001234567890 or @channelname">
+        <span class="hint">Target recipient for stream alerts and recording video uploads.</span>
+      </div>
+    </div>
+
+    <h3 class="mt-4 mb-3">Telethon 4GB Premium Client (MTProto)</h3>
+    <div class="form-grid">
+      <div class="field">
+        <label class="label" for="cfg-tg-api-id">Telegram API ID</label>
+        <input class="input" id="cfg-tg-api-id" value="{{ telegram_cfg.telegram_api_id }}" placeholder="e.g. 2938472">
+        <span class="hint">From my.telegram.org (API development tools).</span>
+      </div>
+
+      <div class="field">
+        <label class="label" for="cfg-tg-api-hash">Telegram API Hash</label>
+        <div class="input-action-group">
+          <input type="password" class="input readout" id="cfg-tg-api-hash" placeholder="{{ telegram_cfg.telegram_api_hash or '32-character hex hash' }}" autocomplete="off">
+          <button type="button" class="btn btn-secondary btn-icon" id="btn-reveal-tg-hash" aria-label="Reveal or hide API Hash">{{ icon("eye") }}</button>
+        </div>
+        <span class="hint">Secret API hash from my.telegram.org.</span>
+      </div>
+    </div>
+
+    <div class="field mt-3">
+      <label class="label" for="cfg-tg-session-string">Telegram Premium User Session String (For 4GB Uploads)</label>
+      <div class="input-action-group">
+        <input type="password" class="input readout" id="cfg-tg-session-string" placeholder="{{ telegram_cfg.telegram_session_string or '1ApWapzMBux... (Telethon StringSession)' }}" autocomplete="off">
+        <button type="button" class="btn btn-secondary btn-icon" id="btn-reveal-tg-session" aria-label="Reveal or hide Session String">{{ icon("eye") }}</button>
+      </div>
+      <span class="hint">Telethon StringSession string for a Telegram Premium account. Enables 4GB single-file uploads directly to Telegram.</span>
+    </div>
+
+    <h3 class="mt-4 mb-3">Action Toggles &amp; Storage Automation</h3>
+    <div class="switch-row mb-3">
+      <span class="switch"><input type="checkbox" id="cfg-tg-auto-upload" {{ 'checked' if telegram_cfg.telegram_auto_upload_recording }}><span class="track"></span></span>
+      <div>
+        <div class="switch-label">Auto-Upload Recording to Telegram (on Stop)</div>
+        <div class="hint">When local recording finishes, automatically stream-upload the MP4 to the configured Telegram destination.</div>
+      </div>
+    </div>
+
+    <div class="switch-row mb-3">
+      <span class="switch"><input type="checkbox" id="cfg-tg-delete-after" {{ 'checked' if telegram_cfg.telegram_delete_after_upload }}><span class="track"></span></span>
+      <div>
+        <div class="switch-label">Auto-Delete Local MP4 from VPS After Successful Upload</div>
+        <div class="hint">Verifies 100% upload completion, then immediately deletes local copy to conserve VPS SSD storage.</div>
+      </div>
+    </div>
+
+    <div class="switch-row mb-3">
+      <span class="switch"><input type="checkbox" id="cfg-tg-notify-events" {{ 'checked' if telegram_cfg.telegram_notify_stream_events }}><span class="track"></span></span>
+      <div>
+        <div class="switch-label">Notify Stream Lifecycle Events</div>
+        <div class="hint">Send instant notifications on YouTube Live start and stop events.</div>
+      </div>
+    </div>
+
+    <div class="switch-row mb-3">
+      <span class="switch"><input type="checkbox" id="cfg-tg-notify-errors" {{ 'checked' if telegram_cfg.telegram_notify_system_errors }}><span class="track"></span></span>
+      <div>
+        <div class="switch-label">Notify System &amp; Encoder Errors</div>
+        <div class="hint">Send immediate alerts if FFmpeg encounters dropped frames, crashes, or Zoom disconnects.</div>
+      </div>
+    </div>
+
+    <div class="btn-row mt-4">
+      <button id="btn-save-telegram" class="btn btn-primary">{{ icon("check", "icon-sm") }}Save Telegram Settings</button>
+      <button id="btn-test-telegram" class="btn btn-secondary">{{ icon("send", "icon-sm") }}Test Telegram Connection</button>
+      <button id="btn-clean-recordings" class="btn btn-secondary" title="Purge local MP4s to free VPS disk space">🧹 Clean Local Recordings Now</button>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="/static/js/config.js"></script>
+{% endblock %}

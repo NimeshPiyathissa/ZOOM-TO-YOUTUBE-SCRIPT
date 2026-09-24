@@ -1,0 +1,193 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon %}
+{% block title %}Remote GUI - Zoom Stream Dashboard{% endblock %}
+{% block extra_css %}
+<style>
+.vnc-container {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-top: 0;
+  width: 100%;
+}
+.vnc-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+.vnc-title-group {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.vnc-title-group h2 {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: var(--weight-bold);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.vnc-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+.vnc-viewport-card {
+  position: relative;
+  width: 100%;
+  height: calc(100vh - 210px);
+  min-height: 540px;
+  background: #090a0f;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  box-shadow: var(--shadow-sm);
+}
+.vnc-viewport-card.is-fullscreen {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 9999;
+  border-radius: 0;
+  border: none;
+}
+.vnc-screen-stage {
+  position: relative;
+  flex: 1 1 0;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.vnc-screen-stage > div {
+  width: 100% !important;
+  height: 100% !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  overflow: hidden !important;
+}
+.vnc-screen-stage canvas {
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.75);
+  outline: none;
+  cursor: default;
+}
+.vnc-status-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(9, 10, 15, 0.85);
+  backdrop-filter: blur(4px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  z-index: 10;
+  color: var(--text-base);
+}
+.vnc-status-overlay[hidden] {
+  display: none !important;
+}
+.vnc-status-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-6);
+  border-radius: var(--radius-lg);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  max-width: 380px;
+  text-align: center;
+  box-shadow: var(--shadow-lg);
+}
+.vnc-status-title {
+  font-size: var(--text-md);
+  font-weight: var(--weight-medium);
+}
+.vnc-status-desc {
+  font-size: var(--text-sm);
+  color: var(--text-dim);
+}
+.vnc-quick-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface-1);
+  border-top: 1px solid var(--border);
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  z-index: 5;
+}
+.vnc-quick-left, .vnc-quick-right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+</style>
+{% endblock %}
+{% block content %}
+<div class="vnc-container">
+  <div class="vnc-head">
+    <div class="vnc-title-group">
+      <h2>{{ icon("monitor", "icon-md") }}Remote GUI</h2>
+      <span class="program-id" aria-hidden="true">DISPLAY :99</span>
+      <span class="badge badge-inactive" id="vnc-badge"><span class="dot"></span><span id="vnc-badge-text">Connecting…</span></span>
+    </div>
+    <div class="vnc-toolbar">
+      <button id="vnc-btn-scale" class="btn btn-secondary btn-sm" aria-pressed="true" title="Toggle fit-to-window scaling">
+        {{ icon("maximize", "icon-sm") }}<span id="vnc-scale-text">Fit Window</span>
+      </button>
+      <button id="vnc-btn-reconnect" class="btn btn-secondary btn-sm" title="Reconnect VNC session">
+        {{ icon("rotate-cw", "icon-sm") }}Reconnect
+      </button>
+      <button id="vnc-btn-fullscreen" class="btn btn-secondary btn-sm btn-icon" aria-label="Toggle Fullscreen" title="Toggle Fullscreen">
+        {{ icon("maximize") }}
+      </button>
+    </div>
+  </div>
+  <p class="hint m-0">
+    Full interactive view and desktop control, securely proxied through this dashboard.
+  </p>
+
+  <div class="vnc-viewport-card" id="vnc-viewport">
+    <div id="vnc-screen" class="vnc-screen-stage"></div>
+
+    <div id="vnc-overlay-msg" class="vnc-status-overlay">
+      <div class="vnc-status-card">
+        <span class="spinner" id="vnc-spinner"></span>
+        <div class="vnc-status-title" id="vnc-overlay-text">Connecting to remote desktop…</div>
+        <div class="vnc-status-desc" id="vnc-overlay-sub">Connecting via secure WebSocket bridge to display :99</div>
+        <button id="vnc-overlay-btn" class="btn btn-primary btn-sm mt-2" hidden>{{ icon("rotate-cw", "icon-sm") }}Connect Now</button>
+      </div>
+    </div>
+
+    <div class="vnc-quick-bar">
+      <div class="vnc-quick-left">
+        <button class="btn btn-ghost btn-sm" id="vnc-q-zoom" title="Focus Zoom window">{{ icon("focus", "icon-sm") }}Focus Zoom</button>
+        <button class="btn btn-ghost btn-sm" id="vnc-q-browser" title="Open or focus Chrome browser">{{ icon("globe", "icon-sm") }}Browser</button>
+        <button class="btn btn-ghost btn-sm" id="vnc-q-cad" title="Send Ctrl+Alt+Del">{{ icon("keyboard", "icon-sm") }}Ctrl+Alt+Del</button>
+      </div>
+      <div class="vnc-quick-right">
+        <span class="hint m-0 tnum" id="vnc-rate-text">Interactive · 25 fps</span>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script type="application/json" id="vnc-config">{"password": {{ vnc_password | tojson }}}</script>
+<script type="module" src="/static/js/vnc.js"></script>
+{% endblock %}

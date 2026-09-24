@@ -1,0 +1,20 @@
+[Unit]
+Description=Create the zoom_out null sink used for capture
+After=pipewire-pulse.service wireplumber.service
+Requires=pipewire-pulse.service
+# Give up after 5 failures within 5 minutes - see ffmpeg-stream.service.
+# Previously this oneshot had no Restart= at all, so a failed run never
+# retried on its own; it only got another chance the next time something
+# happened to start it (e.g. a source switch).
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=%h/zoom-stream/scripts/audio-setup.sh
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

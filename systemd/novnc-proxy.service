@@ -1,0 +1,18 @@
+[Unit]
+Description=websockify bridge: 127.0.0.1:6080 (WS) -> 127.0.0.1:5900 (x11vnc)
+After=x11vnc.service
+Requires=x11vnc.service
+# Give up after 5 failures within 5 minutes - see ffmpeg-stream.service.
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+Nice=15
+CPUWeight=20
+ExecStart=/usr/bin/websockify 127.0.0.1:6080 127.0.0.1:5900
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
