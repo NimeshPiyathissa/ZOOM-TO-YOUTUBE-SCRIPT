@@ -170,8 +170,15 @@ VIDEO_BITRATE_RANGE_KBPS = (1000, 8000)
 AUDIO_BITRATE_RANGE_KBPS = (96, 320)
 
 # --- server ---
-BIND_HOST = "127.0.0.1"
-BIND_PORT = 8443
+# Bound to all interfaces on the standard HTTPS port, by design: this
+# dashboard is meant to be reached directly at https://<vps-ip> with no
+# SSH tunnel or port-forward. The actual bind flags live in
+# systemd/dashboard.service's ExecStart - these two constants are
+# documentation/reference, not something the app reads at startup.
+# Login is protected by TLS + the existing lockout-after-5-failures +
+# CSRF, not by network-level obscurity - see docs/security.md.
+BIND_HOST = "0.0.0.0"
+BIND_PORT = 443
 COOKIE_NAME = "zsdash_session"
 SESSION_IDLE_TIMEOUT_SECONDS = 12 * 3600
 SESSION_ABSOLUTE_TIMEOUT_SECONDS = 7 * 24 * 3600

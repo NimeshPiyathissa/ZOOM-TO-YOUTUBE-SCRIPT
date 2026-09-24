@@ -18,7 +18,9 @@
 #   3. A dedicated, lingering service user "zoombot" for the pipeline
 #   4. The official Zoom Linux client and Google Chrome
 #   5. Pipeline scripts + systemd --user units, deployed under zoombot
-#   6. Firewall locked to SSH only (VNC/dashboard stay loopback-only)
+#   6. Firewall: SSH + 443/tcp (dashboard is directly internet-facing by
+#      design, protected by TLS + account lockout, not by network
+#      obscurity - see docs/security.md; VNC itself stays loopback-only)
 #   7. Hands off to dashboard/install-dashboard.sh for the dashboard,
 #      the encrypted secret vault, and the final setup prompts (Part 3)
 #
@@ -220,10 +222,15 @@ for unit_file in "${SRC_DIR}"/systemd/*.service; do
 done
 echo "    Pipeline units installed and enabled (not started yet)."
 
-next_step "Locking down the firewall"
+next_step "Configuring the firewall"
 ufw allow OpenSSH >/dev/null
+ufw allow 443/tcp >/dev/null
 ufw --force enable
-echo "    ufw: only SSH is open. VNC and the dashboard stay loopback-only, reached via SSH tunnel."
+echo "    ufw: SSH and 443/tcp are open. The dashboard is reachable directly at https://<vps-ip>"
+echo "    (no SSH tunnel needed) - VNC itself still stays loopback-only, reached only through"
+echo "    the dashboard's own authenticated proxy. If this is a cloud VPS (AWS, etc.), you"
+echo "    likely also need to open 443/tcp in its Security Group / cloud firewall console -"
+echo "    ufw alone only controls the OS-level firewall, not your cloud provider's."
 
 next_step "Dashboard, encrypted vault, and setup"
 "${SRC_DIR}/dashboard/install-dashboard.sh" "${ACTION}"
@@ -231,5 +238,4 @@ next_step "Dashboard, encrypted vault, and setup"
 echo ""
 echo "Install complete. See the summary above for the dashboard URL and next steps."
 echo "The pipeline itself isn't started yet - connect over the dashboard's Remote GUI"
-echo "or an SSH-tunneled VNC client first (README's 'First-run: connect and verify'"
-echo "section) before ever clicking Go Live."
+echo "first (README's 'First-run: connect and verify' section) before ever clicking Go Live."

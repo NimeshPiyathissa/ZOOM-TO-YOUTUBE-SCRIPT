@@ -22,6 +22,12 @@ ZOOMBOT_HOME="/home/zoombot"
 STREAM_APP_DIR="${ZOOMBOT_HOME}/zoom-stream"
 ACTION="${1:-install}"
 
+# Detected once, used both for the TLS cert's SAN below and the final
+# summary panel. Provider-agnostic (works on any VPS, not just AWS) -
+# falls back to the private-network hostname if outbound internet isn't
+# available yet, so the cert still generates rather than failing setup.
+VPS_IP="$(curl -s --max-time 3 https://ifconfig.me || true)"
+
 if [[ $EUID -ne 0 ]]; then
   echo "Run this as root: sudo ./install-dashboard.sh" >&2
   exit 1
@@ -66,15 +72,24 @@ fi
 sudo -u "${DASH_USER}" "${DASH_HOME}/venv/bin/pip" install -q --upgrade pip
 sudo -u "${DASH_USER}" "${DASH_HOME}/venv/bin/pip" install -q -r "${APP_DIR}/requirements.txt"
 
-echo "==> [5/8] TLS certificate (self-signed, for the SSH-tunnel-only access path)"
+echo "==> [5/8] TLS certificate (self-signed - no domain means no free CA-issued cert is possible)"
 if [[ ! -f "${CERT_DIR}/cert.pem" ]]; then
+  SAN="DNS:localhost,IP:127.0.0.1"
+  CERT_CN="127.0.0.1"
+  if [[ -n "${VPS_IP}" ]]; then
+    SAN="${SAN},IP:${VPS_IP}"
+    CERT_CN="${VPS_IP}"
+  fi
   openssl req -x509 -newkey rsa:2048 -nodes \
     -keyout "${CERT_DIR}/key.pem" -out "${CERT_DIR}/cert.pem" \
-    -days 3650 -subj "/CN=127.0.0.1" \
-    -addext "subjectAltName=DNS:localhost,IP:127.0.0.1" 2>/dev/null
+    -days 3650 -subj "/CN=${CERT_CN}" \
+    -addext "subjectAltName=${SAN}" 2>/dev/null
   chown "${DASH_USER}:${DASH_USER}" "${CERT_DIR}"/*.pem
   chmod 600 "${CERT_DIR}/key.pem"
-  echo "    generated. Your browser will warn about it being self-signed the first time - that's expected for a loopback-only cert."
+  echo "    generated for ${CERT_CN} (SAN: ${SAN})."
+  echo "    Your browser will warn about it being self-signed the first time you connect -"
+  echo "    that's unavoidable without a real domain (Let's Encrypt can't issue for a bare IP)."
+  echo "    Accept it once; the cert's SAN matches your VPS's actual IP, so it's not a mismatch warning."
 else
   echo "    already present, skipping"
 fi
@@ -167,8 +182,6 @@ systemctl --no-pager --lines=5 status dashboard.service || true
 
 # ------------------------------------------------------ Part 3: setup flow
 
-VPS_IP="$(curl -s --max-time 3 https://ifconfig.me || true)"
-
 if [[ "${ACTION}" == "upgrade" ]]; then
   echo ""
   echo "Upgrade complete. The dashboard was restarted; the pipeline (Xvfb/Zoom/"
@@ -212,14 +225,20 @@ echo "============================================================"
 echo " Install complete"
 echo "============================================================"
 echo " Server IP        : ${VPS_IP:-<check your cloud provider dashboard>}"
-echo " Dashboard URL     : https://127.0.0.1:8443 (via the SSH tunnel below)"
+echo " Dashboard URL     : https://${VPS_IP:-<your-vps-ip>}  (no port, no SSH tunnel needed)"
 echo " Config location   : ${STREAM_APP_DIR}/.env (non-secret), ${DATA_DIR}/secrets.enc.json (vault)"
 echo " Log location       : ${STREAM_APP_DIR}/logs/"
-echo " Open ports (public): SSH only (ufw) - dashboard and VNC are loopback-only"
+echo " Open ports (public): SSH and 443/tcp (ufw) - dashboard login is directly internet-facing,"
+echo "                       protected by TLS + account lockout after 5 failed logins, not by"
+echo "                       network obscurity. VNC itself stays loopback-only either way -"
+echo "                       reached only through the dashboard's own authenticated proxy."
 echo ""
-echo " Connect from your own machine:"
-echo "   ssh -i \"<path to .pem>\" -N -L 8443:127.0.0.1:8443 ubuntu@${VPS_IP:-<VPS_IP>}"
-echo "   open https://127.0.0.1:8443  (accept the self-signed certificate warning once)"
+echo " If this is AWS/a cloud VPS: you likely also need to open 443/tcp in its"
+echo " Security Group / cloud firewall console - ufw alone isn't enough there."
+echo ""
+echo " Open https://${VPS_IP:-<your-vps-ip>} from any browser and accept the self-signed"
+echo " certificate warning once (unavoidable without a real domain - see docs/remote-access.md"
+echo " for the Caddy+domain option if you want a browser-trusted cert instead)."
 echo ""
 echo " Next steps: sign in to the dashboard, set a YouTube stream key, sign a Google"
 echo " account in via noVNC if needed, add a meeting, and read README.md's"

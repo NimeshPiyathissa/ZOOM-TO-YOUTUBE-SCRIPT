@@ -80,22 +80,24 @@ Non-interactive install (for automation): set `ZOOMBOT_MASTER_PASSWORD`,
 `ZOOMBOT_UNLOCK_MODE` in the environment before running `install.sh` — same
 validation rules, no defaults, nothing echoed.
 
-Then, from your own machine:
+Then, from any browser: open `https://<vps-ip>` and log in with the admin
+username/password you just set — **no SSH tunnel, no port-forward command,
+nothing to leave running**. Accept the one-time self-signed certificate warning
+(unavoidable without a real domain — Let's Encrypt can't issue a cert for a bare
+IP; see [docs/remote-access.md](docs/remote-access.md) if you want a
+browser-trusted cert via a domain + Caddy instead).
 
-```bash
-ssh -i "<path to your key>" -N -L 8443:127.0.0.1:8443 <ssh-user>@<vps-ip>
-```
-
-Open `https://127.0.0.1:8443` (accept the self-signed certificate warning once).
-See [docs/remote-access.md](docs/remote-access.md) for Tailscale/Caddy
-alternatives, especially for phone access.
+This means the login page is directly reachable from the internet, protected by
+TLS plus an account lockout after 5 failed attempts — not by network-level
+obscurity. See [docs/security.md](docs/security.md) if you'd rather go back to
+loopback-only + SSH tunnel (the more locked-down alternative, at the cost of the
+tunnel command this setup avoids by default).
 
 ### First run, before you ever go live
 
 1. Sign in to the dashboard, add a source (`/zoom` or `/config` → Sources).
-2. Connect over the dashboard's Remote GUI (or an SSH-tunneled VNC client) and
-   confirm the source actually looks right — meeting joined, mic/camera off,
-   window maximized.
+2. Connect over the dashboard's Remote GUI and confirm the source actually looks
+   right — meeting joined, mic/camera off, window maximized.
 3. Set your YouTube stream key (YouTube Studio → Go Live → Stream → **Unlisted**
    visibility, set *before* going live — 1080p30, Normal latency).
 4. Run a local test first: `scripts/test-recording.sh` records 60s to a local

@@ -2,10 +2,19 @@
 
 ## Network exposure
 
-`ufw` allows inbound SSH only. The dashboard (`127.0.0.1:8443`) and `x11vnc`
-(`127.0.0.1:5900`) are loopback-bound — neither is ever directly reachable without
-a tunnel. See [remote-access.md](remote-access.md) for SSH tunnel / Tailscale /
-Caddy options and their trade-offs.
+`ufw` allows inbound SSH and `443/tcp`. The dashboard listens on `0.0.0.0:443` by
+default — directly reachable at `https://<vps-ip>` from anywhere, by design (no
+SSH tunnel or port-forward command needed). **This is a deliberate trade-off**:
+the login page is reachable by internet scanners and bots, protected by TLS,
+CSRF, and an account lockout after 5 failed logins in 15 minutes — not by network
+obscurity. If you'd rather the login page weren't internet-reachable at all, the
+loopback-only + SSH-tunnel setup is still fully supported and is the more
+conservative option; see [remote-access.md](remote-access.md) for exactly how to
+switch, plus the Tailscale and Caddy+domain alternatives.
+
+`x11vnc` (`127.0.0.1:5900`) is loopback-bound regardless of which of the above
+you choose — it is never directly reachable; the dashboard's Remote GUI page
+proxies it through the same authenticated dashboard session instead.
 
 ## Secrets at rest
 
