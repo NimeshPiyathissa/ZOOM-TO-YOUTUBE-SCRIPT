@@ -132,6 +132,12 @@ _MIGRATIONS: list[tuple[str, str, str]] = [
     ("youtube_links", "options", "ALTER TABLE youtube_links ADD COLUMN options TEXT"),
     ("youtube_links", "last_played_at", "ALTER TABLE youtube_links ADD COLUMN last_played_at REAL"),
     ("youtube_links", "plays", "ALTER TABLE youtube_links ADD COLUMN plays INTEGER NOT NULL DEFAULT 0"),
+    # Accounts page: the identity a profile is *supposed* to hold, pinned
+    # from its own first successful verify (see accounts.py) so a later
+    # verify that comes back signed-in as someone else can be told apart
+    # from a genuinely verified session, instead of silently overwriting
+    # `email` and reading as fine either way.
+    ("accounts", "expected_email", "ALTER TABLE accounts ADD COLUMN expected_email TEXT"),
 ]
 
 

@@ -2,11 +2,36 @@
 
 What this stores: a label, the id of the zoombot-owned Chrome profile
 directory that backs the account, the email Google reported the last
-time we verified, and that verification result. What this NEVER stores,
-reads, or transmits: passwords, 2FA codes, OAuth tokens, cookies. Sign-in
-is done by a human over noVNC in an ordinary Chrome window; "verify"
-asks Google (with the profile's own cookies, inside zoombot's session)
-whether a session exists and records only the answer.
+time we verified, the email an account is *expected* to hold (pinned
+from its own first successful verify - see verify_account()), and that
+verification result. What this NEVER stores, reads, or transmits:
+passwords, 2FA codes, OAuth tokens, cookies. Sign-in is done by a human
+over noVNC in an ordinary Chrome window; "verify" asks Google (with the
+profile's own cookies, inside zoombot's session) whether a session
+exists and records only the answer.
+
+Why session verification, not OAuth: an OAuth flow run in an admin's own
+browser proves they own a Google account - it says nothing about
+whether *this specific Chrome profile on the VPS* (the one that
+actually plays age-restricted YouTube videos and backs Zoom's "Sign in
+with Google") has a live session. An OAuth-based badge could show green
+while the VPS profile is signed out - a false green, discovered only
+when a stream fails. See Part 4 (a separate, genuinely OAuth-shaped
+feature: the YouTube Data API) for where an application token actually
+belongs.
+
+verify_status (the badge-facing state, derived - never stored directly)
+is one of:
+  never          - no verification has ever succeeded
+  verified       - Google confirms an active session for the expected identity
+  wrong_account  - Google confirms an active session, but for a different email
+  signed_out     - Google redirected to its own sign-in page: no session
+  check_failed   - the check itself didn't reach a conclusion (network
+                   timeout, an unexpected page, a security challenge,
+                   the profile busy in another Chrome right now, etc.)
+This is intentionally never collapsed to a binary - "verified" and
+"the check failed to tell us anything" are very different situations
+for an operator about to go live.
 
 Everything that touches the profile directory runs as zoombot through
 scripts/chrome-account.sh (control.account_profile_action); the
@@ -27,6 +52,12 @@ class AccountError(Exception):
 
 _LABEL_RE = re.compile(r"^[^\r\n]{1,60}$")
 
+# A verified session older than this reads as stale (amber, "needs
+# re-authentication") even though the last check actually succeeded -
+# twice the scheduled background-verify interval (scheduler.py), so one
+# missed run doesn't immediately flip the badge, but two does.
+STALE_AFTER_SECONDS = 12 * 3600
+
 
 def mask_email(email: str | None) -> str | None:
     if not email or "@" not in email:
@@ -37,17 +68,49 @@ def mask_email(email: str | None) -> str | None:
     return f"{local[0]}•••{local[-1]}@{domain}"
 
 
+def _verify_status(state: str, email: str | None, expected_email: str | None) -> str:
+    if state == "signed_in":
+        if email and expected_email and email != expected_email:
+            return "wrong_account"
+        return "verified"
+    if state == "signed_out":
+        return "signed_out"
+    if state == "inconclusive":
+        return "check_failed"
+    return "never"
+
+
 def _row_view(r) -> dict:
-    # needs_reauth: an account that once had a session and no longer
-    # verifies - the "re-authenticate before it bites mid-stream" flag.
+    email = r["email"]
+    expected_email = r["expected_email"]
+    verify_status = _verify_status(r["state"], email, expected_email)
+    last_verified_at = r["last_verified_at"]
+    is_stale = bool(last_verified_at) and (time.time() - last_verified_at) > STALE_AFTER_SECONDS
+    # badge_state: verify_status, except a verified-but-stale session
+    # gets its own value - the one thing the template/JS actually key
+    # their icon/colour off, so "why is this amber" always has exactly
+    # one answer instead of two fields to cross-reference.
+    badge_state = "stale" if (verify_status == "verified" and is_stale) else verify_status
     return {
         "id": r["id"],
         "label": r["label"],
         "profile_id": r["profile_id"],
-        "identity_masked": mask_email(r["email"]),
+        "identity_masked": mask_email(email),
+        "expected_identity_masked": mask_email(expected_email),
         "state": r["state"],
-        "needs_reauth": bool(r["email"]) and r["state"] in ("signed_out", "inconclusive"),
-        "last_verified_at": r["last_verified_at"],
+        "verify_status": verify_status,
+        "badge_state": badge_state,
+        # verified: safe to select as a source's playback identity right
+        # now. Deliberately NOT staleness-gated - a stale-but-verified
+        # session is still the last known-good answer, just due for a
+        # recheck; only an outcome that actively contradicts it
+        # (wrong_account/signed_out/check_failed) should block use.
+        "verified": verify_status == "verified",
+        "is_stale": is_stale,
+        # needs_reauth: anything that should show the amber/red
+        # "re-authenticate before it bites mid-stream" treatment.
+        "needs_reauth": verify_status in ("wrong_account", "signed_out", "check_failed") or (verify_status == "verified" and is_stale),
+        "last_verified_at": last_verified_at,
         "last_result": r["last_result"],
         "created_at": r["created_at"],
     }
@@ -139,13 +202,18 @@ def import_stream_profile(label: str) -> int:
 
 def sign_out(account_id: int) -> None:
     """Forget the session: the profile becomes fresh and empty. The label
-    and last-known (masked) email stay so the card can say who it was."""
+    and last-known (masked) email stay so the card can say who it was.
+    expected_email is cleared, not kept: a deliberate sign-out is "start
+    over" for this slot, so whichever Google account signs in next -
+    even a different one - gets treated as correct and re-pinned on its
+    own first successful verify, rather than immediately reading as
+    wrong_account against the identity that was just signed out of."""
     acct = get_account(account_id)
     if not acct:
         raise AccountError("account not found")
     control.account_profile_action("signout", acct["profile_id"])
     with db.get_conn() as conn:
-        conn.execute("UPDATE accounts SET state=?, last_verified_at=?, last_result=? WHERE id=?",
+        conn.execute("UPDATE accounts SET state=?, expected_email=NULL, last_verified_at=?, last_result=? WHERE id=?",
                      ("signed_out", time.time(), "Signed out - the profile was cleared", account_id))
 
 
@@ -231,7 +299,11 @@ def _verify_via_running_kiosk(profile_id: str) -> dict | None:
 def verify_all(reason: str = "scheduled") -> list[dict]:
     """Background pass over every account that has ever had a session.
     Skips one whose sign-in window is open. Flags a lost session in the
-    audit log so the operator sees it before a stream needs it."""
+    audit log so the operator sees it before a stream needs it - keyed
+    off verify_status, not the raw signed_in/signed_out state, because a
+    wrong_account result still reports state=signed_in (Google really
+    does have an active session - just not the right one) and would
+    otherwise never trigger this alert."""
     out = []
     for a in list_accounts():
         if a["state"] == "never" and not a["identity_masked"]:
@@ -240,11 +312,11 @@ def verify_all(reason: str = "scheduled") -> list[dict]:
             st = signin_status(a["id"])
             if st.get("signin_open"):
                 continue
-            before = a["state"]
+            before = a["verify_status"]
             r = verify_account(a["id"])
-            out.append({"id": a["id"], "label": a["label"], "state": r["state"]})
-            if before == "signed_in" and r["state"] != "signed_in":
-                db.audit(None, "account_session_lost", f"{a['id']}:{a['label']} -> {r['state']} ({reason})")
+            out.append({"id": a["id"], "label": a["label"], "state": r["state"], "verify_status": r["verify_status"]})
+            if before == "verified" and r["verify_status"] != "verified":
+                db.audit(None, "account_session_lost", f"{a['id']}:{a['label']} -> {r['verify_status']} ({reason})")
         except (AccountError, control.ControlError) as exc:
             out.append({"id": a["id"], "label": a["label"], "error": str(exc)[:120]})
     return out
@@ -252,10 +324,15 @@ def verify_all(reason: str = "scheduled") -> list[dict]:
 
 def verify_account(account_id: int) -> dict:
     """Closes any open sign-in window first (so cookies are flushed),
-    then asks Google. Records exactly what came back."""
-    acct = get_account(account_id)
-    if not acct:
+    then asks Google. Records exactly what came back, and - on the
+    first ever signed-in result for this account - pins that identity
+    as expected_email so a later session for a *different* Google
+    account reads as wrong_account instead of silently overwriting it."""
+    with db.get_conn() as conn:
+        row = conn.execute("SELECT * FROM accounts WHERE id=?", (account_id,)).fetchone()
+    if not row:
         raise AccountError("account not found")
+    acct = _row_view(row)
     control.account_profile_action("close", acct["profile_id"])
     raw = control.account_profile_action("verify", acct["profile_id"], timeout=60)
     try:
@@ -269,28 +346,41 @@ def verify_account(account_id: int) -> dict:
         kiosk = _verify_via_running_kiosk(acct["profile_id"])
         if kiosk:
             result = kiosk
-        elif acct.get("state") == "signed_in":
-            # Profile is actively in use by a running source (e.g. Zoom, YouTube kiosk).
-            # Do not demote an active session to inconclusive while in use.
+        elif row["state"] == "signed_in":
+            # Profile is actively in use by a running source (e.g. Zoom,
+            # YouTube kiosk). Do not demote an active session to
+            # inconclusive while in use - re-assert the raw stored email
+            # (not the masked view) so the wrong_account comparison
+            # below still has something real to compare.
             result = {
                 "status": "signed_in",
-                "email": acct.get("email"),
+                "email": row["email"],
                 "via": "running source (profile in use)",
             }
-        else:
-            result = result
     status = result.get("status", "inconclusive")
     if status not in ("signed_in", "signed_out", "inconclusive"):
         status = "inconclusive"
     email = result.get("email") if status == "signed_in" else None
     reason = result.get("reason", "")
     now = time.time()
+    expected_email = row["expected_email"]
+    verify_status = _verify_status(status, email, expected_email)
     with db.get_conn() as conn:
         if status == "signed_in":
+            # First-ever signed-in result for this account pins the
+            # identity; afterwards expected_email only ever changes via
+            # an explicit sign_out() (a deliberate "start over").
+            new_expected = expected_email or email
+            if verify_status == "wrong_account":
+                msg = "Signed in as a different account than expected (see the card for both)"
+            elif result.get("via"):
+                msg = "Google confirmed an active session via the " + result["via"]
+            else:
+                msg = "Google confirmed an active session"
             if email:
                 conn.execute(
-                    "UPDATE accounts SET state=?, email=?, last_verified_at=?, last_result=? WHERE id=?",
-                    (status, email, now, "Google confirmed an active session" + (" via the " + result["via"] if result.get("via") else ""), account_id),
+                    "UPDATE accounts SET state=?, email=?, expected_email=?, last_verified_at=?, last_result=? WHERE id=?",
+                    (status, email, new_expected, now, msg, account_id),
                 )
             else:
                 conn.execute(
@@ -298,13 +388,19 @@ def verify_account(account_id: int) -> dict:
                     (status, now, "Session confirmed via the " + (result.get("via") or "browser"), account_id),
                 )
         else:
-            # Keep the previously-known email (still useful as a label)
-            # but the state is now whatever Google actually said.
+            # Keep the previously-known email/expected_email (still
+            # useful as labels) - only the state changes to whatever
+            # Google actually said.
             conn.execute(
                 "UPDATE accounts SET state=?, last_verified_at=?, last_result=? WHERE id=?",
                 (status, now, reason or ("No active Google session" if status == "signed_out" else ""), account_id),
             )
-    if not email and status == "signed_in":
-        email = (get_account(account_id) or {}).get("identity_masked")
-        return {"state": status, "identity_masked": email, "reason": reason}
-    return {"state": status, "identity_masked": mask_email(email) if email else None, "reason": reason}
+    final = get_account(account_id)
+    return {
+        "state": status,
+        "verify_status": final["verify_status"],
+        "badge_state": final["badge_state"],
+        "identity_masked": final["identity_masked"],
+        "expected_identity_masked": final["expected_identity_masked"],
+        "reason": reason,
+    }
