@@ -148,8 +148,8 @@
         <label class="yt-playas" for="ctx-account">{{ icon("user", "icon-sm") }}<span>Play as</span>
           <select id="ctx-account" class="input input-sm">
             <option value="">Shared stream profile</option>
-            {% set signed = accounts | selectattr("state", "equalto", "signed_in") | list %}
-            {% for a in accounts %}<option value="{{ a.id }}" {% if a.state != "signed_in" %}disabled{% endif %}>{{ a.label }}{% if a.identity_masked %} · {{ a.identity_masked }}{% endif %} · {{ "signed in" if a.state == "signed_in" else ("needs re-authentication" if a.needs_reauth else "not signed in") }}</option>{% endfor %}
+            {% set signed = accounts | selectattr("verified") | list %}
+            {% for a in accounts %}<option value="{{ a.id }}" {% if not a.verified %}disabled{% endif %}>{{ a.label }}{% if a.identity_masked %} · {{ a.identity_masked }}{% endif %} · {{ "signed in" if a.verified else ("wrong account" if a.verify_status == "wrong_account" else ("needs re-authentication" if a.needs_reauth else "not signed in")) }}</option>{% endfor %}
             {% if not signed %}<option value="" disabled>No signed-in account yet - sign in on the Accounts page</option>{% endif %}
           </select>
         </label>

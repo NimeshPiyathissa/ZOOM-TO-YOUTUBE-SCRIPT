@@ -173,8 +173,8 @@
           </div>
           <select id="zm-account" class="input" hidden aria-label="Google account">
             <option value="">Choose an account…</option>
-{% set signed = accounts | selectattr("state", "equalto", "signed_in") | list %}
-            {% for a in accounts %}<option value="{{ a.id }}" {% if a.state == "never" and not a.identity_masked %}disabled{% endif %}>{{ a.label }}{% if a.identity_masked %} · {{ a.identity_masked }}{% endif %} · {{ "signed in" if a.state == "signed_in" else ("needs re-authentication" if a.needs_reauth else a.state) }}</option>{% endfor %}
+{% set signed = accounts | selectattr("verified") | list %}
+            {% for a in accounts %}<option value="{{ a.id }}" {% if a.state == "never" and not a.identity_masked %}disabled{% endif %}>{{ a.label }}{% if a.identity_masked %} · {{ a.identity_masked }}{% endif %} · {{ "signed in" if a.verified else ("wrong account" if a.verify_status == "wrong_account" else ("needs re-authentication" if a.needs_reauth else a.state)) }}</option>{% endfor %}
             {% if not signed and not accounts %}<option value="" disabled>No signed-in account yet - sign in on the Accounts page</option>{% endif %}
           </select>
           <a href="/accounts" class="hint m-0" id="zm-account-hint" hidden>{{ "Manage or add accounts on the Accounts page" if (signed or accounts) else "No signed-in account yet - sign in on the Accounts page first" }}</a>
