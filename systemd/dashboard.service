@@ -18,7 +18,20 @@ ExecStart=/home/dashboard/venv/bin/uvicorn app.main:app \
 # boundary for everything this service touches is still the sudoers
 # allowlist below, same as before this changed).
 AmbientCapabilities=CAP_NET_BIND_SERVICE
-CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+# CapabilityBoundingSet caps what this process AND anything it execs
+# can ever hold, even via a setuid-root binary. Every control.py action
+# goes through `sudo -u zoombot <allowlisted command>` - sudo itself is
+# setuid-root and needs CAP_SETUID/CAP_SETGID to actually switch to
+# zoombot, but the kernel enforces the bounding set as a hard ceiling
+# regardless of sudo's own setuid bit. Restricting the set to just
+# CAP_NET_BIND_SERVICE (added for the port-443 bind above) silently
+# broke sudo's own privilege transition for every single dashboard
+# action that shells out - "sudo: unable to change to root gid:
+# Operation not permitted" is sudo failing that setgid() call. Add the
+# two capabilities sudo needs to do its job; still far short of an
+# unrestricted bounding set, and the sudoers allowlist stays the real
+# privilege boundary either way.
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE CAP_SETUID CAP_SETGID
 Restart=always
 RestartSec=5
 # Lower scheduling priority than the encoder (ffmpeg-stream runs at
