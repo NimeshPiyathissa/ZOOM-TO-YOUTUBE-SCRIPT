@@ -1,22 +1,117 @@
-/* /accounts - layout on top of rack.css modules; the .account-* card
-   styles themselves live in remote.css (shared, unchanged). */
+/* /accounts - layout on top of rack.css modules. Account cards get the
+   same liquid-glass treatment as the nav (see layout.css's --glass-*
+   tokens): translucency, hairline border, layered shadow, with the
+   accent colour reserved for the verified state only, per state colour
+   otherwise. Animations here are transform/opacity or background/color
+   only, 150-250ms, and respect prefers-reduced-motion throughout. */
+
 @media (min-width: 1024px) {
   .ac-grid { grid-template-columns: minmax(0, 3fr) minmax(320px, 2fr); grid-template-areas: "list add" "list zoom"; align-items: start; }
   .ac-list-card { grid-area: list; }
   .ac-add-card { grid-area: add; }
   .ac-zoom-card { grid-area: zoom; }
 }
-.account-card { padding: var(--space-4); border-radius: var(--radius-md); border: 1px solid var(--rm-edge); background: var(--bg-elevated); }
-.account-card[data-state="signed_in"] { border-color: rgba(52, 211, 153, 0.35); }
-.account-state[data-state="needs_reauth"] { background: var(--warning-tint); color: var(--warning); }
-.account-state[data-state="needs_reauth"] .dot { background: var(--warning); animation: pulse 1.2s var(--ease-out) infinite; }
-@media (prefers-reduced-motion: reduce) { .account-state[data-state="needs_reauth"] .dot { animation: none; } }
+
+.account-list { display: flex; flex-direction: column; gap: var(--space-3); }
+
+.account-card {
+  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--glass-border);
+  background: var(--glass-tint);
+  box-shadow: var(--glass-shadow);
+  transition: border-color var(--duration-fast) var(--ease-out), box-shadow var(--duration-fast) var(--ease-out);
+}
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  .account-card { backdrop-filter: blur(12px) saturate(150%); -webkit-backdrop-filter: blur(12px) saturate(150%); }
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .account-card { background: var(--bg-elevated); }
+}
+/* Accent border is reserved for "verified" - every other state uses its
+   badge colour for the small icon/text pairing only, not the whole
+   card, so a red/amber card border never competes with the one genuine
+   "good to go" signal on the page. */
+.account-card[data-state="verified"] { border-color: rgba(52, 211, 153, 0.35); }
+
+.account-card-main { display: flex; flex-direction: column; gap: var(--space-1); }
+.account-card-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; }
+.account-label { font-weight: var(--weight-semibold); }
+
+/* ---------------------------------------------------------------- state badge:
+   colour is never the only signal - icon + text always ride along. */
+.account-state { display: inline-flex; align-items: center; gap: 6px; }
+.account-state-icon { width: 14px; height: 14px; flex: none; }
+
+.account-state[data-state="never"] { background: var(--bg-hover); color: var(--text-faint); }
+.account-state[data-state="verified"] { background: var(--success-tint); color: var(--success); }
+.account-state[data-state="stale"],
+.account-state[data-state="check_failed"] { background: var(--warning-tint); color: var(--warning); }
+.account-state[data-state="wrong_account"],
+.account-state[data-state="signed_out"] { background: var(--live-tint); color: var(--live); }
+.account-state[data-state="checking"] { background: var(--bg-hover); color: var(--text-dim); }
+.account-state[data-state="checking"] .account-state-icon {
+  animation: account-spin 900ms linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .account-state[data-state="checking"] .account-state-icon { animation: account-pulse-opacity 1200ms ease-in-out infinite; }
+}
+@keyframes account-spin { to { transform: rotate(360deg); } }
+@keyframes account-pulse-opacity { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+/* Identity line: the wrong_account case shows both masked emails - kept
+   on one flex line, wrapping rather than truncating, so neither is cut
+   off (no layout shift when a verify result lands: this element's
+   height already accommodates two lines via normal wrapping). */
+.account-identity { display: block; }
+.account-identity[data-wrong="1"] { color: var(--live); }
+.account-identity[data-wrong="1"] strong { color: var(--text); font-weight: var(--weight-semibold); }
+
+.account-meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-3); }
+.account-result { min-height: 1.2em; }
+
+.account-card-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-3); }
+/* Touch targets: .btn-touch already sets --btn-h:56px (components.css),
+   but passwall-glass.css force-overrides every .btn-touch on the whole
+   app to min-height:40px via !important. Restoring the real 56px here,
+   scoped to this page's own action rows only - no other page's buttons
+   are touched by this rule. */
+.account-card-actions .btn-touch,
+.ac-add-option .btn-touch,
+.signin-steps ~ .btn-row .btn-touch {
+  min-height: 56px !important;
+  height: var(--btn-h, 56px) !important;
+}
+
 .ac-more .menu { min-width: 220px; }
 .ac-danger { color: var(--live); }
+
 .ac-add-grid { display: grid; gap: var(--space-3); }
-.ac-add-option { padding: var(--space-3); border-radius: var(--radius-md); border: 1px solid var(--rm-edge); background: var(--bg-elevated); }
+.ac-add-option {
+  padding: var(--space-3); border-radius: var(--radius-md);
+  border: 1px solid var(--glass-border); background: var(--glass-tint); box-shadow: var(--glass-shadow);
+}
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  .ac-add-option { backdrop-filter: blur(12px) saturate(150%); -webkit-backdrop-filter: blur(12px) saturate(150%); }
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .ac-add-option { background: var(--bg-elevated); }
+}
 .ac-add-title { display: flex; align-items: center; gap: var(--space-2); font-weight: var(--weight-semibold); }
 .ac-add-title .icon { color: var(--accent); }
 .ac-add-option .input-group .btn { flex: none; }
+
 .ac-zoom-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); min-height: 28px; }
 .signin-vnc { background: var(--rm-ink, #07090c); border-radius: var(--radius-md); overflow: hidden; }
+
+/* ---------------------------------------------------------------- mobile */
+@media (max-width: 767px) {
+  .account-card-head { flex-direction: column; align-items: flex-start; }
+  /* Stacked, full-width action buttons rather than a wrapped row of
+     narrow ones - each stays comfortably thumb-sized with no horizontal
+     scroll, and the primary action (Sign in / Re-authenticate) leads. */
+  .account-card-actions { flex-direction: column; align-items: stretch; }
+  .account-card-actions .btn { width: 100%; }
+  .account-card-actions .ac-more { align-self: stretch; }
+  .account-card-actions .ac-more .btn { width: 100%; }
+}

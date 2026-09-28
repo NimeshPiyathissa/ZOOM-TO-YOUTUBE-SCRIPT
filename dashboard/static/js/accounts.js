@@ -6,7 +6,13 @@
 // streaming user, on the VPS) and then verifies it the same way.
 import { connectVnc } from '/static/js/vnc-embed.js';
 
-const STATE_LABEL = { never: "Never signed in", signed_in: "Signed in", signed_out: "Signed out", inconclusive: "Couldn't verify", needs_reauth: "Needs re-authentication" };
+// Mirrors the BADGE_ICON/BADGE_TEXT maps in templates/accounts.html -
+// keep both in sync when adding a state. badge_state is verify_status
+// (never/verified/wrong_account/signed_out/check_failed) with one extra
+// value, "stale", for a verified-but-overdue-for-recheck session - see
+// accounts.py's _row_view for why that's collapsed into one field.
+const BADGE_ICON = { never: "circle-help", verified: "circle-check", stale: "alert-triangle", wrong_account: "circle-slash", signed_out: "user-x", check_failed: "alert-circle", checking: "loader-circle" };
+const BADGE_TEXT = { never: "Never verified", verified: "Verified", stale: "Needs re-authentication", wrong_account: "Wrong account", signed_out: "Signed out", check_failed: "Couldn't verify", checking: "Checking…" };
 const $ = (id) => document.getElementById(id);
 const post = (url, body) => apiFetch(url, { method: "POST", body: body ? JSON.stringify(body) : undefined });
 
@@ -16,26 +22,48 @@ function fmtVerified(ts) {
   return "verified " + (ago < 60 ? "just now" : ago < 3600 ? `${Math.floor(ago / 60)} min ago` : ago < 86400 ? `${Math.floor(ago / 3600)} h ago` : `${Math.floor(ago / 86400)} d ago`);
 }
 
+function setBadge(card, badgeState) {
+  const badge = card.querySelector(".account-state");
+  badge.dataset.state = badgeState;
+  badge.querySelector(".account-state-text").textContent = BADGE_TEXT[badgeState] || badgeState;
+  badge.querySelector(".account-state-icon use").setAttribute("href", `#i-${BADGE_ICON[badgeState] || "circle-help"}`);
+}
+
+// The transient client-only "checking" state (never persisted - the
+// server has no such status) while a Verify now click is in flight.
+function setChecking(card, on) {
+  if (on) { card.dataset.checking = "1"; setBadge(card, "checking"); }
+  else delete card.dataset.checking;
+}
+
 function paintCard(card, a) {
   if (a.label != null) { card.dataset.label = a.label; card.querySelector(".account-label").textContent = a.label; }
-  if (a.state) {
-    const key = a.needs_reauth ? "needs_reauth" : a.state;
-    const badge = card.querySelector(".account-state");
-    badge.dataset.state = key; card.dataset.state = a.state;
-    badge.querySelector(".account-state-text").textContent = STATE_LABEL[key] || a.state;
-    card.querySelector(".act-signin span").textContent = (key === "needs_reauth" || a.state === "signed_out" || a.state === "inconclusive") ? "Re-authenticate" : "Sign in";
+  if (a.badge_state) {
+    setBadge(card, a.badge_state);
+    card.dataset.state = a.verify_status || a.badge_state;
+    card.querySelector(".act-signin span").textContent = a.needs_reauth ? "Re-authenticate" : "Sign in";
   }
-  if (a.identity_masked !== undefined) card.querySelector(".account-identity").textContent = a.identity_masked || "identity unknown";
+  const identityEl = card.querySelector(".account-identity");
+  if (a.verify_status === "wrong_account" && a.identity_masked && a.expected_identity_masked) {
+    identityEl.innerHTML = "";
+    identityEl.dataset.wrong = "1";
+    identityEl.append("Signed in as ");
+    const gotEl = document.createElement("strong"); gotEl.textContent = a.identity_masked; identityEl.append(gotEl);
+    identityEl.append(" - expected ");
+    const wantEl = document.createElement("strong"); wantEl.textContent = a.expected_identity_masked; identityEl.append(wantEl);
+  } else if (a.identity_masked !== undefined) {
+    delete identityEl.dataset.wrong;
+    identityEl.textContent = a.identity_masked || "identity unknown";
+  }
   if (a.last_verified_at !== undefined) { const el = card.querySelector(".account-verified"); el.dataset.ts = a.last_verified_at || ""; el.textContent = fmtVerified(a.last_verified_at); }
   if (a.last_result !== undefined) card.querySelector(".account-result").textContent = a.last_result || "";
 }
 
-document.querySelectorAll(".account-card").forEach((card) => {
-  const badge = card.querySelector(".account-state");
-  badge.querySelector(".account-state-text").textContent = STATE_LABEL[badge.dataset.state] || badge.dataset.state;
-  const v = card.querySelector(".account-verified");
-  v.textContent = fmtVerified(v.dataset.ts);
-});
+// Badge icon/text are already correct from the server render (Jinja
+// uses the same BADGE_ICON/BADGE_TEXT maps) - only the relative
+// "verified N ago" time needs JS, since it depends on the viewer's
+// clock at load time, not the server's render time.
+document.querySelectorAll(".account-verified").forEach((v) => { v.textContent = fmtVerified(v.dataset.ts); });
 
 async function refreshCard(card) {
   const list = await apiFetch("/api/accounts");
@@ -61,7 +89,9 @@ $("account-import").addEventListener("click", async (e) => {
     try {
       const r = await post("/api/accounts/import", { label });
       const v = r.verify || {};
-      toast(v.state === "signed_in" ? `Imported - Google confirms ${v.identity_masked || "a session"}` : `Imported, but Google reports: ${v.state === "signed_out" ? "no session in the stream profile" : (v.reason || "couldn't verify")}`, v.state === "signed_in" ? "ok" : "err");
+      const msg = v.verify_status === "verified" ? `Imported - Google confirms ${v.identity_masked || "a session"}`
+        : `Imported, but Google reports: ${v.verify_status === "signed_out" ? "no session in the stream profile" : (v.reason || "couldn't verify")}`;
+      toast(msg, v.verify_status === "verified" ? "ok" : "err");
       setTimeout(() => location.reload(), 900);
     } catch (err) { toast(err.message, "err"); }
   });
@@ -116,7 +146,10 @@ $("account-list").addEventListener("click", async (e) => {
       try {
         const r = await post(`/api/accounts/${id}/restore`, { name: newest.name });
         await refreshCard(card);
-        toast(r.state === "signed_in" ? `Restored - Google confirms ${r.identity_masked || "a session"}` : `Restored, but Google reports ${r.state === "signed_out" ? "no session" : (r.reason || "couldn't verify")}`, r.state === "signed_in" ? "ok" : "err");
+        const msg = r.verify_status === "verified" ? `Restored - Google confirms ${r.identity_masked || "a session"}`
+          : r.verify_status === "wrong_account" ? `Restored, but that backup signs in as ${r.identity_masked}, not the expected ${r.expected_identity_masked}`
+          : `Restored, but Google reports ${r.verify_status === "signed_out" ? "no session" : (r.reason || "couldn't verify")}`;
+        toast(msg, r.verify_status === "verified" ? "ok" : "err");
       } catch (err) { toast(err.message, "err"); }
     });
     return;
@@ -126,14 +159,19 @@ $("account-list").addEventListener("click", async (e) => {
 });
 
 async function runVerify(card, id) {
+  setChecking(card, true);
   try {
     const r = await post(`/api/accounts/${id}/verify`);
     await refreshCard(card);
-    const msg = r.state === "signed_in" ? `Signed in as ${r.identity_masked || "(email not shown)"}` : r.state === "signed_out" ? "Google reports no active session - use Re-authenticate" : `Couldn't verify: ${r.reason || "unknown"}`;
-    toast(msg, r.state === "signed_in" ? "ok" : "err");
+    const msg = r.verify_status === "verified" ? `Verified - signed in as ${r.identity_masked || "(email not shown)"}`
+      : r.verify_status === "wrong_account" ? `Wrong account: signed in as ${r.identity_masked}, expected ${r.expected_identity_masked}`
+      : r.verify_status === "signed_out" ? "Google reports no active session - use Re-authenticate"
+      : `Couldn't verify: ${r.reason || "unknown"}`;
+    toast(msg, r.verify_status === "verified" ? "ok" : "err");
     announce(msg);
     return r;
-  } catch (err) { toast(err.message, "err"); }
+  } catch (err) { toast(err.message, "err"); return null; }
+  finally { setChecking(card, false); }
 }
 
 // ---------------------------------------------------------------- sign-in flow (embedded noVNC)
@@ -181,9 +219,16 @@ $("signin-done").addEventListener("click", async (e) => {
   await withLoading(e.currentTarget, async () => {
     $("signin-status").textContent = "Closing the window so the session is written to disk, then asking Google…";
     const r = await runVerify(signinCard, signinId);
-    if (r && r.state === "signed_in") closePanel();
+    // Only a genuine "verified" auto-closes the panel - wrong_account
+    // still reports Google's session as real (state === "signed_in"),
+    // it's just not the identity this account expects, so the operator
+    // needs to see that and decide (sign out and redo, or accept it as
+    // the new expected identity by signing out first).
+    if (r && r.verify_status === "verified") closePanel();
     else $("signin-status").textContent = r
-      ? (r.state === "signed_out"
+      ? (r.verify_status === "wrong_account"
+          ? `Signed in, but as ${r.identity_masked} - this account expects ${r.expected_identity_masked}. Sign out first if you meant to switch identities, then redo sign-in.`
+          : r.verify_status === "signed_out"
           ? "Google still reports no session. Tap Sign in again to reopen the window and finish any remaining step (2-Step prompt, device confirmation)."
           : `Couldn't confirm yet (${r.reason || "no answer"}). If you finished signing in, wait a moment and tap Verify now on the account.`)
       : "Verification failed - see the message above.";

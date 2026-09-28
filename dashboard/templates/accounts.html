@@ -20,22 +20,33 @@
       </div>
     </div>
 
+    {% set BADGE_ICON = {"never": "circle-help", "verified": "circle-check", "stale": "alert-triangle",
+                          "wrong_account": "circle-slash", "signed_out": "user-x", "check_failed": "alert-circle"} %}
+    {% set BADGE_TEXT = {"never": "Never verified", "verified": "Verified", "stale": "Needs re-authentication",
+                          "wrong_account": "Wrong account", "signed_out": "Signed out", "check_failed": "Couldn't verify"} %}
     <div class="account-list" id="account-list">
       {% for a in accounts %}
-      <article class="account-card" data-account-id="{{ a.id }}" data-label="{{ a.label }}" data-state="{{ a.state }}">
+      <article class="account-card" data-account-id="{{ a.id }}" data-label="{{ a.label }}" data-state="{{ a.verify_status }}">
         <div class="account-card-main">
           <div class="account-card-head">
             <span class="account-label">{{ a.label }}</span>
-            <span class="badge account-state" data-state="{{ 'needs_reauth' if a.needs_reauth else a.state }}"><span class="dot"></span><span class="account-state-text">{{ a.state }}</span></span>
+            <span class="badge account-state" data-state="{{ a.badge_state }}">
+              <svg class="icon account-state-icon" aria-hidden="true"><use href="#i-{{ BADGE_ICON[a.badge_state] }}"></use></svg>
+              <span class="account-state-text">{{ BADGE_TEXT[a.badge_state] }}</span>
+            </span>
           </div>
           <div class="account-meta">
+            {% if a.verify_status == "wrong_account" %}
+            <span class="readout account-identity" data-wrong="1">Signed in as <strong>{{ a.identity_masked }}</strong> - expected <strong>{{ a.expected_identity_masked }}</strong></span>
+            {% else %}
             <span class="readout account-identity">{{ a.identity_masked or "identity unknown" }}</span>
+            {% endif %}
             <span class="hint account-verified tnum" data-ts="{{ a.last_verified_at or '' }}">{{ "never verified" if not a.last_verified_at else "" }}</span>
           </div>
           <div class="hint account-result">{{ a.last_result or "" }}</div>
         </div>
         <div class="account-card-actions">
-          <button class="btn btn-primary btn-touch act-signin" data-account-id="{{ a.id }}">{{ icon("log-in") }}<span>{{ "Re-authenticate" if a.needs_reauth or a.state in ("signed_out", "inconclusive") else "Sign in" }}</span></button>
+          <button class="btn btn-primary btn-touch act-signin" data-account-id="{{ a.id }}">{{ icon("log-in") }}<span>{{ "Re-authenticate" if a.needs_reauth else "Sign in" }}</span></button>
           <button class="btn btn-secondary btn-touch act-verify" data-account-id="{{ a.id }}">{{ icon("shield-check") }}Verify now</button>
           <div class="menu-wrap ac-more">
             <button class="btn btn-secondary btn-touch btn-icon menu-trigger" aria-label="More actions for {{ a.label }}">{{ icon("more-vertical") }}</button>
