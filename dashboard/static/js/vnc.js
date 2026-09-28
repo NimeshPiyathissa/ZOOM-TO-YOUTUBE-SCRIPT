@@ -262,5 +262,33 @@ window.addEventListener("pagehide", () => {
   }
 });
 
+// Keep #vnc-screen locked to the bot's actual 16:9 framebuffer
+// (RESOLUTION=1920x1080) instead of whatever non-16:9 box
+// .vnc-viewport-card's layout happens to produce at a given window size.
+// noVNC's own autoscale() measures this element's child, so giving it an
+// exact 16:9 pixel box up front means the scaled canvas always fills it
+// with no edge cut off - no CSS aspect-ratio/flexbox ambiguity involved.
+// Reset to CSS's 100%/100% before each measurement so this can't drift
+// by measuring its own previous output on repeated calls (e.g. rapid
+// resize events).
+function fitStage169() {
+  target.style.width = "";
+  target.style.height = "";
+  const bw = target.clientWidth, bh = target.clientHeight;
+  if (!bw || !bh) return;
+  let w = bw, h = Math.round(bw * 9 / 16);
+  if (h > bh) { h = bh; w = Math.round(bh * 16 / 9); }
+  target.style.width = `${w}px`;
+  target.style.height = `${h}px`;
+}
+fitStage169();
+// Observe the viewport card, not target itself - target's own size
+// changes as a *result* of fitStage169(), so observing it would
+// re-trigger the callback on every programmatic resize.
+if (typeof ResizeObserver !== "undefined" && viewport) {
+  new ResizeObserver(fitStage169).observe(viewport);
+}
+window.addEventListener("resize", fitStage169);
+
 // Initial connection
 connect();
