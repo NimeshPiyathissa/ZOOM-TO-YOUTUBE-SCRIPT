@@ -118,6 +118,37 @@ no re-encode, when `ffprobe` confirms YouTube-compatible codecs). Adding a sourc
 auto-detects the type from the URL. Switching sources is a quick reconnect (a few
 seconds of buffering), not a hot swap — see `docs/configuration.md`.
 
+## Google account verification (`/accounts`)
+
+**What it proves:** that a given Chrome profile *on the VPS* — the one that
+actually plays age-restricted/sign-in-required YouTube videos and backs Zoom's
+"Sign in with Google" — currently has a live, signed-in Google session, and that
+the session is for the identity that profile is expected to hold. Sign-in itself
+is always done by a human, by hand, over noVNC; nothing here ever sees a
+password, 2-Step code, cookie, or token. "Verify now" drives that profile
+(headless Chrome, the profile's own cookies) to `myaccount.google.com` — a page
+that only renders identity for a signed-in session, redirecting anyone else to
+Google's own sign-in page — and reads the account name back from the page.
+
+Four outcomes, never collapsed into a binary: **Verified** (signed in as the
+expected identity), **Wrong account** (signed in, but as a *different* Google
+account than this profile is expected to hold — pinned from that account's own
+first successful verify), **Signed out**, **Couldn't verify** (the check itself
+failed to reach a conclusion — network timeout, an unexpected page, a security
+challenge). A verified session older than 12 hours (twice the 6-hour background
+recheck interval) shows amber even though the last check succeeded, so a lapsed
+session surfaces here before it breaks a live stream, not during one. The same
+state is what gates the account pickers on `/zoom` and `/remote` — there's one
+shared list, not a per-page copy.
+
+**Why this isn't Google OAuth**, deliberately: an OAuth flow run in an admin's
+own browser on their own laptop proves they own a Google account. It proves
+nothing about whether the VPS profile — a completely different browser, on a
+different machine, with its own separate cookie jar — actually has a session.
+An OAuth-based badge could read green while the VPS profile is signed out: a
+false green, discovered only when a stream fails. See the "why session
+verification" note at the top of `app/accounts.py` for the full reasoning.
+
 ## Watermark
 
 Overlay Studio (`/overlay`) → "Encoder Watermark" section. Text or image, a full
