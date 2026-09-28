@@ -206,7 +206,9 @@ TIMEZONE = _detect_system_timezone()
 # Trust X-Forwarded-Proto for the Secure cookie flag only when running
 # behind a local reverse proxy (e.g. optional Caddy setup). False = the
 # app terminates TLS itself (self-signed cert) for the SSH-tunnel-only path.
-TRUST_FORWARDED_PROTO = False
+# Set True once you've switched to the Caddy + domain setup (see
+# dashboard/Caddyfile.example / docs/remote-access.md).
+TRUST_FORWARDED_PROTO = True
 
 # --- sources (Change 1) ---
 SOURCE_TYPES = {"zoom", "webpage", "direct"}
