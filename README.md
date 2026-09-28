@@ -192,3 +192,14 @@ share.
 
 MIT — see [LICENSE](LICENSE). Issues and PRs welcome; `dashboard/requirements-dev.txt`
 has the lint/test tooling CI runs (`ruff`, `pytest`, `shellcheck`).
+
+### Icon licensing
+
+The dashboard's sidebar icons come from [Hugeicons](https://hugeicons.com)' free
+"Stroke Rounded" set (`@hugeicons/core-free-icons`), MIT licensed. Only that free
+tier is used — Hugeicons' larger Pro library (60,000+ icons, 10 styles) is a separate
+commercial product whose license forbids redistributing the source files, so none of
+it is bundled here. Path data is copied in as inline `<symbol>` markup (see
+`dashboard/templates/_icons.html`) rather than pulled from a CDN or npm dependency, so
+the dashboard's script/style CSP doesn't need a third-party origin for icons. The rest
+of the icon set is [Lucide](https://lucide.dev) (ISC), self-hosted the same way.
