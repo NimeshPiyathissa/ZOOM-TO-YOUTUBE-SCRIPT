@@ -248,7 +248,8 @@ echo "    likely also need to open 443/tcp in its Security Group / cloud firewal
 echo "    ufw alone only controls the OS-level firewall, not your cloud provider's."
 
 next_step "Dashboard, encrypted vault, and setup"
-"${SRC_DIR}/dashboard/install-dashboard.sh" "${ACTION}"
+chmod +x "${SRC_DIR}/dashboard/install-dashboard.sh"
+bash "${SRC_DIR}/dashboard/install-dashboard.sh" "${ACTION}"
 
 echo ""
 echo "Install complete. See the summary above for the dashboard URL and next steps."
