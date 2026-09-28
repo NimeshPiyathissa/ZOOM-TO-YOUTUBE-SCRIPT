@@ -140,6 +140,12 @@ EXT_FLAG=()
 [[ -d "$CLEANFEED_EXT" ]] && EXT_FLAG=(--load-extension="$CLEANFEED_EXT" --disable-extensions-except="$CLEANFEED_EXT")
 
 DEVTOOLS_PORT=9222
+# This bare Xvfb/Openbox setup has no GTK theme for Chrome to read a
+# light preference from, so sites honoring prefers-color-scheme (e.g.
+# google.com) render dark by default - looks like a black screen in the
+# Remote GUI at a glance. --blink-settings=preferredColorScheme=1 below
+# forces light so the stream always shows pages the way most viewers
+# expect.
 env PULSE_SINK=zoom_out "$CHROME_BIN" \
   "${EXT_FLAG[@]}" \
   --kiosk --app="$TARGET_URL" \
@@ -154,6 +160,7 @@ env PULSE_SINK=zoom_out "$CHROME_BIN" \
   --overscroll-history-navigation=0 \
   --disable-gpu --lang=en-US --password-store=basic \
   --no-first-run --no-default-browser-check \
+  --blink-settings=preferredColorScheme=1 \
   >>"$LOG_DIR/browser.log" 2>&1 &
 disown
 CHROME_PID=$!
