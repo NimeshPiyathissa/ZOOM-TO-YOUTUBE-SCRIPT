@@ -212,6 +212,20 @@ EOF
   chown "${SVC_USER}:${SVC_USER}" "${APP_DIR}/.env"
   chmod 600 "${APP_DIR}/.env"
 fi
+if [[ ! -f "${APP_DIR}/current-source.env" ]]; then
+  # No source picked yet (fresh install, or an upgrade of an install that
+  # predates the Source model) - default to a visible webpage instead of
+  # a black :99 desktop, so the Remote GUI shows something the moment
+  # it's connectable. Overwritten the instant a real source is configured
+  # and applied from the dashboard.
+  cat > "${APP_DIR}/current-source.env" <<'EOF'
+SOURCE_TYPE=webpage
+WEBPAGE_URL=https://www.google.com
+WEBPAGE_ZOOM=1.0
+WEBPAGE_RELOAD_SECONDS=0
+EOF
+  chown "${SVC_USER}:${SVC_USER}" "${APP_DIR}/current-source.env"
+fi
 
 next_step "Installing systemd --user units"
 mkdir -p "${SVC_HOME}/.config/systemd/user"
@@ -257,6 +271,10 @@ sleep 1
 run_user_systemctl start openbox
 sleep 1
 run_user_systemctl start audio-setup
+sleep 1
+# No-ops cleanly (exit 0) if current-source.env's SOURCE_TYPE has since
+# been changed to "zoom" by the dashboard - see browser-source.sh.
+run_user_systemctl start browser-source
 sleep 1
 run_user_systemctl start x11vnc
 sleep 1
