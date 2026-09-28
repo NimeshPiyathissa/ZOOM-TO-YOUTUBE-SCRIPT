@@ -210,6 +210,17 @@ TIMEZONE = _detect_system_timezone()
 # dashboard/Caddyfile.example / docs/remote-access.md).
 TRUST_FORWARDED_PROTO = True
 
+# --- YouTube Data API OAuth (Part 4) ---
+# The exact origin Google redirects back to after consent - must match
+# this OAuth client's Authorized redirect URI in Google Cloud Console
+# byte-for-byte (see app/youtube_oauth.py). Deliberately a fixed config
+# value, not derived from the request's Host header, so a spoofed Host
+# can never redirect Google's callback anywhere but here. Only reachable
+# at all once you're on the Caddy + real-domain setup above - Google
+# rejects bare-IP redirect URIs outright.
+PUBLIC_BASE_URL = "https://zoom.missakaart.lk"
+YOUTUBE_OAUTH_REDIRECT_PATH = "/api/youtube/oauth/callback"
+
 # --- sources (Change 1) ---
 SOURCE_TYPES = {"zoom", "webpage", "direct"}
 

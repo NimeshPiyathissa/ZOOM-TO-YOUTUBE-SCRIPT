@@ -106,6 +106,52 @@
 
 </div>
 
+<section class="card ac-yt-card" id="youtube-api" aria-labelledby="ac-yt-h">
+  <h2 id="ac-yt-h" class="rack-title">{{ icon("youtube", "icon-sm") }}YouTube Data API
+    <span class="rack-title-end hint m-0">optional - application access, not a signed-in session</span></h2>
+  <div class="banner banner-info mb-4" role="note">
+    {{ icon("key-round") }}
+    <div>
+      <strong>Different from the Google accounts above.</strong> This connects the dashboard itself to a YouTube
+      channel through Google's official OAuth flow, so it can create unlisted broadcasts and check stream health via
+      the YouTube Data API. It signs nothing into a Chrome profile and has no effect on which account a meeting or
+      webpage source joins as - that is still entirely the accounts list above.
+    </div>
+  </div>
+
+  {% set YT_ICON = {"disconnected": "circle-help", "connected": "circle-check", "needs_reauth": "alert-triangle"} %}
+  {% set YT_TEXT = {"disconnected": "Not connected", "connected": "Connected", "needs_reauth": "Needs reconnecting"} %}
+  <div class="yt-oauth-status" id="yt-oauth-status" data-state="{{ yt_oauth.status }}">
+    <span class="badge yt-oauth-badge" data-state="{{ yt_oauth.status }}">
+      <svg class="icon yt-oauth-badge-icon" aria-hidden="true"><use href="#i-{{ YT_ICON[yt_oauth.status] }}"></use></svg>
+      <span class="yt-oauth-badge-text">{{ YT_TEXT[yt_oauth.status] }}</span>
+    </span>
+    <span class="readout" id="yt-oauth-channel">{% if yt_oauth.status == "connected" %}{{ yt_oauth.channel_title or "(channel name unavailable)" }}{% endif %}</span>
+    <span class="hint m-0" id="yt-oauth-error" data-has-error="{{ 'true' if yt_oauth.last_error else 'false' }}">{{ yt_oauth.last_error or "" }}</span>
+  </div>
+
+  {% if yt_oauth.vault_locked %}
+  <p class="hint">The encrypted secret vault is locked - <a href="/config">unlock it</a> first to manage this connection.</p>
+  {% else %}
+  <div class="yt-oauth-config">
+    <div class="input-group mt-2">
+      <input type="text" id="yt-client-id" class="input" placeholder="Client ID" value="{{ yt_oauth.client_id_masked }}" autocomplete="off" spellcheck="false">
+      <input type="password" id="yt-client-secret" class="input" placeholder="Client Secret" autocomplete="off">
+      <button id="yt-save-config" class="btn btn-secondary btn-touch">{{ icon("key-round") }}Save</button>
+    </div>
+    <p class="hint">From your own project's OAuth client in Google Cloud Console. Authorized redirect URI to
+      register there: <code id="yt-redirect-uri">{{ yt_oauth_redirect_uri }}</code>
+      <button type="button" class="btn btn-ghost btn-icon btn-sm" id="yt-copy-redirect" aria-label="Copy redirect URI">{{ icon("copy", "icon-sm") }}</button>
+    </p>
+  </div>
+  <div class="btn-row mt-3">
+    <button id="yt-connect" class="btn btn-primary btn-touch" {% if not yt_oauth.configured %}disabled{% endif %}>{{ icon("log-in") }}<span>{{ "Reconnect" if yt_oauth.status == "needs_reauth" else "Connect" }}</span></button>
+    <button id="yt-check" class="btn btn-secondary btn-touch" {% if yt_oauth.status != "connected" %}disabled{% endif %}>{{ icon("shield-check") }}Test connection</button>
+    <button id="yt-disconnect" class="btn btn-ghost btn-touch ac-danger" {% if yt_oauth.status == "disconnected" %}disabled{% endif %}>{{ icon("log-out") }}Disconnect</button>
+  </div>
+  {% endif %}
+</section>
+
 <section class="section" id="signin-panel" hidden aria-labelledby="signin-title" aria-live="polite">
   <div class="section-head"><h2 id="signin-title">Sign in: <span id="signin-account-label"></span></h2></div>
   <div class="signin-grid">

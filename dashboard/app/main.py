@@ -7,6 +7,7 @@ import pathlib
 import re
 import subprocess
 import time
+from urllib.parse import quote
 
 from fastapi import FastAPI, Request, Response, HTTPException, WebSocket
 from fastapi.responses import (
@@ -28,6 +29,8 @@ from . import cdp, youtube, youtube_watch
 from .youtube import YouTubeURLError
 from . import accounts as accounts_mod
 from .accounts import AccountError
+from . import youtube_oauth, secret_store
+from .youtube_oauth import YouTubeOAuthError
 from . import audio_level
 from . import recording, settings_store, telegram
 
@@ -279,6 +282,8 @@ async def accounts_page(request: Request):
     return templates.TemplateResponse("accounts.html", {
         "request": request, "csrf_token": session["csrf_token"], "username": session["username"],
         "accounts": accounts_mod.list_accounts(),
+        "yt_oauth": youtube_oauth.status(),
+        "yt_oauth_redirect_uri": _youtube_oauth_redirect_uri(),
     })
 
 
@@ -1695,6 +1700,127 @@ async def api_accounts_verify(account_id: int, request: Request):
             return _api_error(exc)
     db.audit(session["username"], "account_verify", f"{account_id}:{result['state']}", deps.client_ip(request))
     return result
+
+
+# ---------------------------------------------------------------- api: YouTube Data API OAuth (Part 4)
+#
+# A separate, genuinely OAuth-shaped feature from the accounts above (see
+# app/accounts.py's module docstring for why those two are not the same
+# thing): this proves the operator authorized the app to call the
+# YouTube Data API for their own channel, not that any particular VPS
+# Chrome profile is signed in. Connect happens in the admin's own
+# browser - never noVNC - since there's no "which profile" question here.
+
+def _youtube_oauth_redirect_uri() -> str:
+    return config.PUBLIC_BASE_URL + config.YOUTUBE_OAUTH_REDIRECT_PATH
+
+
+@app.get("/api/youtube/oauth/status")
+async def api_youtube_oauth_status(request: Request):
+    deps.require_session_api(request)
+    return youtube_oauth.status()
+
+
+@app.post("/api/youtube/oauth/config")
+async def api_youtube_oauth_config(request: Request):
+    session = deps.require_session_api(request)
+    deps.require_csrf(request, session)
+    body = await request.json()
+    try:
+        youtube_oauth.set_client_credentials(str(body.get("client_id", "")), str(body.get("client_secret", "")))
+    except (YouTubeOAuthError, secret_store.VaultLockedError) as exc:
+        return _api_error(exc)
+    db.audit(session["username"], "youtube_oauth_config", "", deps.client_ip(request))
+    return youtube_oauth.status()
+
+
+@app.post("/api/youtube/oauth/start")
+async def api_youtube_oauth_start(request: Request):
+    session = deps.require_session_api(request)
+    deps.require_csrf(request, session)
+    deps.require_rate_limit(session, "youtube_oauth_start", max_calls=5, window_seconds=60)
+    try:
+        authorize_url = youtube_oauth.start(_youtube_oauth_redirect_uri())
+    except (YouTubeOAuthError, secret_store.VaultLockedError) as exc:
+        return _api_error(exc)
+    db.audit(session["username"], "youtube_oauth_start", "", deps.client_ip(request))
+    return {"authorize_url": authorize_url}
+
+
+@app.get("/api/youtube/oauth/callback")
+async def api_youtube_oauth_callback(request: Request):
+    """Google redirects the operator's own browser here after consent - a
+    plain top-level GET, so no CSRF header is possible; the single-use
+    `state` value (bound to the PKCE verifier server-side) is what
+    actually proves this completes a flow this dashboard started."""
+    session = deps.get_session(request)
+    username = session["username"] if session else None
+    error = request.query_params.get("error")
+    code = request.query_params.get("code")
+    state = request.query_params.get("state", "")
+    if error:
+        reason = "Access was denied on Google's consent screen" if error == "access_denied" else f"Google reported: {error}"
+        db.audit(username, "youtube_oauth_callback", f"error:{error}", deps.client_ip(request))
+        return RedirectResponse(f"/accounts?yt_oauth=error&reason={quote(reason)}#youtube-api", status_code=303)
+    if not code:
+        return RedirectResponse(f"/accounts?yt_oauth=error&reason={quote('Missing authorization code')}#youtube-api", status_code=303)
+    try:
+        result = await run_in_threadpool(youtube_oauth.complete, code, state, _youtube_oauth_redirect_uri())
+    except (YouTubeOAuthError, secret_store.VaultLockedError) as exc:
+        db.audit(username, "youtube_oauth_callback", f"error:{exc}", deps.client_ip(request))
+        return RedirectResponse(f"/accounts?yt_oauth=error&reason={quote(str(exc))}#youtube-api", status_code=303)
+    db.audit(username, "youtube_oauth_callback", f"connected:{result.get('channel_title', '')}", deps.client_ip(request))
+    return RedirectResponse("/accounts?yt_oauth=connected#youtube-api", status_code=303)
+
+
+@app.post("/api/youtube/oauth/disconnect")
+async def api_youtube_oauth_disconnect(request: Request):
+    session = deps.require_session_api(request)
+    deps.require_csrf(request, session)
+    try:
+        await run_in_threadpool(youtube_oauth.disconnect)
+    except secret_store.VaultLockedError as exc:
+        return _api_error(exc)
+    db.audit(session["username"], "youtube_oauth_disconnect", "", deps.client_ip(request))
+    return youtube_oauth.status()
+
+
+@app.post("/api/youtube/oauth/check")
+async def api_youtube_oauth_check(request: Request):
+    session = deps.require_session_api(request)
+    deps.require_csrf(request, session)
+    deps.require_rate_limit(session, "youtube_oauth_check", max_calls=6, window_seconds=60)
+    try:
+        result = await run_in_threadpool(youtube_oauth.check_connection)
+    except (YouTubeOAuthError, secret_store.VaultLockedError) as exc:
+        return _api_error(exc)
+    db.audit(session["username"], "youtube_oauth_check", result.get("status", ""), deps.client_ip(request))
+    return result
+
+
+@app.post("/api/youtube/oauth/broadcast")
+async def api_youtube_oauth_broadcast(request: Request):
+    session = deps.require_session_api(request)
+    deps.require_csrf(request, session)
+    deps.require_rate_limit(session, "youtube_oauth_broadcast", max_calls=5, window_seconds=60)
+    body = await request.json()
+    try:
+        result = await run_in_threadpool(
+            youtube_oauth.create_unlisted_broadcast, str(body.get("title", "")), str(body.get("description", ""))
+        )
+    except (YouTubeOAuthError, secret_store.VaultLockedError) as exc:
+        return _api_error(exc)
+    db.audit(session["username"], "youtube_oauth_broadcast_create", result["broadcast_id"], deps.client_ip(request))
+    return result
+
+
+@app.get("/api/youtube/oauth/broadcast/{broadcast_id}/health")
+async def api_youtube_oauth_broadcast_health(broadcast_id: str, request: Request):
+    deps.require_session_api(request)
+    try:
+        return await run_in_threadpool(youtube_oauth.get_broadcast_health, broadcast_id)
+    except (YouTubeOAuthError, secret_store.VaultLockedError) as exc:
+        return _api_error(exc)
 
 
 # ---------------------------------------------------------------- api: touch remote / media control (Part 3)

@@ -268,3 +268,98 @@ $("ac-zoom-signout").addEventListener("click", (e) => withLoading(e.currentTarge
   try { await post("/api/zoom/signout"); await post("/api/zoom/account", { signed_in: false }); await zoomAccount(); toast("Zoom signed out"); } catch (err) { toast(err.message, "err"); }
 }));
 zoomAccount();
+
+// ---------------------------------------------------------------- YouTube Data API (Part 4)
+// A separate connection from the Google accounts above: an application
+// token for the YouTube Data API, not a signed-in Chrome profile. Connect
+// is a normal top-level browser redirect to Google (never noVNC) - the
+// POST here only mints the PKCE state/authorize_url; the actual consent
+// happens in the operator's own browser tab.
+
+const YT_ICON = { disconnected: "circle-help", connected: "circle-check", needs_reauth: "alert-triangle" };
+const YT_TEXT = { disconnected: "Not connected", connected: "Connected", needs_reauth: "Needs reconnecting" };
+
+function paintYtOauth(st) {
+  const wrap = $("yt-oauth-status");
+  if (!wrap) return;
+  wrap.dataset.state = st.status;
+  const badge = wrap.querySelector(".yt-oauth-badge");
+  badge.dataset.state = st.status;
+  badge.querySelector(".yt-oauth-badge-text").textContent = YT_TEXT[st.status] || st.status;
+  badge.querySelector(".yt-oauth-badge-icon use").setAttribute("href", `#i-${YT_ICON[st.status] || "circle-help"}`);
+  $("yt-oauth-channel").textContent = st.status === "connected" ? (st.channel_title || "(channel name unavailable)") : "";
+  const errEl = $("yt-oauth-error");
+  if (errEl) { errEl.textContent = st.last_error || ""; errEl.dataset.hasError = st.last_error ? "true" : "false"; }
+  const connectBtn = $("yt-connect"), checkBtn = $("yt-check"), disconnectBtn = $("yt-disconnect");
+  if (connectBtn) {
+    connectBtn.disabled = !st.configured;
+    connectBtn.querySelector("span").textContent = st.status === "needs_reauth" ? "Reconnect" : "Connect";
+  }
+  if (checkBtn) checkBtn.disabled = st.status !== "connected";
+  if (disconnectBtn) disconnectBtn.disabled = st.status === "disconnected";
+}
+
+const ytSaveBtn = $("yt-save-config");
+if (ytSaveBtn) {
+  ytSaveBtn.addEventListener("click", (e) => withLoading(e.currentTarget, async () => {
+    const client_id = $("yt-client-id").value.trim();
+    const client_secret = $("yt-client-secret").value.trim();
+    if (!client_id || !client_secret) { toast("Client ID and Client Secret are both required", "err"); return; }
+    try {
+      const st = await post("/api/youtube/oauth/config", { client_id, client_secret });
+      $("yt-client-secret").value = "";
+      paintYtOauth(st);
+      toast("Saved - you can Connect now");
+    } catch (err) { toast(err.message, "err"); }
+  }));
+}
+
+const ytConnectBtn = $("yt-connect");
+if (ytConnectBtn) {
+  ytConnectBtn.addEventListener("click", (e) => withLoading(e.currentTarget, async () => {
+    try {
+      const r = await post("/api/youtube/oauth/start");
+      window.location.href = r.authorize_url;
+    } catch (err) { toast(err.message, "err"); }
+  }));
+}
+
+const ytCheckBtn = $("yt-check");
+if (ytCheckBtn) {
+  ytCheckBtn.addEventListener("click", (e) => withLoading(e.currentTarget, async () => {
+    try { const st = await post("/api/youtube/oauth/check"); paintYtOauth(st); toast("Connection is good"); }
+    catch (err) { const st = await apiFetch("/api/youtube/oauth/status").catch(() => null); if (st) paintYtOauth(st); toast(err.message, "err"); }
+  }));
+}
+
+const ytDisconnectBtn = $("yt-disconnect");
+if (ytDisconnectBtn) {
+  ytDisconnectBtn.addEventListener("click", (e) => withLoading(e.currentTarget, async () => {
+    if (!(await confirmDialog("Disconnect the YouTube Data API? The stored token is revoked with Google and removed. Reconnecting later needs the consent screen again.", { danger: true, confirmText: "Disconnect" }))) return;
+    try { const st = await post("/api/youtube/oauth/disconnect"); paintYtOauth(st); toast("Disconnected"); }
+    catch (err) { toast(err.message, "err"); }
+  }));
+}
+
+const ytCopyBtn = $("yt-copy-redirect");
+if (ytCopyBtn) {
+  ytCopyBtn.addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText($("yt-redirect-uri").textContent); toast("Copied"); }
+    catch (err) { toast("Couldn't copy - select and copy manually", "err"); }
+  });
+}
+
+// After Google redirects back from the consent screen (see
+// api_youtube_oauth_callback in main.py): show the result once, then
+// scrub the query string so a page refresh doesn't re-show the toast.
+(function handleYtOauthRedirect() {
+  const params = new URLSearchParams(window.location.search);
+  const result = params.get("yt_oauth");
+  if (!result) return;
+  if (result === "connected") toast("YouTube Data API connected");
+  else if (result === "error") toast(params.get("reason") || "Connection failed", "err");
+  const url = new URL(window.location.href);
+  url.searchParams.delete("yt_oauth");
+  url.searchParams.delete("reason");
+  window.history.replaceState({}, "", url.pathname + url.search + url.hash);
+})();

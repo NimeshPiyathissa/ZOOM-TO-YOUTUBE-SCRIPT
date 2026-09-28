@@ -149,6 +149,54 @@ An OAuth-based badge could read green while the VPS profile is signed out: a
 false green, discovered only when a stream fails. See the "why session
 verification" note at the top of `app/accounts.py` for the full reasoning.
 
+## YouTube Data API connection (also on `/accounts`, its own card)
+
+A separate, genuinely OAuth-shaped feature from the section above: an
+application-level connection that lets the dashboard call the YouTube Data API
+on behalf of one YouTube channel — creating unlisted broadcasts and reading
+their stream health. This is **not** a signed-in Chrome profile and has no
+effect on which account a meeting or webpage source joins as; that's still
+entirely the accounts list above it.
+
+**Setup** (optional — skip this whole section if you don't need it):
+
+1. Requires the Caddy + real-domain HTTPS setup (`docs/remote-access.md`) —
+   Google rejects a bare-IP redirect URI outright.
+2. In [Google Cloud Console](https://console.cloud.google.com/), create a
+   project (or reuse one), enable the **YouTube Data API v3**, configure the
+   OAuth consent screen, and create an **OAuth client ID** (type: Web
+   application).
+3. Add this exact **Authorized redirect URI** (also shown on the `/accounts`
+   page itself, with a copy button): `https://<your-domain>/api/youtube/oauth/callback`
+4. On `/accounts`, under "YouTube Data API", paste in the Client ID and
+   Client Secret from that OAuth client and **Save**, then **Connect** — this
+   opens Google's consent screen in your own browser tab (never noVNC; there's
+   no "which profile" question here, only "which channel"). `prompt=consent`
+   is always forced so Google reliably hands back a refresh token.
+5. If your OAuth consent screen is still in **Testing** mode, Google expires
+   the grant after 7 days and only lets pre-added test users connect at all —
+   either add yourself as a test user, or publish the app (no Google review is
+   required unless you request sensitive/restricted scopes; the YouTube scope
+   used here does require verification for a *published, public* app, but
+   Testing mode with your own account added as a test user works indefinitely
+   for personal use).
+
+**What's stored where:** Client ID/Secret and the refresh token live in the
+same encrypted vault as every other secret in this app (Part 0) — never in
+plaintext, never returned to the browser. The connected channel's id/title,
+granted scope, and connection status live in the small settings table
+alongside everything else non-secret. The short-lived access token is kept in
+memory only, for the life of the dashboard process.
+
+**Status states:** *Not connected*, *Connected* (shows the connected channel's
+title), and *Needs reconnecting* — Google rejected the stored refresh token
+(revoked from your Google Account, the Testing-mode 7-day grant expired, or
+the consent screen was reconfigured). Needs reconnecting clears the useless
+refresh token automatically rather than silently retrying it; only a fresh
+Connect fixes it. **Test connection** forces a real check with Google right
+now rather than trusting a cached badge. **Disconnect** revokes the token with
+Google and clears it from the vault.
+
 ## Watermark
 
 Overlay Studio (`/overlay`) → "Encoder Watermark" section. Text or image, a full
