@@ -4,17 +4,38 @@
 
 .app-shell { display: flex; min-height: 100vh; }
 
-/* ---------------------------------------------------------------- sidebar */
+/* ---------------------------------------------------------------- sidebar: liquid glass
+   Layered translucency (blur+saturate, tinted overlay, hairline edge,
+   soft shadow) over the app background. Perf: this is the ONLY blurred
+   surface ever stacked with the topbar's own blur (they never overlap
+   on screen - one is the full-height left rail, the other sits to its
+   right - so there is never more than one blur composited over the
+   same pixels). All nav animation below touches only transform/opacity.
+   These rules replace a previous conflicting !important block that
+   used to live in passwall-glass.css (see that file's history) -
+   fighting it with more !important wasn't going to work. */
 
 .sidebar {
   width: var(--sidebar-w);
   flex: none;
-  background: var(--bg-panel);
-  border-right: 1px solid var(--border);
   display: flex; flex-direction: column;
   position: sticky; top: 0; height: 100vh;
-  transition: width var(--duration-base) var(--ease-out), transform var(--duration-base) var(--ease-out);
+  transition: width var(--duration-base) var(--ease-out);
   z-index: var(--z-sticky);
+  border-right: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
+  background: var(--glass-tint);
+}
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  .sidebar {
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  }
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  /* No compositor support: fall back to a plain opaque panel rather
+     than a half-transparent, unblurred smear over page content. */
+  .sidebar { background: var(--bg-panel); }
 }
 .app-shell.is-collapsed .sidebar { width: var(--sidebar-w-collapsed); }
 
@@ -22,26 +43,81 @@
   display: flex; align-items: center; gap: var(--space-2);
   height: var(--topbar-h); padding: 0 var(--space-4); flex: none;
   font-weight: var(--weight-semibold); font-size: var(--text-sm); letter-spacing: var(--tracking-tight);
-  color: var(--text); border-bottom: 1px solid var(--border); overflow: hidden; white-space: nowrap;
+  color: var(--text); border-bottom: 1px solid var(--glass-border); overflow: hidden; white-space: nowrap;
 }
 .sidebar-brand .icon { color: var(--accent); }
 
-.sidebar-nav { flex: 1; overflow-y: auto; padding: var(--space-3) var(--space-2); display: flex; flex-direction: column; gap: 2px; }
-.sidebar-nav a {
+.sidebar-nav { flex: 1; overflow-y: auto; overflow-x: hidden; padding: var(--space-2) var(--space-2) var(--space-3); scrollbar-width: thin; }
+.sidebar-nav::-webkit-scrollbar { width: 6px; }
+.sidebar-nav::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: var(--radius-full); }
+.sidebar-nav::-webkit-scrollbar-track { background: transparent; }
+
+.nav-group { margin-top: var(--space-4); }
+.nav-group:first-child { margin-top: var(--space-2); }
+.nav-group-label {
+  font-size: 11px; font-weight: var(--weight-semibold); letter-spacing: var(--tracking-wide);
+  text-transform: uppercase; color: var(--text-faint); padding: 0 10px var(--space-1);
+}
+.app-shell.is-collapsed .nav-group-label { display: none; }
+.app-shell.is-collapsed .nav-group { margin-top: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--glass-border); }
+.app-shell.is-collapsed .nav-group:first-child { margin-top: var(--space-2); padding-top: 0; border-top: none; }
+
+.nav-item {
+  position: relative;
   display: flex; align-items: center; gap: var(--space-3);
-  padding: 8px var(--space-3); border-radius: var(--radius-sm);
+  padding: 9px 10px; margin: 1px 0; border-radius: var(--radius-md);
   color: var(--text-dim); font-size: var(--text-sm); font-weight: var(--weight-medium);
   text-decoration: none; white-space: nowrap; overflow: hidden;
-  transition: background var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
+  transition: background var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out),
+              box-shadow var(--duration-fast) var(--ease-out), transform var(--duration-fast) var(--ease-out);
 }
-.sidebar-nav a .icon { flex: none; }
-.sidebar-nav a:hover { background: var(--bg-hover); color: var(--text); }
-.sidebar-nav a.active { background: var(--accent-tint); color: var(--accent); }
-.app-shell.is-collapsed .sidebar-nav a span.label,
-.app-shell.is-collapsed .sidebar-brand span.label { display: none; }
-.app-shell.is-collapsed .sidebar-nav a { justify-content: center; }
+.nav-item .icon { flex: none; }
+.nav-item:hover { background: var(--bg-hover); color: var(--text); }
+.nav-item:active { transform: scale(0.98); }
+.nav-item:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-.sidebar-foot { border-top: 1px solid var(--border); padding: var(--space-2); flex: none; }
+.nav-item.active {
+  color: var(--accent);
+  background: var(--glass-tint-active);
+  box-shadow: inset 0 0 0 1px var(--accent-ring);
+}
+/* Active indicator - a positioned pseudo-element on the active row
+   itself, not a separately-animated sibling element to lay out. This
+   is a multi-page app (full navigation per route, not a SPA), so there
+   is no continuous element to slide between two positions across a
+   route change the way a client-routed app could - the honest
+   equivalent here is a quick grow-in on paint, transform+opacity only. */
+.nav-item.active::before {
+  content: ""; position: absolute; left: -6px; top: 50%;
+  width: 3px; height: 16px; border-radius: var(--radius-full);
+  background: linear-gradient(180deg, var(--accent), var(--accent-solid));
+  transform-origin: center;
+  animation: nav-indicator-in var(--duration-base) var(--ease-out) backwards;
+}
+.app-shell.is-collapsed .nav-item.active::before { left: -2px; }
+@keyframes nav-indicator-in {
+  from { opacity: 0; transform: translateY(-50%) scaleY(0); }
+  to { opacity: 1; transform: translateY(-50%) scaleY(1); }
+}
+
+.app-shell.is-collapsed .nav-item span.label,
+.app-shell.is-collapsed .sidebar-brand span.label { display: none; }
+.app-shell.is-collapsed .nav-item { justify-content: center; }
+
+/* collapsed-rail tooltips: reuse [data-tooltip] (components.css) but to
+   the side, and only while actually collapsed - expanded rows already
+   show their own label, a redundant tooltip there would just be noise. */
+.nav-item[data-tooltip]::after { display: none; }
+.app-shell.is-collapsed .nav-item[data-tooltip]::after {
+  display: block;
+  bottom: auto; left: calc(100% + 10px); top: 50%; transform: translateY(-50%) translateX(-4px);
+}
+.app-shell.is-collapsed .nav-item[data-tooltip]:hover::after,
+.app-shell.is-collapsed .nav-item[data-tooltip]:focus-visible::after {
+  transform: translateY(-50%) translateX(0);
+}
+
+.sidebar-foot { border-top: 1px solid var(--glass-border); padding: var(--space-2); flex: none; }
 
 /* ---------------------------------------------------------------- topbar */
 
@@ -49,15 +125,29 @@
   position: sticky; top: 0; z-index: var(--z-sticky);
   display: flex; align-items: center; gap: var(--space-3);
   height: var(--topbar-h); padding: 0 var(--space-4);
-  background: color-mix(in srgb, var(--bg-panel) 92%, transparent);
-  backdrop-filter: blur(8px);
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--glass-border);
+  background: var(--glass-tint);
+}
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  .topbar {
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  }
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .topbar { background: color-mix(in srgb, var(--bg-panel) 92%, transparent); }
 }
 .topbar-status { display: flex; align-items: center; gap: var(--space-2); margin-right: auto; min-width: 0; }
 .topbar-status .state-label { font-size: var(--text-sm); font-weight: var(--weight-semibold); white-space: nowrap; }
 .topbar-status .uptime { font-size: var(--text-xs); color: var(--text-dim); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .topbar-actions { display: flex; align-items: center; gap: var(--space-2); flex: none; }
 .sidebar-toggle { display: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar, .nav-item, .nav-item.active::before, .sidebar-backdrop { transition: none !important; }
+  .nav-item, .app-shell.is-drawer-open .nav-item { animation: none !important; opacity: 1 !important; transform: none !important; }
+  .nav-item.active::before { animation: none !important; opacity: 1 !important; transform: translateY(-50%) scaleY(1) !important; }
+}
 
 /* ---------------------------------------------------------------- page content */
 
@@ -109,15 +199,56 @@ main.page {
 .sidebar-backdrop { display: none; }
 
 @media (max-width: 1023px) {
+  /* Off-canvas drawer: transform-only (no width/left animation), so the
+     browser can composite this on its own layer instead of repainting.
+     `visibility` flips at the end of the transition (not instantly) so
+     the drawer stays reachable by touch during the slide but drops out
+     of layout/tab-order once fully hidden. */
   .sidebar {
     position: fixed; left: 0; top: 0; transform: translateX(-100%);
-    box-shadow: var(--shadow-lg);
+    box-shadow: var(--glass-shadow);
+    visibility: hidden;
+    transition: transform var(--duration-base) var(--ease-out), visibility 0s linear var(--duration-base);
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
   }
-  .app-shell.is-drawer-open .sidebar { transform: translateX(0); }
+  .app-shell.is-drawer-open .sidebar {
+    transform: translateX(0); visibility: visible;
+    transition: transform var(--duration-base) var(--ease-out);
+  }
   .app-shell.is-collapsed .sidebar { width: var(--sidebar-w); }
-  .app-shell.is-collapsed .sidebar-nav a span.label,
+  .app-shell.is-collapsed .nav-group-label { display: block; }
+  .app-shell.is-collapsed .nav-group { border-top: none; padding-top: 0; margin-top: var(--space-4); }
+  .app-shell.is-collapsed .nav-group:first-child { margin-top: var(--space-2); }
+  .app-shell.is-collapsed .nav-item span.label,
   .app-shell.is-collapsed .sidebar-brand span.label { display: inline; }
-  .app-shell.is-collapsed .sidebar-nav a { justify-content: flex-start; }
+  .app-shell.is-collapsed .nav-item { justify-content: flex-start; }
+
+  /* touch targets: the 56px minimum applies to the drawer specifically
+     (fingers, not a mouse) - the desktop rail keeps its tighter density */
+  .nav-item { min-height: 56px; padding: 14px 12px; font-size: var(--text-base); }
+  .sidebar-foot .btn.btn-icon { min-height: 56px; min-width: 56px; }
+
+  /* staggered reveal on open - capped item count so a long list doesn't
+     keep animating after the drawer is already visible; opacity+transform
+     only, GPU-composited, no layout thrash */
+  .nav-item { opacity: 1; transform: none; }
+  .app-shell.is-drawer-open .nav-item {
+    animation: nav-item-in var(--duration-base) var(--ease-out) backwards;
+  }
+  .app-shell.is-drawer-open .nav-group:nth-child(1) .nav-item:nth-child(1) { animation-delay: 40ms; }
+  .app-shell.is-drawer-open .nav-group:nth-child(1) .nav-item:nth-child(2) { animation-delay: 60ms; }
+  .app-shell.is-drawer-open .nav-group:nth-child(1) .nav-item:nth-child(3) { animation-delay: 80ms; }
+  .app-shell.is-drawer-open .nav-group:nth-child(2) .nav-item:nth-child(1) { animation-delay: 100ms; }
+  .app-shell.is-drawer-open .nav-group:nth-child(2) .nav-item:nth-child(2) { animation-delay: 120ms; }
+  .app-shell.is-drawer-open .nav-group:nth-child(2) .nav-item:nth-child(3) { animation-delay: 140ms; }
+  .app-shell.is-drawer-open .nav-group:nth-child(2) .nav-item:nth-child(4) { animation-delay: 160ms; }
+  .app-shell.is-drawer-open .nav-group:nth-child(3) .nav-item:nth-child(1) { animation-delay: 180ms; }
+  .app-shell.is-drawer-open .nav-group:nth-child(3) .nav-item:nth-child(2) { animation-delay: 200ms; }
+  .app-shell.is-drawer-open .nav-group:nth-child(3) .nav-item:nth-child(3) { animation-delay: 220ms; }
+  .app-shell.is-drawer-open .nav-group:nth-child(4) .nav-item:nth-child(1) { animation-delay: 240ms; }
+  .app-shell.is-drawer-open .nav-group:nth-child(4) .nav-item:nth-child(2) { animation-delay: 260ms; }
+  @keyframes nav-item-in { from { opacity: 0; transform: translateX(-8px); } to { opacity: 1; transform: none; } }
 
   .sidebar-backdrop {
     display: block; position: fixed; inset: 0; background: rgba(8, 10, 14, 0.5);

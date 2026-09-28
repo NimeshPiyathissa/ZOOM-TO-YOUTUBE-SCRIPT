@@ -38,62 +38,14 @@ body {
   background: transparent !important;
 }
 
-/* Sidebar permanently fixed on the left on desktop */
-@media (min-width: 1024px) {
-  .sidebar {
-    position: sticky !important;
-    top: 0 !important;
-    height: 100vh !important;
-    width: var(--sidebar-w, 240px) !important;
-    flex-shrink: 0 !important;
-    transform: none !important;
-    display: flex !important;
-    flex-direction: column !important;
-    background: #121922 !important;
-    border-right: 1px solid #1f2a37 !important;
-    z-index: 100 !important;
-    box-shadow: 2px 0 16px rgba(0, 0, 0, 0.45) !important;
-  }
-}
-
-.sidebar {
-  background: #121922 !important;
-  border-right: 1px solid #1f2a37 !important;
-}
-
-.sidebar-brand {
-  border-bottom: 1px solid #1f2a37 !important;
-  color: #ffffff !important;
-}
-
-.sidebar-nav a {
-  color: #94a3b8 !important;
-  border-radius: 8px !important;
-  transition: all 0.15s ease !important;
-}
-.sidebar-nav a:hover {
-  background: #1e293b !important;
-  color: #ffffff !important;
-}
-.sidebar-nav a.active {
-  background: #253342 !important;
-  color: #38bdf8 !important;
-  border: 1px solid #334458 !important;
-}
-.sidebar-foot {
-  border-top: 1px solid #1f2a37 !important;
-}
-
-/* Topbar spanning the top */
-.topbar {
-  position: sticky !important;
-  top: 0 !important;
-  z-index: 90 !important;
-  width: 100% !important;
-  background: #121922 !important;
-  border-bottom: 1px solid #1f2a37 !important;
-  box-shadow: 0 2px 14px rgba(0, 0, 0, 0.35) !important;
-}
+/* Sidebar/topbar solid-opaque overrides that used to live here were
+   removed for the liquid-glass nav redesign - layout.css now owns
+   .sidebar/.sidebar-brand/.nav-item/.sidebar-foot/.topbar directly
+   (translucent by design, with an @supports fallback to opaque where
+   backdrop-filter isn't available), so there's nothing left here for
+   this file to need to force back to solid. Nothing else in this file
+   changed - .app-shell/.app-main below and the background wash above
+   still apply everywhere, including behind the glass nav. */
 
 /* Main Content Area: Eliminate all artificial max-width: 500px narrow strips */
 main.page,
