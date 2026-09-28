@@ -71,8 +71,17 @@
   justify-content: center;
 }
 .vnc-screen-stage > div {
-  width: 100% !important;
-  height: 100% !important;
+  /* Force noVNC's own wrapper div to the bot's actual 16:9 framebuffer
+     (RESOLUTION=1920x1080) instead of letting it stretch to 100%/100% of
+     whatever non-16:9 box .vnc-viewport-card's calc()'d height happens to
+     produce - autoscale() then always measures a true 16:9 box, so the
+     scaled canvas fills it exactly with no edge cut off, and any leftover
+     space is even letterboxing from .vnc-screen-stage's own centering. */
+  aspect-ratio: 16 / 9;
+  width: auto !important;
+  height: auto !important;
+  max-width: 100% !important;
+  max-height: 100% !important;
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
@@ -82,6 +91,8 @@
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.75);
   outline: none;
   cursor: default;
+  max-width: 100%;
+  max-height: 100%;
 }
 .vnc-status-overlay {
   position: absolute;

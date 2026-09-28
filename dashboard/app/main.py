@@ -331,7 +331,10 @@ async def vnc_page(request: Request):
     vnc_pass = vncauth.current_password()
     return templates.TemplateResponse(
         "vnc.html",
-        {"request": request, "username": session["username"], "vnc_password": vnc_pass},
+        {
+            "request": request, "username": session["username"], "vnc_password": vnc_pass,
+            "csrf_token": session["csrf_token"],
+        },
     )
 
 
