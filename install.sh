@@ -251,7 +251,19 @@ next_step "Dashboard, encrypted vault, and setup"
 chmod +x "${SRC_DIR}/dashboard/install-dashboard.sh"
 bash "${SRC_DIR}/dashboard/install-dashboard.sh" "${ACTION}"
 
+echo "==> Starting display/VNC services so the Remote GUI preview works immediately"
+run_user_systemctl start xvfb
+sleep 1
+run_user_systemctl start openbox
+sleep 1
+run_user_systemctl start audio-setup
+sleep 1
+run_user_systemctl start x11vnc
+sleep 1
+run_user_systemctl start novnc-proxy
+echo "    Display, audio capture, and Remote GUI (x11vnc/noVNC) are up."
+echo "    zoom/browser-source/ffmpeg-stream stay stopped until a source is configured."
+
 echo ""
 echo "Install complete. See the summary above for the dashboard URL and next steps."
-echo "The pipeline itself isn't started yet - connect over the dashboard's Remote GUI"
-echo "first (README's 'First-run: connect and verify' section) before ever clicking Go Live."
+echo "The Remote GUI is already connectable - configure a source and hit Go Live when ready."
