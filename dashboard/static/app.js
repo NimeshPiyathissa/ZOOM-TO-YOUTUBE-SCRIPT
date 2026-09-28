@@ -161,19 +161,74 @@ function initSidebar() {
   let collapsed = false;
   try { collapsed = localStorage.getItem("zsdash-sidebar-collapsed") === "1"; } catch (e) {}
   if (collapsed) shell.classList.add("is-collapsed");
+  if (collapseBtn) collapseBtn.setAttribute("aria-expanded", String(!collapsed));
 
   if (collapseBtn) collapseBtn.addEventListener("click", () => {
-    shell.classList.toggle("is-collapsed");
-    try { localStorage.setItem("zsdash-sidebar-collapsed", shell.classList.contains("is-collapsed") ? "1" : "0"); } catch (e) {}
+    const isCollapsed = shell.classList.toggle("is-collapsed");
+    collapseBtn.setAttribute("aria-expanded", String(!isCollapsed));
+    try { localStorage.setItem("zsdash-sidebar-collapsed", isCollapsed ? "1" : "0"); } catch (e) {}
   });
 
-  function openDrawer() { shell.classList.add("is-drawer-open"); syncInert(); }
-  function closeDrawer() { shell.classList.remove("is-drawer-open"); syncInert(); }
+  // Below the drawer breakpoint the open sidebar is a modal off-canvas
+  // panel (focus trap + scroll lock + role="dialog"); above it, the
+  // exact same markup is just the persistent desktop rail, so none of
+  // that modal-ness applies there - it's only ever added/removed here,
+  // never left on at desktop widths.
+  let releaseFocus = null;
+  function openDrawer() {
+    shell.classList.add("is-drawer-open");
+    syncInert();
+    if (drawerBtn) drawerBtn.setAttribute("aria-expanded", "true");
+    if (drawerMq.matches && sidebar) {
+      sidebar.setAttribute("role", "dialog");
+      sidebar.setAttribute("aria-modal", "true");
+      sidebar.setAttribute("aria-label", "Navigation");
+      document.body.style.overflow = "hidden";
+      releaseFocus = trapFocus(sidebar, closeDrawer);
+    }
+  }
+  function closeDrawer() {
+    shell.classList.remove("is-drawer-open");
+    syncInert();
+    if (drawerBtn) drawerBtn.setAttribute("aria-expanded", "false");
+    if (sidebar) { sidebar.removeAttribute("role"); sidebar.removeAttribute("aria-modal"); sidebar.removeAttribute("aria-label"); }
+    document.body.style.overflow = "";
+    if (releaseFocus) { releaseFocus(); releaseFocus = null; }
+  }
   if (drawerBtn) drawerBtn.addEventListener("click", () => {
     shell.classList.contains("is-drawer-open") ? closeDrawer() : openDrawer();
   });
   if (backdrop) backdrop.addEventListener("click", closeDrawer);
-  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeDrawer(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && shell.classList.contains("is-drawer-open")) closeDrawer(); });
+
+  // Swipe-to-dismiss: tracks the finger 1:1 via a temporary inline
+  // transform (cleared on release so the CSS transition/class takes
+  // back over), no rAF loop needed since touchmove already paces this.
+  if (sidebar) {
+    let startX = null, currentX = 0, dragging = false, startTime = 0;
+    sidebar.addEventListener("touchstart", (e) => {
+      if (!shell.classList.contains("is-drawer-open") || !drawerMq.matches) return;
+      startX = e.touches[0].clientX; currentX = startX; startTime = Date.now(); dragging = true;
+      sidebar.style.transition = "none";
+    }, { passive: true });
+    sidebar.addEventListener("touchmove", (e) => {
+      if (!dragging) return;
+      currentX = e.touches[0].clientX;
+      sidebar.style.transform = `translateX(${Math.min(0, currentX - startX)}px)`;
+    }, { passive: true });
+    function endDrag() {
+      if (!dragging) return;
+      dragging = false;
+      const dx = currentX - startX;
+      const velocity = dx / Math.max(Date.now() - startTime, 1);
+      sidebar.style.transition = "";
+      sidebar.style.transform = "";
+      if (dx < -60 || velocity < -0.5) closeDrawer();
+      startX = null;
+    }
+    sidebar.addEventListener("touchend", endDrag);
+    sidebar.addEventListener("touchcancel", endDrag);
+  }
 }
 
 // ---------------------------------------------------------------- dropdown menus
