@@ -138,13 +138,28 @@ next_step() { echo "==> [${STEP}/${TOTAL_STEPS}] $1"; STEP=$((STEP + 1)); }
 next_step "Installing system packages"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
+
+# Ubuntu 24.04 (noble) renamed several libs for the time64 ABI transition
+# (e.g. libasound2 -> libasound2t64). Pick whichever candidate apt actually has.
+pick_pkg() {
+  for pkg in "$@"; do
+    if apt-cache show "$pkg" &>/dev/null; then
+      echo "$pkg"
+      return 0
+    fi
+  done
+  echo "$1"
+}
+LIBASOUND2_PKG="$(pick_pkg libasound2t64 libasound2)"
+LIBGTK3_PKG="$(pick_pkg libgtk-3-0t64 libgtk-3-0)"
+
 apt-get install -y \
   xvfb openbox x11vnc wmctrl xdotool x11-xserver-utils x11-utils unclutter \
   at-spi2-core \
   ffmpeg fontconfig \
   pipewire pipewire-pulse wireplumber pipewire-audio-client-libraries pulseaudio-utils \
   dbus-user-session \
-  fonts-liberation libasound2 libnss3 libxss1 libgtk-3-0 \
+  fonts-liberation "${LIBASOUND2_PKG}" libnss3 libxss1 "${LIBGTK3_PKG}" \
   python3 python3-venv python3-pip websockify openssl \
   wget curl ca-certificates ufw jq
 
