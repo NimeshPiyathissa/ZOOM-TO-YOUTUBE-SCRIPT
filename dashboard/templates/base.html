@@ -23,25 +23,40 @@
   <div class="sidebar-backdrop"></div>
   <aside class="sidebar">
     <div class="sidebar-brand">
-      {{ icon("radio") | safe }}
+      {{ icon("hg-brand") | safe }}
       <span class="label">Zoom&nbsp;Stream</span>
     </div>
-    <nav class="sidebar-nav">
-      <a href="/" class="{{ 'active' if request.url.path == '/' }}">{{ icon("layout-dashboard") | safe }}<span class="label">Overview</span></a>
-      <a href="/studio" class="{{ 'active' if request.url.path == '/studio' }}">{{ icon("youtube") | safe }}<span class="label">Live Studio</span></a>
-      <a href="/overlay" class="{{ 'active' if request.url.path == '/overlay' }}">{{ icon("type") | safe }}<span class="label">Text Overlays</span></a>
-      <a href="/settings" class="{{ 'active' if request.url.path in ['/settings', '/config'] }}">{{ icon("settings") | safe }}<span class="label">Settings</span></a>
-      <a href="/controls" class="{{ 'active' if request.url.path == '/controls' }}">{{ icon("sliders-horizontal") | safe }}<span class="label">Controls</span></a>
-      <a href="/remote" class="{{ 'active' if request.url.path == '/remote' }}">{{ icon("cast") | safe }}<span class="label">Remote</span></a>
-      <a href="/zoom" class="{{ 'active' if request.url.path == '/zoom' }}">{{ icon("video") | safe }}<span class="label">Zoom</span></a>
-      <a href="/accounts" class="{{ 'active' if request.url.path == '/accounts' }}">{{ icon("user") | safe }}<span class="label">Accounts</span></a>
-      <a href="/logs" class="{{ 'active' if request.url.path == '/logs' }}">{{ icon("terminal") | safe }}<span class="label">Logs</span></a>
-      <a href="/vnc" class="{{ 'active' if request.url.path == '/vnc' }}">{{ icon("monitor") | safe }}<span class="label">Remote GUI</span></a>
-      <a href="/schedule" class="{{ 'active' if request.url.path == '/schedule' }}">{{ icon("calendar-clock") | safe }}<span class="label">Schedule</span></a>
-      <a href="/audit" class="{{ 'active' if request.url.path == '/audit' }}">{{ icon("list-checks") | safe }}<span class="label">Audit</span></a>
+    <nav class="sidebar-nav" aria-label="Primary">
+      {% macro navitem(href, icon_name, label, active) -%}
+      <a href="{{ href }}" class="nav-item{{ ' active' if active }}" {{ 'aria-current="page"' if active }} aria-label="{{ label }}" data-tooltip="{{ label }}">{{ icon(icon_name) | safe }}<span class="label">{{ label }}</span></a>
+      {%- endmacro %}
+      <div class="nav-group">
+        <div class="nav-group-label">Monitor</div>
+        {{ navitem("/", "hg-overview", "Overview", request.url.path == '/') }}
+        {{ navitem("/logs", "hg-logs", "Logs", request.url.path == '/logs') }}
+        {{ navitem("/audit", "hg-audit", "Audit", request.url.path == '/audit') }}
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-label">Broadcast</div>
+        {{ navitem("/studio", "hg-live-studio", "Live Studio", request.url.path == '/studio') }}
+        {{ navitem("/controls", "hg-controls", "Controls", request.url.path == '/controls') }}
+        {{ navitem("/overlay", "hg-text-overlays", "Text Overlays", request.url.path == '/overlay') }}
+        {{ navitem("/schedule", "hg-schedule", "Schedule", request.url.path == '/schedule') }}
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-label">Sources</div>
+        {{ navitem("/zoom", "hg-zoom", "Zoom", request.url.path == '/zoom') }}
+        {{ navitem("/remote", "hg-remote", "Remote", request.url.path == '/remote') }}
+        {{ navitem("/accounts", "hg-accounts", "Accounts", request.url.path == '/accounts') }}
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-label">System</div>
+        {{ navitem("/vnc", "hg-remote-gui", "Remote GUI", request.url.path == '/vnc') }}
+        {{ navitem("/settings", "hg-settings", "Settings", request.url.path in ['/settings', '/config']) }}
+      </div>
     </nav>
     <div class="sidebar-foot">
-      <button id="sidebar-collapse" class="btn btn-ghost btn-icon" aria-label="Collapse sidebar" data-tooltip="Collapse sidebar">
+      <button id="sidebar-collapse" class="btn btn-ghost btn-icon" aria-label="Collapse sidebar" aria-expanded="true" data-tooltip="Collapse sidebar">
         {{ icon("chevron-left") | safe }}
       </button>
     </div>
@@ -49,7 +64,7 @@
 
   <div class="app-main">
     <div class="topbar">
-      <button id="sidebar-toggle" class="btn btn-ghost btn-icon sidebar-toggle" aria-label="Open navigation">{{ icon("menu") | safe }}</button>
+      <button id="sidebar-toggle" class="btn btn-ghost btn-icon sidebar-toggle" aria-label="Open navigation" aria-expanded="false">{{ icon("menu") | safe }}</button>
       <div class="topbar-status" id="topbar-status">
         <span class="badge badge-inactive" id="topbar-state-badge"><span class="dot"></span>-</span>
         <span class="uptime tnum" id="topbar-uptime"></span>
