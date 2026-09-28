@@ -45,8 +45,20 @@
   border-radius: var(--radius-md);
   border: 1px solid var(--border);
   overflow: hidden;
-  display: flex;
-  flex-direction: column;
+  /* Grid, not flex: .vnc-quick-bar sizes to its own content (auto) and
+     .vnc-screen-stage gets everything left over (1fr). A flex `1 1 0`
+     item here would have flex-basis:0 as its main-size hint and the
+     grow factor would resolve the item's final height itself - any
+     inline/CSS height we set on the item is silently discarded, which
+     is exactly how the old flex-based layout stayed wrong no matter
+     what JS wrote to .vnc-screen-stage's style. Grid's 1fr track has no
+     such override: the stage's box is simply "whatever's left", and
+     noVNC's own autoscale() (rfb.scaleViewport, see vnc.js) fits the
+     real framebuffer inside that box and letterboxes - no JS sizing of
+     our own needed at all.
+  */
+  display: grid;
+  grid-template-rows: 1fr auto;
   box-shadow: var(--shadow-sm);
 }
 .vnc-viewport-card.is-fullscreen {
@@ -60,9 +72,10 @@
 }
 .vnc-screen-stage {
   position: relative;
-  flex: 1 1 0;
-  width: 100%;
-  height: 100%;
+  /* Grid items default to min-height/min-width:auto, which can refuse
+     to shrink below content size - force 0 so the 1fr row can actually
+     shrink on small viewports instead of overflowing the card. */
+  min-width: 0;
   min-height: 0;
   overflow: hidden;
   background: #000;
