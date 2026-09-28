@@ -2404,6 +2404,8 @@ async def health():
 @app.on_event("startup")
 async def on_startup():
     db.init_db()
+    from . import secret_store
+    secret_store.try_auto_unlock()
     scheduler.start()
     from . import zoom_web, telegram
     zoom_web.start_cleanfeed_heartbeat()
