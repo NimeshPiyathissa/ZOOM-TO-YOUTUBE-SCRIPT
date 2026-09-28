@@ -140,13 +140,19 @@ EXT_FLAG=()
 [[ -d "$CLEANFEED_EXT" ]] && EXT_FLAG=(--load-extension="$CLEANFEED_EXT" --disable-extensions-except="$CLEANFEED_EXT")
 
 DEVTOOLS_PORT=9222
-# This bare Xvfb/Openbox setup has no GTK theme for Chrome to read a
-# light preference from, so sites honoring prefers-color-scheme (e.g.
-# google.com) render dark by default - looks like a black screen in the
-# Remote GUI at a glance. --blink-settings=preferredColorScheme=1 below
-# forces light so the stream always shows pages the way most viewers
-# expect.
-env PULSE_SINK=zoom_out "$CHROME_BIN" \
+# This bare Xvfb/Openbox setup has no GTK theme, so Chrome's OS-level
+# dark-mode detection (ui::NativeTheme, GTK-based on Linux) defaults to
+# dark - sites like google.com that key their server-rendered theme off
+# that signal (the Sec-CH-Prefers-Color-Scheme client hint, not just the
+# prefers-color-scheme CSS media feature) render dark by default, which
+# looks like a black screen in the Remote GUI at a glance. Verified live
+# (screenshot before/after) that --blink-settings=preferredColorScheme=1
+# alone does NOT fix google.com specifically - it only overrides Blink's
+# own CSS media-feature evaluation, a separate code path from the
+# GTK-derived client hint. GTK_THEME=Adwaita:light fixes the actual
+# signal Google reads; the blink-settings flag stays too, for any site
+# that only checks the CSS media feature.
+env PULSE_SINK=zoom_out GTK_THEME=Adwaita:light "$CHROME_BIN" \
   "${EXT_FLAG[@]}" \
   --kiosk --app="$TARGET_URL" \
   --remote-debugging-port="$DEVTOOLS_PORT" --remote-debugging-address=127.0.0.1 \
