@@ -88,6 +88,7 @@ def zoombot_uid() -> int:
 
 def _zoombot_env() -> dict:
     return {
+        "HOME": str(config.ZOOMBOT_HOME),
         "XDG_RUNTIME_DIR": f"/run/user/{zoombot_uid()}",
         "PATH": "/usr/bin:/bin",
         "DISPLAY": config.DISPLAY_NUM,
