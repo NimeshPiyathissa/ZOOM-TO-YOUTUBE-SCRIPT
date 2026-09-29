@@ -23,6 +23,12 @@ from app import accounts, config, control, db
 @pytest.fixture(autouse=True)
 def _no_real_zoombot_calls(monkeypatch):
     monkeypatch.setattr(control, "read_current_source", lambda: {})
+    # Safe default so create_account()'s own "create" call - which every
+    # test below makes before it gets a chance to install its own
+    # _mock_profile_action script - never falls through to a real
+    # sudo/chrome-account.sh subprocess. Individual tests override this
+    # via _mock_profile_action for the actions they actually care about.
+    monkeypatch.setattr(control, "account_profile_action", lambda action, profile_id, timeout=20, extra=None: "")
 
 
 @pytest.fixture
