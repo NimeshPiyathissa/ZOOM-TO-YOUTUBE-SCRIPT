@@ -26,25 +26,69 @@ BROWSER_LOADED_MARKER = STREAM_LOGS_DIR / "browser-loaded"
 SOURCE_ENV_FILE = STREAM_APP_DIR / "current-source.env"
 
 WRITE_ENV_SCRIPT = STREAM_SCRIPTS_DIR / "write-env.sh"
+# Regenerates the pipeline's *runtime* env file - the merge of non-secret
+# .env keys with the vault's current secrets - on a tmpfs-backed path
+# instead of persistent disk (Part 0's runtime bridge; see
+# app/runtime_env.py). Not yet wired into any live systemd unit - see
+# docs/encryption.md once Phase B lands it.
+WRITE_RUNTIME_ENV_SCRIPT = STREAM_SCRIPTS_DIR / "write-runtime-env.sh"
 WRITE_SOURCE_SCRIPT = STREAM_SCRIPTS_DIR / "write-source.sh"
+# Part 4: watermark image uploads - see app/control.py's write_watermark_image().
+WRITE_WATERMARK_IMAGE_SCRIPT = STREAM_SCRIPTS_DIR / "write-watermark-image.sh"
 ROTATE_VNC_SCRIPT = STREAM_SCRIPTS_DIR / "rotate-vnc-password.sh"
 TEST_RECORDING_SCRIPT = STREAM_SCRIPTS_DIR / "test-recording.sh"
 ZOOM_SIGNIN_SCRIPT = STREAM_SCRIPTS_DIR / "zoom-google-signin.sh"
 ZOOM_SIGNOUT_SCRIPT = STREAM_SCRIPTS_DIR / "zoom-signout.sh"
 RECORD_STREAM_SCRIPT = STREAM_SCRIPTS_DIR / "record-stream.sh"
 AUTO_VACUUM_SCRIPT = STREAM_SCRIPTS_DIR / "auto-vacuum.sh"
-RECORDINGS_DIR = ZOOMBOT_HOME / "recordings"
+DASHBOARD_HOME = pathlib.Path("/home/dashboard")
+APP_DIR = DASHBOARD_HOME / "app" if (DASHBOARD_HOME / "app").exists() else pathlib.Path(__file__).resolve().parent.parent
+RECORDINGS_DIR = DASHBOARD_HOME / "recordings" if DASHBOARD_HOME.exists() else (APP_DIR / "recordings")
+SETTINGS_FILE = APP_DIR / "settings.json"
 
 CHROME_PROFILE_DIR = ZOOMBOT_HOME / ".config" / "stream-chrome-profile"
 
-DASHBOARD_HOME = pathlib.Path("/home/dashboard")
-DATA_DIR = DASHBOARD_HOME / "data"
+DATA_DIR = DASHBOARD_HOME / "data" if DASHBOARD_HOME.exists() else (APP_DIR / "data")
 DB_PATH = DATA_DIR / "dashboard.db"
 OVERLAY_CONFIG_FILE = DATA_DIR / "overlay.json"
 BRB_SLATE_FILE = DATA_DIR / "brb_slate.json"
 CERT_DIR = DASHBOARD_HOME / "certs"
 CERT_FILE = CERT_DIR / "cert.pem"
 KEY_FILE = CERT_DIR / "key.pem"
+
+# --- Encrypted secret store (Part 0) ---
+# The encrypted blob itself is dashboard-owned, same protection level as
+# dashboard.db (DATA_DIR is chmod 700, owned by the dashboard user).
+SECRET_STORE_FILE = DATA_DIR / "secrets.enc.json"
+# A manual `lock` sets this dashboard-owned sentinel so cached-mode
+# auto-unlock refuses to silently re-open the vault on the next process
+# start until an admin proves they still hold the master password again -
+# see secret_store.lock()/try_auto_unlock(). Deliberately NOT the same
+# file as the root-owned key cache below, which this process can't write.
+VAULT_LOCK_SENTINEL_FILE = DATA_DIR / "vault.locked"
+
+# The cached-mode master key. Root-owned so only setup/change-master-
+# password/set-unlock-mode (run via `sudo python -m app.cli ...`) can
+# write it; group `dashboard` (the service account is already a member,
+# same pattern as its zoombot group membership) so the running dashboard
+# process can read it at startup for unattended auto-unlock. See
+# docs/encryption.md for the honest limitation this implies (protects
+# against a stolen disk/backup or a non-root compromise, not root).
+MASTER_KEY_CACHE_DIR = pathlib.Path("/etc/zoom-stream")
+MASTER_KEY_CACHE_FILE = MASTER_KEY_CACHE_DIR / "master.key"
+DASHBOARD_USER = "dashboard"
+DASHBOARD_GROUP = "dashboard"
+
+UNLOCK_MODES = {"cached", "prompt"}
+DEFAULT_UNLOCK_MODE = "cached"
+
+# Which settings.json fields are secret (move into the vault) vs. plain
+# config (stay in settings.json). Mirrors the ALL_ENV_KEYS/NON_SECRET_ENV_KEYS
+# split below for .env. telegram_chat_id/telegram_api_id are identifiers,
+# not credentials - Telegram's own UI shows both openly - so they stay
+# non-secret; telegram_api_hash and telegram_session_string are as
+# sensitive as a login token and must not.
+SETTINGS_SECRET_KEYS = {"telegram_bot_token", "telegram_api_hash", "telegram_session_string", "vnc_password"}
 
 DISPLAY_NUM = ":99"
 
@@ -126,15 +170,38 @@ VIDEO_BITRATE_RANGE_KBPS = (1000, 8000)
 AUDIO_BITRATE_RANGE_KBPS = (96, 320)
 
 # --- server ---
-BIND_HOST = "127.0.0.1"
-BIND_PORT = 8443
+# Bound to all interfaces on the standard HTTPS port, by design: this
+# dashboard is meant to be reached directly at https://<vps-ip> with no
+# SSH tunnel or port-forward. The actual bind flags live in
+# systemd/dashboard.service's ExecStart - these two constants are
+# documentation/reference, not something the app reads at startup.
+# Login is protected by TLS + the existing lockout-after-5-failures +
+# CSRF, not by network-level obscurity - see docs/security.md.
+BIND_HOST = "0.0.0.0"
+BIND_PORT = 443
 COOKIE_NAME = "zsdash_session"
 SESSION_IDLE_TIMEOUT_SECONDS = 12 * 3600
 SESSION_ABSOLUTE_TIMEOUT_SECONDS = 7 * 24 * 3600
 LOGIN_MAX_FAILURES = 5
 LOGIN_LOCKOUT_WINDOW_SECONDS = 15 * 60
 
-TIMEZONE = "Asia/Colombo"
+def _detect_system_timezone() -> str:
+    """Portability fix: this used to be a hardcoded personal timezone.
+    Reads the system's actual configured timezone (standard on Debian/
+    Ubuntu - `timedatectl set-timezone` writes exactly this file), falling
+    back to UTC. No installer prompt needed - the VPS's own timezone,
+    which the operator already controls the normal Linux way, is the
+    right answer for scheduling join/go-live/stop times."""
+    try:
+        tz = pathlib.Path("/etc/timezone").read_text(encoding="utf-8").strip()
+        if tz:
+            return tz
+    except OSError:
+        pass
+    return "UTC"
+
+
+TIMEZONE = _detect_system_timezone()
 
 # Trust X-Forwarded-Proto for the Secure cookie flag only when running
 # behind a local reverse proxy (e.g. optional Caddy setup). False = the
