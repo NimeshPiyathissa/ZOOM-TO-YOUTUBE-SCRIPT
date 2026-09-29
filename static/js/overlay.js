@@ -206,6 +206,8 @@
         const data = await res.json();
         if (data && data.state) state = data.state;
         updatePreview();
+        if (typeof syncWatermarkModeUI === 'function') syncWatermarkModeUI();
+        if (typeof setRequiresRestart === 'function' && 'requires_restart' in data) setRequiresRestart(data.requires_restart);
         if (typeof checkHardwareStatus === 'function') checkHardwareStatus();
         if (showToast && typeof window.toast === 'function') {
           window.toast('Overlay applied to live broadcast.', 'success');
@@ -539,6 +541,8 @@
           const data = await res.json();
           if (data && data.state) state = data.state;
           updatePreview();
+          syncWatermarkModeUI();
+          if ('requires_restart' in data) setRequiresRestart(data.requires_restart);
           checkHardwareStatus();
           if (typeof window.toast === 'function') {
             window.toast(state.visible ? 'Overlay is now ON-AIR' : 'Overlay is now HIDDEN', state.visible ? 'success' : 'info');
@@ -564,6 +568,7 @@
   const btnReinjectText = document.getElementById('btn-reinject-text');
 
   async function checkHardwareStatus() {
+    updateWatermarkEncoderBadge();
     if (!hwBadge || !hwText) return;
     try {
       const res = await fetch('/api/overlay/status');
@@ -591,6 +596,141 @@
       }
     }
   }
+
+  // --- Part 4: real (encoder-burned) watermark controls ---
+  const wmModeButtons = document.querySelectorAll('.wm-mode-btn');
+  const wmAnchorButtons = document.querySelectorAll('.wm-anchor-btn');
+  const wmFontField = document.getElementById('watermark-font-field');
+  const wmFontSelect = document.getElementById('watermark-font-select');
+  const wmImageField = document.getElementById('watermark-image-field');
+  const wmImageUpload = document.getElementById('watermark-image-upload');
+  const wmImageCurrent = document.getElementById('watermark-image-current');
+  const wmMarginX = document.getElementById('watermark-margin-x');
+  const wmMarginY = document.getElementById('watermark-margin-y');
+  const wmSize = document.getElementById('watermark-size');
+  const wmSizeUnit = document.getElementById('watermark-size-unit');
+  const wmOpacity = document.getElementById('watermark-opacity');
+  const wmRestartBanner = document.getElementById('watermark-restart-banner');
+  const wmRestartBtn = document.getElementById('btn-watermark-restart-encoder');
+  const wmEncoderBadge = document.getElementById('watermark-encoder-badge');
+  const wmEncoderText = document.getElementById('watermark-encoder-text');
+
+  function setRequiresRestart(requiresRestart) {
+    if (wmRestartBanner) wmRestartBanner.hidden = !requiresRestart;
+  }
+
+  function syncWatermarkModeUI() {
+    const mode = state.mode || 'text';
+    wmModeButtons.forEach((b) => b.classList.toggle('btn-primary', b.dataset.mode === mode));
+    wmModeButtons.forEach((b) => b.classList.toggle('btn-secondary', b.dataset.mode !== mode));
+    if (wmFontField) wmFontField.hidden = mode !== 'text';
+    if (wmImageField) wmImageField.hidden = mode !== 'image';
+    if (wmSizeUnit) wmSizeUnit.textContent = mode === 'image' ? '(% of video width)' : '(px)';
+    if (wmSize) wmSize.value = mode === 'image' ? (state.image_scale_pct != null ? state.image_scale_pct : 15) : (state.font_size || 28);
+    if (wmOpacity) wmOpacity.value = mode === 'image' ? (state.image_opacity != null ? state.image_opacity : 100) : (state.font_opacity != null ? state.font_opacity : 100);
+    wmAnchorButtons.forEach((b) => b.classList.toggle('is-active', b.dataset.anchor === state.anchor));
+    if (wmImageCurrent) wmImageCurrent.textContent = state.image_path ? ('Current: ' + state.image_path.split('/').pop()) : 'No image uploaded yet.';
+  }
+
+  async function updateWatermarkEncoderBadge() {
+    if (!wmEncoderBadge || !wmEncoderText) return;
+    try {
+      const res = await fetch('/api/overlay/status');
+      if (!res.ok) return;
+      const data = await res.json();
+      wmEncoderBadge.classList.remove('status-active', 'status-hidden');
+      if (data.encoder_active) {
+        wmEncoderBadge.classList.add('status-active');
+        wmEncoderText.textContent = 'LIVE: WATERMARK ON';
+      } else {
+        wmEncoderBadge.classList.add('status-hidden');
+        wmEncoderText.textContent = 'LIVE: WATERMARK OFF';
+      }
+      setRequiresRestart(Boolean(data.requires_restart));
+    } catch (e) { /* leave last-known state on screen */ }
+  }
+
+  wmModeButtons.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      state.mode = btn.dataset.mode;
+      syncWatermarkModeUI();
+      queueAutoSave();
+    });
+  });
+
+  wmAnchorButtons.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      state.anchor = btn.dataset.anchor;
+      syncWatermarkModeUI();
+      queueAutoSave();
+    });
+  });
+
+  if (wmFontSelect) {
+    wmFontSelect.value = state.encoder_font || 'inter';
+    wmFontSelect.addEventListener('change', () => {
+      state.encoder_font = wmFontSelect.value;
+      queueAutoSave();
+    });
+  }
+
+  if (wmMarginX) wmMarginX.addEventListener('input', () => { state.margin_x = parseInt(wmMarginX.value, 10) || 0; queueAutoSave(); });
+  if (wmMarginY) wmMarginY.addEventListener('input', () => { state.margin_y = parseInt(wmMarginY.value, 10) || 0; queueAutoSave(); });
+  if (wmSize) wmSize.addEventListener('input', () => {
+    if ((state.mode || 'text') === 'image') state.image_scale_pct = parseFloat(wmSize.value);
+    else state.font_size = parseInt(wmSize.value, 10);
+    queueAutoSave();
+  });
+  if (wmOpacity) wmOpacity.addEventListener('input', () => {
+    if ((state.mode || 'text') === 'image') state.image_opacity = parseInt(wmOpacity.value, 10);
+    else state.font_opacity = parseInt(wmOpacity.value, 10);
+    queueAutoSave();
+  });
+
+  if (wmImageUpload) {
+    wmImageUpload.addEventListener('change', async () => {
+      const file = wmImageUpload.files && wmImageUpload.files[0];
+      if (!file) return;
+      const formData = new FormData();
+      formData.append('image', file);
+      try {
+        const res = await fetch('/api/overlay/image', {
+          method: 'POST',
+          headers: { 'X-CSRF-Token': getCsrfToken() },
+          body: formData,
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          if (typeof window.toast === 'function') window.toast(data.detail || 'Upload failed', 'err');
+          return;
+        }
+        if (data.state) state = data.state;
+        syncWatermarkModeUI();
+        if (typeof window.toast === 'function') window.toast('Watermark image uploaded. Restart the encoder to apply.', 'success');
+        checkHardwareStatus();
+      } catch (e) {
+        if (typeof window.toast === 'function') window.toast('Upload failed', 'err');
+      }
+    });
+  }
+
+  if (wmRestartBtn) {
+    wmRestartBtn.addEventListener('click', async () => {
+      if (typeof window.confirmDialog === 'function') {
+        const ok = await window.confirmDialog('Restart the encoder to apply the watermark change? This briefly interrupts the live stream.');
+        if (!ok) return;
+      }
+      try {
+        await fetch('/api/stream/restart', { method: 'POST', headers: { 'X-CSRF-Token': getCsrfToken() } });
+        if (typeof window.toast === 'function') window.toast('Encoder restart sent', 'success');
+        setTimeout(checkHardwareStatus, 3000);
+      } catch (e) {
+        if (typeof window.toast === 'function') window.toast('Restart failed', 'err');
+      }
+    });
+  }
+
+  syncWatermarkModeUI();
 
   if (btnReinject) {
     btnReinject.addEventListener('click', async () => {

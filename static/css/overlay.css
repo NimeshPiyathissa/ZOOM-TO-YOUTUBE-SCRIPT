@@ -662,6 +662,26 @@
   font-style: italic;
 }
 
+/* Part 4: real (encoder-burned) watermark controls */
+.watermark-anchor-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 3rem);
+  gap: var(--space-2, 8px);
+}
+.wm-anchor-btn {
+  aspect-ratio: 1;
+  font-size: 1.1rem;
+  line-height: 1;
+}
+.wm-anchor-btn.is-active {
+  background: var(--accent, #22c55e);
+  color: #fff;
+  border-color: transparent;
+}
+.wm-mode-btn.btn-primary {
+  box-shadow: var(--shadow-sm);
+}
+
 /* Utility to visually hide select */
 .visually-hidden {
   position: absolute !important;

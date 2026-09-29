@@ -112,6 +112,93 @@
     </div>
   </section>
 
+  <!-- ================================================================ Real (encoder-burned) watermark -->
+  <h2 class="floating-section-title">
+    {{ icon("video", "icon-sm") }}Encoder Watermark (What Actually Appears On Stream)
+  </h2>
+
+  <section class="card" aria-labelledby="watermark-heading" id="watermark-encoder-card">
+    <h2 id="watermark-heading" class="rack-title">
+      {{ icon("video", "icon-sm") }}Burned Into The Broadcast
+      <span class="rack-title-end">
+        <span class="overlay-hw-badge" id="watermark-encoder-badge" data-tooltip="Is the watermark filter present in the currently-running encoder process right now">
+          <span class="status-dot"></span>
+          <span class="status-text" id="watermark-encoder-text">CHECKING...</span>
+        </span>
+      </span>
+    </h2>
+    <p class="hint">
+      The canvas above is a live <em>preview</em> only (injected into the Chrome kiosk's page, not the
+      broadcast itself) - it can't work at all for a Zoom source, and can be hidden by fullscreen video
+      even for a webpage source. This section controls the watermark FFmpeg actually draws into the
+      output, for every source type. <strong>Changes here require restarting the encoder to take effect</strong> -
+      saving alone does not interrupt the live stream.
+    </p>
+
+    <div id="watermark-restart-banner" class="banner banner-warning mt-2" hidden>
+      <span>{{ icon("alert-triangle", "icon-sm") }}</span>
+      <span>Saved settings don't match what's currently live. Restart the encoder to apply them.</span>
+      <button type="button" id="btn-watermark-restart-encoder" class="btn btn-warning btn-sm ml-auto">Restart Encoder</button>
+    </div>
+
+    <div class="field mt-3">
+      <label class="label">Watermark Type</label>
+      <div class="btn-group segmented" role="radiogroup" aria-label="Watermark type">
+        <button type="button" class="btn btn-secondary btn-sm wm-mode-btn" data-mode="text">Text</button>
+        <button type="button" class="btn btn-secondary btn-sm wm-mode-btn" data-mode="image">Image / Logo</button>
+      </div>
+    </div>
+
+    <div class="field mt-3" id="watermark-font-field">
+      <label class="label" for="watermark-font-select">Encoder Font (text mode)</label>
+      <select id="watermark-font-select" class="select input">
+        <option value="inter">Inter</option>
+        <option value="jetbrains-mono">JetBrains Mono</option>
+      </select>
+      <span class="hint">A small, license-verified set bundled as real font files - not the 60+ preview-only list above.</span>
+    </div>
+
+    <div class="field mt-3" id="watermark-image-field" hidden>
+      <label class="label" for="watermark-image-upload">Watermark Image (PNG/JPG/WEBP, up to 5MB)</label>
+      <input type="file" id="watermark-image-upload" class="input" accept=".png,.jpg,.jpeg,.webp">
+      <span class="hint" id="watermark-image-current"></span>
+    </div>
+
+    <div class="field mt-3">
+      <label class="label">Position (9-point grid)</label>
+      <div class="watermark-anchor-grid" id="watermark-anchor-grid">
+        <button type="button" class="btn btn-secondary btn-sm wm-anchor-btn" data-anchor="top-left">↖</button>
+        <button type="button" class="btn btn-secondary btn-sm wm-anchor-btn" data-anchor="top-center">↑</button>
+        <button type="button" class="btn btn-secondary btn-sm wm-anchor-btn" data-anchor="top-right">↗</button>
+        <button type="button" class="btn btn-secondary btn-sm wm-anchor-btn" data-anchor="middle-left">←</button>
+        <button type="button" class="btn btn-secondary btn-sm wm-anchor-btn" data-anchor="center">•</button>
+        <button type="button" class="btn btn-secondary btn-sm wm-anchor-btn" data-anchor="middle-right">→</button>
+        <button type="button" class="btn btn-secondary btn-sm wm-anchor-btn" data-anchor="bottom-left">↙</button>
+        <button type="button" class="btn btn-secondary btn-sm wm-anchor-btn" data-anchor="bottom-center">↓</button>
+        <button type="button" class="btn btn-secondary btn-sm wm-anchor-btn" data-anchor="bottom-right">↘</button>
+      </div>
+    </div>
+
+    <div class="studio-row">
+      <div class="field">
+        <label class="label" for="watermark-margin-x">Margin X (px)</label>
+        <input type="number" id="watermark-margin-x" class="input" min="0" max="500" value="{{ overlay_state.margin_x }}">
+      </div>
+      <div class="field">
+        <label class="label" for="watermark-margin-y">Margin Y (px)</label>
+        <input type="number" id="watermark-margin-y" class="input" min="0" max="500" value="{{ overlay_state.margin_y }}">
+      </div>
+      <div class="field" id="watermark-size-field">
+        <label class="label" for="watermark-size">Size <span id="watermark-size-unit"></span></label>
+        <input type="range" id="watermark-size" class="range" min="10" max="80" value="{{ overlay_state.font_size }}">
+      </div>
+      <div class="field" id="watermark-opacity-field">
+        <label class="label" for="watermark-opacity">Opacity (%)</label>
+        <input type="range" id="watermark-opacity" class="range" min="0" max="100" value="{{ overlay_state.font_opacity }}">
+      </div>
+    </div>
+  </section>
+
   <!-- ================================================================ Manage Overlays & Streams -->
   <h2 class="floating-section-title">
     {{ icon("layers", "icon-sm") }}Manage Overlays &amp; Typography

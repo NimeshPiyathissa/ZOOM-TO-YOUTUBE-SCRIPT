@@ -142,7 +142,31 @@ DEFAULT_OVERLAY_STATE = {
     "pos_y": 88.0,
     "anchor": "bottom-left",
     "visible": False,
+
+    # --- Encoder-burned watermark (Part 4 fix) ---
+    # The fields above drive the live CDP/DOM preview only - see
+    # push_overlay_to_kiosk()'s docstring for why that was never actually
+    # visible in the broadcast. These fields drive the real FFmpeg
+    # drawtext/overlay filter built by scripts/lib.sh's
+    # build_watermark_filter() and are what the operator is actually
+    # toggling. "anchor" above is reused for encoder positioning too (now
+    # a full 9-point grid, not just 5) - margin_x/margin_y are pixels from
+    # the anchored edge, independent of the preview's pos_x/pos_y percentages.
+    "mode": "text",  # "text" | "image"
+    "encoder_font": "inter",  # "inter" | "jetbrains-mono" - see scripts/fonts/
+    "margin_x": 24,
+    "margin_y": 24,
+    "image_path": "",
+    "image_opacity": 100,
+    "image_scale_pct": 15.0,  # width, as a percentage of the video width
 }
+
+ENCODER_ANCHORS = (
+    "top-left", "top-center", "top-right",
+    "middle-left", "center", "middle-right",
+    "bottom-left", "bottom-center", "bottom-right",
+)
+ENCODER_FONTS = {"inter": "Inter-Variable.ttf", "jetbrains-mono": "JetBrainsMono.ttf"}
 
 
 def hex_to_rgba(hex_color: str, opacity_pct: int | float = 100) -> str:
@@ -241,13 +265,27 @@ def generate_overlay_js(state: dict) -> str:
     pos_y = state.get("pos_y", 88.0)
     anchor = state.get("anchor", "custom")
 
-    # Determine transform alignment based on anchor or relative position
+    # Determine transform alignment based on anchor or relative position -
+    # the full 9-point grid (see overlay.py's ENCODER_ANCHORS), so the
+    # preview at least visually matches the shape of what the encoder-side
+    # filter (scripts/lib.sh's build_watermark_filter()) actually renders,
+    # even though this DOM preview and the real x11grab-captured output
+    # are fundamentally different rendering surfaces - see
+    # push_overlay_to_kiosk()'s docstring.
     if anchor == "top-left":
         transform = "translate(0, 0)"
+    elif anchor == "top-center":
+        transform = "translate(-50%, 0)"
     elif anchor == "top-right":
         transform = "translate(-100%, 0)"
+    elif anchor == "middle-left":
+        transform = "translate(0, -50%)"
+    elif anchor == "middle-right":
+        transform = "translate(-100%, -50%)"
     elif anchor == "bottom-left":
         transform = "translate(0, -100%)"
+    elif anchor == "bottom-center":
+        transform = "translate(-50%, -100%)"
     elif anchor == "bottom-right":
         transform = "translate(-100%, -100%)"
     elif anchor == "center":
