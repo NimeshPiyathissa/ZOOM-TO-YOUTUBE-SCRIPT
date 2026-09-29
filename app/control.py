@@ -276,6 +276,20 @@ SOURCE_ENV_KEYS = (
     "ZOOM_JOIN_VIA",
 )
 
+# Part 4: the real (encoder-burned) watermark filter's config - see
+# scripts/lib.sh's build_watermark_filter(), which stream.sh and
+# test-recording.sh both call. Lives in current-source.env (not .env)
+# because it's not secret, exactly like every other WATERMARK_ENV_KEYS
+# concern - but unlike SOURCE_ENV_KEYS above, these are independent of
+# which source is active, so _source_env_lines() below must carry them
+# forward across a source switch rather than resetting them to "".
+WATERMARK_ENV_KEYS = (
+    "WATERMARK_ENABLED", "WATERMARK_MODE", "WATERMARK_TEXT", "WATERMARK_FONT",
+    "WATERMARK_ANCHOR", "WATERMARK_MARGIN_X", "WATERMARK_MARGIN_Y",
+    "WATERMARK_SIZE", "WATERMARK_OPACITY", "WATERMARK_IMAGE_PATH",
+)
+SOURCE_ENV_KEYS = SOURCE_ENV_KEYS + WATERMARK_ENV_KEYS
+
 
 def _account_profile_id(source: dict) -> str:
     account_id = source.get("account_id")
@@ -328,6 +342,14 @@ def _source_env_lines(source: dict) -> dict[str, str]:
     values = {k: "" for k in SOURCE_ENV_KEYS}
     values["SOURCE_TYPE"] = type_
     values["ACCOUNT_PROFILE_ID"] = _account_profile_id(source)
+    # Watermark config is independent of which source is active - carry
+    # it forward from whatever's already on disk rather than resetting it
+    # every time a source is applied (switching sources would otherwise
+    # silently clear the watermark).
+    current = read_current_source()
+    for key in WATERMARK_ENV_KEYS:
+        if key in current:
+            values[key] = current[key]
     if type_ == "zoom":
         values["ZOOM_AUTO_REJOIN"] = "1" if options.get("auto_rejoin", True) else "0"
         values["ZOOM_REJOIN_MAX"] = str(int(options.get("rejoin_max", 5)))
@@ -373,6 +395,72 @@ def _write_source_env_values(values: dict[str, str]) -> None:
 
 def write_current_source(source: dict) -> None:
     _write_source_env_values(_source_env_lines(source))
+
+
+def write_watermark_config(watermark: dict) -> None:
+    """Updates only WATERMARK_ENV_KEYS in current-source.env, leaving the
+    active source's own keys untouched - the inverse of how
+    _source_env_lines() preserves watermark keys across a source switch.
+    `watermark` is app/overlay.py's state dict (get_overlay_state());
+    margin/size/opacity are written as plain integers, never trusting the
+    caller to have already stringified them correctly."""
+    current = read_current_source()
+    values = {k: current.get(k, "") for k in SOURCE_ENV_KEYS}
+    values["WATERMARK_ENABLED"] = "1" if watermark.get("visible") else "0"
+    values["WATERMARK_MODE"] = str(watermark.get("mode", "text"))
+    values["WATERMARK_TEXT"] = str(watermark.get("text", ""))
+    values["WATERMARK_FONT"] = str(watermark.get("encoder_font", "inter"))
+    values["WATERMARK_ANCHOR"] = str(watermark.get("anchor", "bottom-right"))
+    values["WATERMARK_MARGIN_X"] = str(int(watermark.get("margin_x", 24)))
+    values["WATERMARK_MARGIN_Y"] = str(int(watermark.get("margin_y", 24)))
+    size = watermark.get("image_scale_pct") if watermark.get("mode") == "image" else watermark.get("font_size")
+    values["WATERMARK_SIZE"] = str(size if size is not None else 28)
+    opacity = watermark.get("image_opacity") if watermark.get("mode") == "image" else watermark.get("font_opacity")
+    values["WATERMARK_OPACITY"] = str(int(opacity if opacity is not None else 100))
+    values["WATERMARK_IMAGE_PATH"] = str(watermark.get("image_path", ""))
+    _write_source_env_values(values)
+
+
+def write_watermark_image(content: bytes, ext: str) -> str:
+    """Pipes raw image bytes to the zoombot-owned write-watermark-image.sh
+    (same sudo/stdin-piping contract as every other zoombot write in this
+    file) and returns the path it wrote - which becomes WATERMARK_IMAGE_PATH
+    in current-source.env. The extension is passed as an argv element (not
+    secret, and validated server-side both here and again in the script -
+    never derived from raw user input beyond that fixed allowlist)."""
+    if ext not in (".png", ".jpg", ".jpeg", ".webp"):
+        raise ControlError(f"unsupported image extension: {ext}")
+    argv = [SUDO, "-u", config.ZOOMBOT_USER, str(config.WRITE_WATERMARK_IMAGE_SCRIPT), ext]
+    proc = run_as_zoombot(argv, input_bytes=content, timeout=15)
+    if proc.returncode != 0:
+        raise ControlError("failed to write watermark image: " + proc.stderr.decode(errors="replace"))
+    return proc.stdout.decode(errors="replace").strip()
+
+
+def watermark_is_running() -> bool:
+    """Real state, not "is it saved to overlay.json": does the *currently
+    running* ffmpeg-stream process actually have a watermark filter in its
+    command line right now. Used so the dashboard's toggle can honestly
+    show whether a saved change has actually taken effect yet, instead of
+    just echoing back what was last written (see Part 4's UI requirement
+    - a config change here needs an encoder restart, and the UI must say
+    so rather than silently no-op).
+    """
+    try:
+        proc = subprocess.run(
+            ["pgrep", "-a", "-u", config.ZOOMBOT_USER, "ffmpeg"],
+            capture_output=True, timeout=5,
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return False
+    if proc.returncode != 0:
+        return False
+    # The full command line includes the YouTube RTMP URL (stream key and
+    # all, same as ffmpeg.log) - decoded only to check for these two
+    # substrings and immediately discarded. Never log, return, or
+    # otherwise let `cmdline` escape this function.
+    cmdline = proc.stdout.decode(errors="replace")
+    return "drawtext=" in cmdline or "overlay=" in cmdline
 
 
 def switch_zoom_join_via(via: str) -> None:
@@ -516,12 +604,29 @@ def start_source(source: dict) -> dict:
 
 
 def rotate_vnc_password(new_password: str) -> dict:
+    """Sets x11vnc's own password store, then updates VNC_PASSWORD's
+    source of truth. Part 0: that's the encrypted vault (if unlocked) -
+    never settings.json in plaintext again. On an install that hasn't run
+    vault setup yet, falls back to the legacy settings_store write so VNC
+    access still works until it has."""
     if not (4 <= len(new_password) <= 128):
         raise ControlError("password must be 4-128 characters")
     argv = [SUDO, "-u", config.ZOOMBOT_USER, str(config.ROTATE_VNC_SCRIPT)]
     proc = run_as_zoombot(argv, input_bytes=new_password.encode("utf-8"), timeout=15)
     if proc.returncode != 0:
         raise ControlError("failed to set VNC password")
+    try:
+        from . import secret_store
+        if secret_store.is_unlocked():
+            secret_store.set_secrets({"VNC_PASSWORD": new_password})
+        else:
+            raise secret_store.VaultLockedError
+    except Exception:
+        try:
+            from . import settings_store
+            settings_store.save_settings({"vnc_password": new_password})
+        except Exception:
+            pass
     return unit_action("x11vnc", "restart")
 
 

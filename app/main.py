@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import pathlib
 import re
 import subprocess
@@ -17,7 +18,7 @@ from starlette.concurrency import run_in_threadpool
 
 from . import config, db, security, deps, control, env_store, profiles as profiles_mod
 from . import logs as logs_mod
-from . import preview, stats, scheduler, vnc_proxy
+from . import preview, stats, scheduler, vnc_proxy, vncauth
 from . import sources as sources_mod
 from . import probe as probe_mod
 from . import url_security
@@ -28,8 +29,10 @@ from .youtube import YouTubeURLError
 from . import accounts as accounts_mod
 from .accounts import AccountError
 from . import audio_level
+from . import recording, settings_store, telegram
 
 BASE_DIR = pathlib.Path(__file__).resolve().parent.parent
+logger = logging.getLogger("zoom-stream.main")
 
 app = FastAPI(title="Zoom Stream Dashboard", docs_url=None, redoc_url=None, openapi_url=None)
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
@@ -305,6 +308,7 @@ async def config_page(request: Request):
         "signin_modes": sorted(config.ZOOM_SIGNIN_MODES),
         "direct_modes": sorted(config.DIRECT_MODES),
         "accounts": accounts_mod.list_accounts(),
+        "telegram_cfg": settings_store.masked_settings(),
     })
 
 
@@ -324,7 +328,11 @@ async def vnc_page(request: Request):
     session = _require_page(request)
     if isinstance(session, RedirectResponse):
         return session
-    return templates.TemplateResponse("vnc.html", {"request": request, "username": session["username"]})
+    vnc_pass = vncauth.current_password()
+    return templates.TemplateResponse(
+        "vnc.html",
+        {"request": request, "username": session["username"], "vnc_password": vnc_pass},
+    )
 
 
 @app.get("/schedule", response_class=HTMLResponse)
@@ -907,34 +915,107 @@ async def api_overlay_get(request: Request):
     return overlay.get_overlay_state()
 
 
+def _apply_watermark_config(updated: dict) -> None:
+    """Part 4: writes the real, encoder-consumed config (current-source.env's
+    WATERMARK_* keys), and - the one genuinely new piece of state here -
+    auto-switches a copy-mode direct source to re-encode, since a burned-in
+    filter can't ride along with stream copy. Never silent - see the
+    UI-facing one-line explanation this triggers in overlay.js."""
+    active = sources_mod.get_active_source()
+    if (
+        updated.get("visible")
+        and active
+        and active["type"] == "direct"
+        and (active.get("options") or {}).get("mode") == "copy"
+    ):
+        options = {**(active.get("options") or {}), "mode": "reencode"}
+        sources_mod.update_source(
+            active["id"], active["name"], active["type"], active["url"], options, active.get("account_id"),
+        )
+        active = sources_mod.get_active_source()
+
+    control.write_watermark_config(updated)
+    if active:
+        control.write_current_source(active)
+
+
 @app.post("/api/overlay")
 async def api_overlay_save(request: Request):
     session = deps.require_session_api(request)
     deps.require_csrf(request, session)
     data = await request.json()
-    from . import overlay
+    from . import overlay, control
     updated = overlay.save_overlay_state(data)
     await overlay.push_overlay_to_kiosk(updated)
+    try:
+        _apply_watermark_config(updated)
+    except Exception as exc:
+        logger.warning("failed to apply watermark config to the pipeline: %s", exc)
     db.audit(session["username"], "overlay_update", f"visible={updated.get('visible')}", deps.client_ip(request))
-    return {"ok": True, "state": updated}
+    return {
+        "ok": True, "state": updated,
+        "requires_restart": updated.get("visible", False) != control.watermark_is_running(),
+    }
 
 
 @app.post("/api/overlay/toggle")
 async def api_overlay_toggle(request: Request):
     session = deps.require_session_api(request)
     deps.require_csrf(request, session)
-    from . import overlay
+    from . import overlay, control
     updated = overlay.toggle_overlay_visibility()
     await overlay.push_overlay_to_kiosk(updated)
+    try:
+        _apply_watermark_config(updated)
+    except Exception as exc:
+        logger.warning("failed to apply watermark config to the pipeline: %s", exc)
     db.audit(session["username"], "overlay_toggle", f"visible={updated.get('visible')}", deps.client_ip(request))
-    return {"ok": True, "state": updated}
+    return {
+        "ok": True, "state": updated,
+        "requires_restart": updated.get("visible", False) != control.watermark_is_running(),
+    }
 
 
 @app.get("/api/overlay/status")
 async def api_overlay_status(request: Request):
     deps.require_session_api(request)
-    from . import overlay
-    return await overlay.get_overlay_kiosk_status()
+    from . import overlay, control
+    status = await overlay.get_overlay_kiosk_status()
+    # The number that actually matters for Part 4: is the watermark
+    # filter present in the *running* ffmpeg process right now, not just
+    # saved to overlay.json. See control.watermark_is_running()'s
+    # docstring for why the toggle can't just echo back the saved state.
+    status["encoder_active"] = control.watermark_is_running()
+    status["requires_restart"] = status.get("configured_visible", False) != status["encoder_active"]
+    return status
+
+
+@app.post("/api/overlay/image")
+async def api_overlay_image_upload(request: Request):
+    """Uploads a watermark image, stores it under zoombot (ffmpeg needs to
+    read it, and this process runs as the dashboard user - same
+    cross-user bridge as every other zoombot-owned write, see
+    app/control.py's write_watermark_image())."""
+    session = deps.require_session_api(request)
+    deps.require_csrf(request, session)
+    from . import control, overlay
+
+    form = await request.form()
+    upload = form.get("image")
+    if upload is None or not hasattr(upload, "read"):
+        raise HTTPException(status_code=400, detail="no image file provided")
+    ext = pathlib.Path(getattr(upload, "filename", "") or "").suffix.lower()
+    if ext not in (".png", ".jpg", ".jpeg", ".webp"):
+        raise HTTPException(status_code=400, detail="image must be .png, .jpg, .jpeg, or .webp")
+    content = await upload.read()
+    MAX_BYTES = 5 * 1024 * 1024
+    if len(content) > MAX_BYTES:
+        raise HTTPException(status_code=400, detail="image must be 5MB or smaller")
+
+    image_path = control.write_watermark_image(content, ext)
+    updated = overlay.save_overlay_state({"image_path": image_path, "mode": "image"})
+    db.audit(session["username"], "overlay_image_upload", f"path={image_path}", deps.client_ip(request))
+    return {"ok": True, "image_path": image_path, "state": updated}
 
 
 @app.post("/api/overlay/reinject")
@@ -987,9 +1068,9 @@ async def api_slate_brb_post(request: Request):
 async def api_record_get(request: Request):
     deps.require_session_api(request)
     try:
-        return await run_in_threadpool(control.record_stream_action, "status")
-    except control.ControlError as exc:
-        return _api_error(exc)
+        return await run_in_threadpool(recording.get_status)
+    except Exception:
+        return {"recording": False, "file": "", "duration": 0, "size_mb": 0.0, "free_gb": recording.get_free_disk_gb(), "halted_reason": ""}
 
 
 @app.post("/api/record")
@@ -998,14 +1079,76 @@ async def api_record_post(request: Request):
     deps.require_csrf(request, session)
     data = await request.json()
     action = str(data.get("action", "")).lower()
-    if action not in ("start", "stop"):
-        raise HTTPException(status_code=400, detail="action must be start or stop")
+    if action not in ("start", "stop", "status"):
+        raise HTTPException(status_code=400, detail="action must be start, stop or status")
     try:
-        result = await run_in_threadpool(control.record_stream_action, action)
+        if action == "start":
+            result = await run_in_threadpool(recording.record_start)
+        elif action == "stop":
+            result = await run_in_threadpool(recording.record_stop)
+        else:
+            result = await run_in_threadpool(recording.get_status)
     except control.ControlError as exc:
         return _api_error(exc)
     db.audit(session["username"], f"record_stream_{action}", "", deps.client_ip(request))
     return result
+
+
+@app.post("/api/recordings/clean")
+@app.get("/api/recordings/clean")
+async def api_recordings_clean(request: Request):
+    session = deps.require_session_api(request)
+    if request.method == "POST":
+        deps.require_csrf(request, session)
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+    else:
+        body = dict(request.query_params)
+    force = bool(body.get("force", False) or body.get("all", False))
+    try:
+        max_age = float(body.get("max_age_hours", 24.0))
+    except (ValueError, TypeError):
+        max_age = 24.0
+    result = await run_in_threadpool(recording.clean_recordings, max_age_hours=max_age, force=force)
+    db.audit(session["username"], "recordings_clean", f"deleted={result.get('deleted_count')} freed_mb={result.get('freed_mb')}", deps.client_ip(request))
+    return result
+
+
+@app.get("/api/settings/telegram")
+async def api_settings_telegram_get(request: Request):
+    deps.require_session_api(request)
+    return settings_store.masked_settings()
+
+
+@app.post("/api/settings/telegram")
+async def api_settings_telegram_post(request: Request):
+    session = deps.require_session_api(request)
+    deps.require_csrf(request, session)
+    updates = await request.json()
+    settings_store.save_settings(updates)
+    db.audit(session["username"], "telegram_settings_update", ip=deps.client_ip(request))
+    return {"ok": True, "settings": settings_store.masked_settings()}
+
+
+@app.post("/api/telegram/test")
+async def api_telegram_test_post(request: Request):
+    session = deps.require_session_api(request)
+    deps.require_csrf(request, session)
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
+    res = await telegram.test_telegram_connection(
+        bot_token=str(data.get("telegram_bot_token", "")),
+        chat_id=str(data.get("telegram_chat_id", "")),
+        api_id=str(data.get("telegram_api_id", "")),
+        api_hash=str(data.get("telegram_api_hash", "")),
+        session_string=str(data.get("telegram_session_string", "")),
+    )
+    db.audit(session["username"], "telegram_test", f"ok={res.get('ok')}", deps.client_ip(request))
+    return res
 
 
 @app.post("/api/settings")
@@ -2246,6 +2389,7 @@ async def api_audit(request: Request):
 # ---------------------------------------------------------------- vnc websocket
 
 @app.websocket("/vnc/ws")
+@app.websocket("/ws/vnc")
 async def vnc_ws(websocket: WebSocket):
     await vnc_proxy.proxy(websocket)
 
