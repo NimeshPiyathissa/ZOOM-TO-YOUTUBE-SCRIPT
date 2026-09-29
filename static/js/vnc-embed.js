@@ -17,6 +17,7 @@ export function promptText(message) {
   return new Promise((resolve) => {
     const backdrop = document.createElement("div");
     backdrop.className = "modal-backdrop";
+    backdrop.style.zIndex = "9999";
     backdrop.innerHTML = `
       <div class="modal" role="dialog" aria-modal="true" aria-labelledby="vnc-pass-title">
         <h3 id="vnc-pass-title">VNC password</h3>
@@ -28,7 +29,12 @@ export function promptText(message) {
     const input = backdrop.querySelector("#vnc-pass-input");
     let done = false;
     const finish = (v) => { if (done) return; done = true; release(); backdrop.remove(); resolve(v); };
-    const release = trapFocus(backdrop, () => finish(null));
+    const trap = typeof trapFocus === "function" ? trapFocus : (el, onEsc) => {
+      const handler = (e) => { if (e.key === "Escape") onEsc(); };
+      window.addEventListener("keydown", handler);
+      return () => window.removeEventListener("keydown", handler);
+    };
+    const release = trap(backdrop, () => finish(null));
     backdrop.querySelector("#vnc-pass-ok").onclick = () => finish(input.value);
     backdrop.querySelector("#vnc-pass-cancel").onclick = () => finish(null);
     input.addEventListener("keydown", (e) => { if (e.key === "Enter") finish(input.value); });
@@ -37,13 +43,16 @@ export function promptText(message) {
 }
 
 /**
- * connectVnc(target, { onDisconnect, getPassword })
+ * connectVnc(target, { onDisconnect, onConnect, getPassword, password, path, scaleViewport })
  *  getPassword: optional async () => string|null. When given, it is
  *  called on 'credentialsrequired' instead of the built-in prompt (so a
  *  caller can remember the password in memory for the page's lifetime);
  *  returning null cancels the connection.
+ *  password: optional string to auto-send when credentials are required.
+ *  path: WebSocket endpoint path (default "/vnc/ws").
+ *  scaleViewport: boolean (default true).
  */
-export function connectVnc(target, { onDisconnect, getPassword } = {}) {
+export function connectVnc(target, { onDisconnect, onConnect, getPassword, password, path = "/vnc/ws", scaleViewport = true } = {}) {
   const proto = location.protocol === "https:" ? "wss" : "ws";
   // Request the "binary" subprotocol explicitly. noVNC 1.4 defaults
   // wsProtocols to [] (no subprotocol requested); our /vnc/ws proxy
@@ -51,17 +60,24 @@ export function connectVnc(target, { onDisconnect, getPassword } = {}) {
   // subprotocol the client never offered makes the browser abort the
   // handshake with code 1006 - the "VNC disconnected unexpectedly" bug.
   // Asking for "binary" here makes client and proxy agree.
-  const rfb = new RFB(target, `${proto}://${location.host}/vnc/ws`, { wsProtocols: ["binary"] });
-  rfb.scaleViewport = true;
+  const wsUrl = `${proto}://${location.host}${path}`;
+  const rfb = new RFB(target, wsUrl, { wsProtocols: ["binary"] });
+  rfb.scaleViewport = scaleViewport;
   rfb.resizeSession = false;
   rfb.addEventListener("credentialsrequired", async () => {
-    const password = getPassword ? await getPassword() : await promptText("Enter the VNC password to connect.");
-    if (password == null) { try { rfb.disconnect(); } catch (err) { /* already gone */ } return; }
-    rfb.sendCredentials({ password });
+    let pass = password;
+    if (!pass) {
+      pass = getPassword ? await getPassword() : await promptText("Enter the VNC password to connect.");
+    }
+    if (pass == null) { try { rfb.disconnect(); } catch (err) { /* already gone */ } return; }
+    rfb.sendCredentials({ password: pass });
   });
+  if (onConnect) {
+    rfb.addEventListener("connect", onConnect);
+  }
   rfb.addEventListener("disconnect", (e) => {
     const clean = e.detail && e.detail.clean;
-    if (!clean) toast("VNC disconnected unexpectedly", "err");
+    if (!clean && typeof toast === "function") toast("VNC disconnected unexpectedly", "err");
     if (onDisconnect) onDisconnect(clean);
   });
   return rfb;

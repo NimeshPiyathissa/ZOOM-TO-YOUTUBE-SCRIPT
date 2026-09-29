@@ -5,9 +5,12 @@ dashboard session and only ever reaches x11vnc over loopback, so making
 the *browser* answer a second, separate VNC password challenge is pure
 friction - and it leaks the display password into every viewer's hands.
 Instead the proxy answers x11vnc's challenge itself, using the password
-already stored server-side (VNC_PASSWORD in the zoombot .env, read via
-env_store), and offers the browser the "None" security type. The secret
-never leaves the box.
+already stored server-side, and offers the browser the "None" security
+type. The secret never leaves the box.
+
+Part 0: VNC_PASSWORD's source of truth is now the encrypted vault. The
+legacy settings.json/.env fallbacks below only matter for an install that
+hasn't run through the vault-based setup/migration yet.
 
 VNC's challenge-response is DES-ECB with one quirk: each byte of the
 (8-char, null-padded) key has its bit order reversed before use. The
@@ -37,7 +40,26 @@ def challenge_response(challenge: bytes, password: str) -> bytes:
 
 
 def current_password() -> str:
-    """The configured VNC password, read fresh from the zoombot .env
-    (so a rotation via the Configuration page takes effect without a
-    dashboard restart). Empty string if unset."""
-    return env_store.read_parsed().get("VNC_PASSWORD", "")
+    """The configured VNC password. Vault first (the source of truth for
+    any install that's completed Part 0 setup/migration); settings.json or
+    the zoombot .env as a fallback for an install that hasn't yet. Empty
+    string if unset anywhere."""
+    try:
+        from . import secret_store
+        if secret_store.is_unlocked():
+            pw = secret_store.get_secret("VNC_PASSWORD", "")
+            if pw:
+                return pw
+    except Exception:
+        pass
+    try:
+        from . import settings_store
+        s = settings_store.load_settings()
+        if s.get("vnc_password"):
+            return str(s["vnc_password"])
+    except Exception:
+        pass
+    try:
+        return env_store.read_parsed().get("VNC_PASSWORD", "")
+    except Exception:
+        return ""
