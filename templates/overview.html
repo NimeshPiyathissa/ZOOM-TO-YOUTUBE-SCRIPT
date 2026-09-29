@@ -34,6 +34,8 @@
       <div class="btn-row mt-4">
         <button id="btn-go-live" class="btn btn-primary btn-lg">{{ icon("play", "icon-sm") }}Go Live</button>
         <button id="btn-stop-stream" class="btn btn-danger btn-lg">{{ icon("square", "icon-sm") }}Stop</button>
+        <button id="btn-overview-record" class="btn btn-rec btn-lg" type="button"><span id="overview-rec-icon" class="rec-icon">⏺</span><span id="overview-rec-text">Start Recording</span></button>
+        <span id="overview-rec-pill" class="rec-duration-pill" style="display: none;"><span class="rec-pulse-dot">🔴</span> REC <span id="overview-rec-timer">00:00:00</span></span>
         <button id="btn-restart-stream" class="btn btn-secondary btn-lg" data-tooltip="Restart the encoder">{{ icon("rotate-cw", "icon-sm") }}Restart</button>
         <a href="/studio" class="btn btn-secondary btn-lg">{{ icon("youtube", "icon-sm") }}Live Studio</a>
       </div>

@@ -45,6 +45,15 @@
         <span class="btn-action-text" id="btn-action-text">GO LIVE</span>
       </button>
 
+      <!-- Independent Recording Button next to Go Live -->
+      <button id="btn-studio-record" class="btn btn-rec btn-touch" type="button">
+        <span id="studio-rec-icon" class="rec-icon">⏺</span>
+        <span id="studio-rec-text">Start Recording</span>
+      </button>
+      <span id="studio-rec-pill" class="rec-duration-pill" style="display: none;">
+        <span class="rec-pulse-dot">🔴</span> REC <span id="studio-rec-timer">00:00:00</span>
+      </span>
+
       <!-- Emergency BRB Slate Button -->
       <button id="btn-studio-brb" class="btn btn-secondary btn-touch" aria-label="Toggle Emergency BRB Slate" data-tooltip="Emergency 'Stream Will Resume Shortly' holding card">
         {{ icon("monitor") }}
@@ -385,7 +394,7 @@
       <div class="telemetry-tile" id="tile-rec-path">
         <span class="eyebrow">Archive Destination</span>
         <div class="telem-main">
-          <span class="chip-glass readout text-xs">/home/zoombot/recordings/</span>
+          <span class="chip-glass readout text-xs">/home/dashboard/recordings/</span>
         </div>
         <span class="hint telem-sub">Automated Vacuum Active</span>
       </div>

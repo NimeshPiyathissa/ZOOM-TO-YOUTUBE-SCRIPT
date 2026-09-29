@@ -857,6 +857,13 @@
       });
     }
 
+    // Master recording controls next to Go Live
+    const btnStudioRecord = document.getElementById("btn-studio-record");
+    const studioRecText = document.getElementById("studio-rec-text");
+    const studioRecIcon = document.getElementById("studio-rec-icon");
+    const studioRecPill = document.getElementById("studio-rec-pill");
+    const studioRecTimer = document.getElementById("studio-rec-timer");
+
     let isRecording = false;
     async function pollRecording() {
       try {
@@ -865,6 +872,30 @@
           const data = await res.json();
           isRecording = !!data.recording;
 
+          const dur = parseInt(data.duration, 10) || 0;
+          const h = String(Math.floor(dur / 3600)).padStart(2, "0");
+          const m = String(Math.floor((dur % 3600) / 60)).padStart(2, "0");
+          const s = String(dur % 60).padStart(2, "0");
+          const timeStr = `${h}:${m}:${s}`;
+
+          // Update master control next to Go Live
+          if (btnStudioRecord) {
+            btnStudioRecord.className = `btn btn-touch ${isRecording ? "btn-rec-active" : "btn-rec"}`;
+          }
+          if (studioRecIcon) {
+            studioRecIcon.textContent = isRecording ? "⏹" : "⏺";
+          }
+          if (studioRecText) {
+            studioRecText.textContent = isRecording ? "Stop Recording" : "Start Recording";
+          }
+          if (studioRecPill) {
+            studioRecPill.style.display = isRecording ? "inline-flex" : "none";
+          }
+          if (studioRecTimer) {
+            studioRecTimer.textContent = timeStr;
+          }
+
+          // Update recording card details
           if (recStatusBadge) {
             recStatusBadge.className = `badge ${isRecording ? "badge-live" : "badge-inactive"}`;
           }
@@ -878,11 +909,7 @@
             btnToggleRecText.textContent = isRecording ? "Stop Recording" : "Start Recording";
           }
           if (recDuration) {
-            const dur = parseInt(data.duration, 10) || 0;
-            const h = String(Math.floor(dur / 3600)).padStart(2, "0");
-            const m = String(Math.floor((dur % 3600) / 60)).padStart(2, "0");
-            const s = String(dur % 60).padStart(2, "0");
-            recDuration.textContent = `${h}:${m}:${s}`;
+            recDuration.textContent = timeStr;
           }
           if (recSize) {
             recSize.textContent = (parseFloat(data.size_mb) || 0).toFixed(1);
@@ -891,7 +918,7 @@
             recFreeDisk.textContent = (parseFloat(data.free_gb) || 0).toFixed(2);
           }
           if (recFileName) {
-            const fn = (data.file || "").split("/").pop() || (isRecording ? "stream.mp4" : "No active file");
+            const fn = (data.file || "").split("/").pop() || (isRecording ? "rec_active.mp4" : "No active file");
             recFileName.textContent = fn;
           }
           if (recAlert && recAlertMsg) {
@@ -909,36 +936,41 @@
       } catch (e) {}
     }
 
-    if (btnToggleRecording) {
-      btnToggleRecording.addEventListener("click", async () => {
-        try {
-          btnToggleRecording.disabled = true;
-          const action = isRecording ? "stop" : "start";
-          const res = await fetch("/api/record", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "X-CSRF-Token": getCsrfToken(),
-            },
-            body: JSON.stringify({ action }),
-          });
-          if (res.ok) {
-            await pollRecording();
-            if (typeof window.toast === "function") {
-              window.toast(isRecording ? "Local recording started (/home/zoombot/recordings/)" : "Local recording finalized", isRecording ? "success" : "info");
-            }
-          } else {
-            const err = await res.json();
-            if (typeof window.toast === "function") {
-              window.toast(err.detail || "Recording error", "error");
-            }
+    async function toggleRecordingAction(btnElement) {
+      try {
+        if (btnElement) btnElement.disabled = true;
+        const action = isRecording ? "stop" : "start";
+        const res = await fetch("/api/record", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-CSRF-Token": getCsrfToken(),
+          },
+          body: JSON.stringify({ action }),
+        });
+        if (res.ok) {
+          await pollRecording();
+          if (typeof window.toast === "function") {
+            window.toast(isRecording ? "Local recording started (/home/dashboard/recordings/)" : "Local recording finalized", isRecording ? "success" : "info");
           }
-        } catch (e) {
-          console.warn("Toggle recording error", e);
-        } finally {
-          btnToggleRecording.disabled = false;
+        } else {
+          const err = await res.json();
+          if (typeof window.toast === "function") {
+            window.toast(err.detail || "Recording error", "error");
+          }
         }
-      });
+      } catch (e) {
+        console.warn("Toggle recording error", e);
+      } finally {
+        if (btnElement) btnElement.disabled = false;
+      }
+    }
+
+    if (btnStudioRecord) {
+      btnStudioRecord.addEventListener("click", () => toggleRecordingAction(btnStudioRecord));
+    }
+    if (btnToggleRecording) {
+      btnToggleRecording.addEventListener("click", () => toggleRecordingAction(btnToggleRecording));
     }
 
     // Run initial state poll

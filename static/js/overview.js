@@ -312,3 +312,63 @@ initCard3DTilt();
 setInterval(pollState, 3000);
 setInterval(pollPreview, 3000);
 setInterval(renderAccount, 30000);
+
+// ---------------------------------------------------------------- local recording controls
+const btnOverviewRecord = document.getElementById("btn-overview-record");
+const overviewRecText = document.getElementById("overview-rec-text");
+const overviewRecIcon = document.getElementById("overview-rec-icon");
+const overviewRecPill = document.getElementById("overview-rec-pill");
+const overviewRecTimer = document.getElementById("overview-rec-timer");
+
+let isRecordingOverview = false;
+
+async function pollOverviewRecording() {
+  if (!btnOverviewRecord) return;
+  try {
+    const data = await apiFetch("/api/record");
+    isRecordingOverview = !!data.recording;
+
+    if (isRecordingOverview) {
+      btnOverviewRecord.className = "btn btn-rec-active btn-lg";
+      if (overviewRecIcon) overviewRecIcon.textContent = "⏹";
+      if (overviewRecText) overviewRecText.textContent = "Stop Recording";
+      if (overviewRecPill) overviewRecPill.style.display = "inline-flex";
+      if (overviewRecTimer) {
+        const dur = parseInt(data.duration, 10) || 0;
+        const h = String(Math.floor(dur / 3600)).padStart(2, "0");
+        const m = String(Math.floor((dur % 3600) / 60)).padStart(2, "0");
+        const s = String(dur % 60).padStart(2, "0");
+        overviewRecTimer.textContent = `${h}:${m}:${s}`;
+      }
+    } else {
+      btnOverviewRecord.className = "btn btn-rec btn-lg";
+      if (overviewRecIcon) overviewRecIcon.textContent = "⏺";
+      if (overviewRecText) overviewRecText.textContent = "Start Recording";
+      if (overviewRecPill) overviewRecPill.style.display = "none";
+    }
+  } catch (err) {
+    // Ignore polling errors
+  }
+}
+
+if (btnOverviewRecord) {
+  btnOverviewRecord.addEventListener("click", async () => {
+    const action = isRecordingOverview ? "stop" : "start";
+    await withLoading(btnOverviewRecord, async () => {
+      try {
+        const res = await apiFetch("/api/record", {
+          method: "POST",
+          body: JSON.stringify({ action }),
+        });
+        await pollOverviewRecording();
+        toast(action === "start" ? "Recording started" : "Recording stopped", "ok");
+      } catch (err) {
+        toast(`Recording ${action} failed: ${err.message}`, "err");
+      }
+    });
+  });
+}
+
+pollOverviewRecording();
+setInterval(pollOverviewRecording, 2000);
+
