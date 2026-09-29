@@ -14,3 +14,7 @@ certs/
 *.pem
 *.db
 venv/
+
+# Live secrets (vault plaintext / pre-vault backups) - never committed
+settings.json
+settings.json.pre-vault-backup.*
