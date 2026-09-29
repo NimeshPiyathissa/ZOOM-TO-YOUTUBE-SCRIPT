@@ -240,15 +240,115 @@ document.getElementById("save-vnc-pass").onclick = async (e) => {
   });
 };
 
-document.getElementById("save-settings").onclick = async (e) => {
-  const body = { auto_recovery: document.getElementById("cfg-auto-recovery").checked };
-  const webhook = document.getElementById("cfg-webhook").value;
+document.getElementById("save-settings")?.addEventListener("click", async (e) => {
+  const body = { auto_recovery: document.getElementById("cfg-auto-recovery")?.checked };
+  const webhook = document.getElementById("cfg-webhook")?.value;
   if (webhook) body.webhook_url = webhook;
   await withLoading(e.currentTarget, async () => {
     try {
       await apiFetch("/api/settings", { method: "POST", body: JSON.stringify(body) });
-      document.getElementById("cfg-webhook").value = "";
+      if (document.getElementById("cfg-webhook")) document.getElementById("cfg-webhook").value = "";
       toast("Settings saved");
     } catch (err) { toast(err.message, "err"); }
   });
-};
+});
+
+// ---------------------------------------------------------------- Telegram Suite & Cloud Storage
+
+function setupPasswordReveal(btnId, inputId) {
+  const btn = document.getElementById(btnId);
+  const input = document.getElementById(inputId);
+  if (btn && input) {
+    btn.addEventListener("click", () => {
+      input.type = input.type === "password" ? "text" : "password";
+      btn.classList.toggle("is-active", input.type === "text");
+    });
+  }
+}
+
+setupPasswordReveal("btn-reveal-tg-token", "cfg-tg-bot-token");
+setupPasswordReveal("btn-reveal-tg-hash", "cfg-tg-api-hash");
+setupPasswordReveal("btn-reveal-tg-session", "cfg-tg-session-string");
+
+const btnSaveTelegram = document.getElementById("btn-save-telegram");
+if (btnSaveTelegram) {
+  btnSaveTelegram.addEventListener("click", async () => {
+    const payload = {
+      telegram_bot_token: document.getElementById("cfg-tg-bot-token")?.value || "",
+      telegram_chat_id: document.getElementById("cfg-tg-chat-id")?.value.trim() || "",
+      telegram_api_id: document.getElementById("cfg-tg-api-id")?.value.trim() || "",
+      telegram_api_hash: document.getElementById("cfg-tg-api-hash")?.value || "",
+      telegram_session_string: document.getElementById("cfg-tg-session-string")?.value || "",
+      telegram_auto_upload_recording: !!document.getElementById("cfg-tg-auto-upload")?.checked,
+      telegram_delete_after_upload: !!document.getElementById("cfg-tg-delete-after")?.checked,
+      telegram_notify_stream_events: !!document.getElementById("cfg-tg-notify-events")?.checked,
+      telegram_notify_system_errors: !!document.getElementById("cfg-tg-notify-errors")?.checked,
+    };
+
+    await withLoading(btnSaveTelegram, async () => {
+      try {
+        const res = await apiFetch("/api/settings/telegram", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+        toast("Telegram settings saved successfully", "ok");
+      } catch (err) {
+        toast("Failed to save Telegram settings: " + err.message, "err");
+      }
+    });
+  });
+}
+
+const btnTestTelegram = document.getElementById("btn-test-telegram");
+if (btnTestTelegram) {
+  btnTestTelegram.addEventListener("click", async () => {
+    const payload = {
+      telegram_bot_token: document.getElementById("cfg-tg-bot-token")?.value || "",
+      telegram_chat_id: document.getElementById("cfg-tg-chat-id")?.value.trim() || "",
+      telegram_api_id: document.getElementById("cfg-tg-api-id")?.value.trim() || "",
+      telegram_api_hash: document.getElementById("cfg-tg-api-hash")?.value || "",
+      telegram_session_string: document.getElementById("cfg-tg-session-string")?.value || "",
+    };
+
+    await withLoading(btnTestTelegram, async () => {
+      try {
+        const res = await apiFetch("/api/telegram/test", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+        if (res.ok) {
+          toast(res.message || "Telegram ping test successful!", "ok");
+        } else {
+          toast(res.error || "Telegram connection test failed", "err");
+        }
+      } catch (err) {
+        toast("Telegram test error: " + err.message, "err");
+      }
+    });
+  });
+}
+
+const btnCleanRecordings = document.getElementById("btn-clean-recordings");
+if (btnCleanRecordings) {
+  btnCleanRecordings.addEventListener("click", async () => {
+    const go = await confirmDialog("Purge completed local MP4 recordings on VPS now? Active recording will not be affected.", { confirmText: "Clean Now" });
+    if (!go) return;
+
+    await withLoading(btnCleanRecordings, async () => {
+      try {
+        const res = await apiFetch("/api/recordings/clean", {
+          method: "POST",
+          body: JSON.stringify({ force: true }),
+        });
+        if (res.ok) {
+          toast(res.message || `Cleaned recordings (${res.freed_mb} MB freed, ${res.free_gb} GB free)`, "ok");
+        } else {
+          toast("Cleanup failed: " + (res.detail || "unknown error"), "err");
+        }
+      } catch (err) {
+        toast("Cleanup error: " + err.message, "err");
+      }
+    });
+  });
+}
+

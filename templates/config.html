@@ -166,6 +166,103 @@
     </div>
   </div>
 
+  <!-- Telegram Suite & Cloud Storage Card -->
+  <div class="section-head mt-4">
+    <h2 class="floating-section-title">
+      {{ icon("send", "icon-sm") }}Telegram Suite &amp; Cloud Storage
+    </h2>
+  </div>
+
+  <div class="card" id="telegram-suite-card">
+    <p class="hint mb-4">
+      Configure Telegram alerts, channel broadcasts, and high-speed MTProto Telethon cloud uploader (supporting up to 4GB files with Telegram Premium).
+    </p>
+
+    <h3 class="mb-3">Telegram Credentials &amp; Bot Setup</h3>
+    <div class="form-grid">
+      <div class="field">
+        <label class="label" for="cfg-tg-bot-token">Telegram Bot Token</label>
+        <div class="input-action-group">
+          <input type="password" class="input readout" id="cfg-tg-bot-token" placeholder="{{ telegram_cfg.telegram_bot_token or '123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ' }}" autocomplete="off">
+          <button type="button" class="btn btn-secondary btn-icon" id="btn-reveal-tg-token" aria-label="Reveal or hide Bot Token">{{ icon("eye") }}</button>
+        </div>
+        <span class="hint">Obtained from @BotFather. Used for instant alerts &amp; standard uploads.</span>
+      </div>
+
+      <div class="field">
+        <label class="label" for="cfg-tg-chat-id">Telegram Chat / Channel ID</label>
+        <input class="input" id="cfg-tg-chat-id" value="{{ telegram_cfg.telegram_chat_id }}" placeholder="-1001234567890 or @channelname">
+        <span class="hint">Target recipient for stream alerts and recording video uploads.</span>
+      </div>
+    </div>
+
+    <h3 class="mt-4 mb-3">Telethon 4GB Premium Client (MTProto)</h3>
+    <div class="form-grid">
+      <div class="field">
+        <label class="label" for="cfg-tg-api-id">Telegram API ID</label>
+        <input class="input" id="cfg-tg-api-id" value="{{ telegram_cfg.telegram_api_id }}" placeholder="e.g. 2938472">
+        <span class="hint">From my.telegram.org (API development tools).</span>
+      </div>
+
+      <div class="field">
+        <label class="label" for="cfg-tg-api-hash">Telegram API Hash</label>
+        <div class="input-action-group">
+          <input type="password" class="input readout" id="cfg-tg-api-hash" placeholder="{{ telegram_cfg.telegram_api_hash or '32-character hex hash' }}" autocomplete="off">
+          <button type="button" class="btn btn-secondary btn-icon" id="btn-reveal-tg-hash" aria-label="Reveal or hide API Hash">{{ icon("eye") }}</button>
+        </div>
+        <span class="hint">Secret API hash from my.telegram.org.</span>
+      </div>
+    </div>
+
+    <div class="field mt-3">
+      <label class="label" for="cfg-tg-session-string">Telegram Premium User Session String (For 4GB Uploads)</label>
+      <div class="input-action-group">
+        <input type="password" class="input readout" id="cfg-tg-session-string" placeholder="{{ telegram_cfg.telegram_session_string or '1ApWapzMBux... (Telethon StringSession)' }}" autocomplete="off">
+        <button type="button" class="btn btn-secondary btn-icon" id="btn-reveal-tg-session" aria-label="Reveal or hide Session String">{{ icon("eye") }}</button>
+      </div>
+      <span class="hint">Telethon StringSession string for a Telegram Premium account. Enables 4GB single-file uploads directly to Telegram.</span>
+    </div>
+
+    <h3 class="mt-4 mb-3">Action Toggles &amp; Storage Automation</h3>
+    <div class="switch-row mb-3">
+      <span class="switch"><input type="checkbox" id="cfg-tg-auto-upload" {{ 'checked' if telegram_cfg.telegram_auto_upload_recording }}><span class="track"></span></span>
+      <div>
+        <div class="switch-label">Auto-Upload Recording to Telegram (on Stop)</div>
+        <div class="hint">When local recording finishes, automatically stream-upload the MP4 to the configured Telegram destination.</div>
+      </div>
+    </div>
+
+    <div class="switch-row mb-3">
+      <span class="switch"><input type="checkbox" id="cfg-tg-delete-after" {{ 'checked' if telegram_cfg.telegram_delete_after_upload }}><span class="track"></span></span>
+      <div>
+        <div class="switch-label">Auto-Delete Local MP4 from VPS After Successful Upload</div>
+        <div class="hint">Verifies 100% upload completion, then immediately deletes local copy to conserve VPS SSD storage.</div>
+      </div>
+    </div>
+
+    <div class="switch-row mb-3">
+      <span class="switch"><input type="checkbox" id="cfg-tg-notify-events" {{ 'checked' if telegram_cfg.telegram_notify_stream_events }}><span class="track"></span></span>
+      <div>
+        <div class="switch-label">Notify Stream Lifecycle Events</div>
+        <div class="hint">Send instant notifications on YouTube Live start and stop events.</div>
+      </div>
+    </div>
+
+    <div class="switch-row mb-3">
+      <span class="switch"><input type="checkbox" id="cfg-tg-notify-errors" {{ 'checked' if telegram_cfg.telegram_notify_system_errors }}><span class="track"></span></span>
+      <div>
+        <div class="switch-label">Notify System &amp; Encoder Errors</div>
+        <div class="hint">Send immediate alerts if FFmpeg encounters dropped frames, crashes, or Zoom disconnects.</div>
+      </div>
+    </div>
+
+    <div class="btn-row mt-4">
+      <button id="btn-save-telegram" class="btn btn-primary">{{ icon("check", "icon-sm") }}Save Telegram Settings</button>
+      <button id="btn-test-telegram" class="btn btn-secondary">{{ icon("send", "icon-sm") }}Test Telegram Connection</button>
+      <button id="btn-clean-recordings" class="btn btn-secondary" title="Purge local MP4s to free VPS disk space">🧹 Clean Local Recordings Now</button>
+    </div>
+  </div>
+
 </div>
 {% endblock %}
 {% block scripts %}
