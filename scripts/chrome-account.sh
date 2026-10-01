@@ -83,23 +83,52 @@ close_signin() {
   rm -f "$PIDFILE"
 }
 
-# Best-effort: maximize the window this profile just opened (Openbox
-# ignores --start-maximized), so the sign-in form fills the preview.
-maximize_window() {
+# Find, maximize and FOCUS the window this profile just opened. Returns
+# 1 if no window ever appeared within the wait (caller then diagnoses
+# why - see the signin/open cases).
+#
+# Maximize: Openbox ignores --start-maximized, so the sign-in form fills
+# the preview only if asked for after the fact.
+#
+# "above": the actual root cause of the "remote screen stays black"
+# bug - the stream kiosk's Chrome runs --kiosk, which sets
+# _NET_WM_STATE_FULLSCREEN, and Openbox keeps fullscreen windows in a
+# layer above ordinary ones regardless of focus history. `wmctrl -a`
+# (activate) alone raises and focuses a window but does NOT move it out
+# from under a fullscreen window in a higher layer - confirmed live on
+# 2026-10-01: the sign-in Chrome was launched, mapped and even
+# "activated" the whole time, just permanently obscured. Explicitly
+# adding the ABOVE state (plus an xdotool raise as a second, independent
+# mechanism) is what actually puts it on top of the kiosk.
+focus_window() {
   local wid
-  for _ in $(seq 1 24); do
+  for _ in $(seq 1 40); do   # up to 10s - first launch can be slow to paint
     wid="$(wmctrl -lx 2>/dev/null | grep -F "chrome-profiles/$ID" | awk '{print $1; exit}')"
     [[ -n "$wid" ]] && break
     sleep 0.25
   done
-  [[ -n "$wid" ]] || return 0
+  [[ -n "$wid" ]] || return 1
+  # Two separate -b calls, not one with three states: wmctrl's add/remove
+  # toggle only reliably applies up to two comma-separated states per
+  # invocation (confirmed live 2026-10-01 - a combined
+  # add,maximized_vert,maximized_horz,above silently dropped "above" and
+  # sometimes maximized_horz too, leaving the window half-width and still
+  # at risk of sitting under the kiosk).
   wmctrl -i -r "$wid" -b add,maximized_vert,maximized_horz 2>/dev/null || true
+  wmctrl -i -r "$wid" -b add,above 2>/dev/null || true
   wmctrl -i -a "$wid" 2>/dev/null || true
+  if command -v xdotool >/dev/null 2>&1; then
+    xdotool windowraise "$wid" 2>/dev/null || true
+    xdotool windowactivate "$wid" 2>/dev/null || true
+  fi
+  return 0
 }
 
 launch_window() {
   # An ordinary Chrome window: no kiosk, no DevTools, no automation
-  # switches, real UA. $1 = URL.
+  # switches, real UA. $1 = URL. Returns 1 (via focus_window) if the
+  # window never appeared - the caller diagnoses why instead of lying
+  # "opened" to a black screen.
   rm -f "$DIR/SingletonLock" "$DIR/SingletonSocket" "$DIR/SingletonCookie"
   nohup "$CHROME_BIN" \
     --user-data-dir="$DIR" --password-store=basic \
@@ -110,7 +139,26 @@ launch_window() {
     --lang=en-US \
     "$1" >>"$LOG_DIR/accounts.log" 2>&1 &
   echo $! > "$PIDFILE"
-  maximize_window
+  focus_window
+}
+
+# $1 = the pid launch_window just recorded, for the "did Chrome even
+# survive" half of the diagnosis when its window never appeared.
+diagnose_launch_failure() {
+  local p="$1"
+  if [[ -n "$p" ]] && kill -0 "$p" 2>/dev/null; then
+    echo "Chrome started (pid $p) but its window never appeared on :99 within 10s - check Xvfb/Openbox are running" >&2
+    # Don't leave it running: an invisible, stuck Chrome would hold the
+    # profile's SingletonLock and turn every retry into "profile is
+    # currently open by another Chrome" - a second dead end layered on
+    # the first.
+    kill -TERM "$p" 2>/dev/null || true
+    for _ in $(seq 1 20); do kill -0 "$p" 2>/dev/null || break; sleep 0.25; done
+    kill -0 "$p" 2>/dev/null && kill -KILL "$p" 2>/dev/null || true
+  else
+    echo "Chrome exited immediately after launch - see $LOG_DIR/accounts.log for the reason (profile corruption, missing libs, disk full)" >&2
+  fi
+  rm -f "$PIDFILE" "$DIR/SingletonLock" "$DIR/SingletonSocket" "$DIR/SingletonCookie"
 }
 
 require_free() {
@@ -149,13 +197,20 @@ case "$ACTION" in
 
   signin)
     [[ -d "$DIR" ]] || { echo "profile does not exist - create it first" >&2; exit 1; }
-    if signin_running; then maximize_window; echo "already-open"; exit 0; fi
+    if signin_running; then
+      if focus_window; then echo "already-open"; else echo "sign-in window was already open but its window vanished - try again" >&2; exit 1; fi
+      exit 0
+    fi
     if profile_in_use; then
       echo "profile is currently open by another Chrome (a bound webpage source?) - switch away from it first" >&2
       exit 1
     fi
-    launch_window "https://accounts.google.com/"
-    echo "opened"
+    if launch_window "https://accounts.google.com/"; then
+      echo "opened"
+    else
+      diagnose_launch_failure "$(signin_pid)"
+      exit 1
+    fi
     ;;
 
   open)
@@ -170,8 +225,12 @@ case "$ACTION" in
     esac
     [[ -d "$DIR" ]] || { mkdir -p "$DIR"; chmod 700 "$PROFILES_ROOT" "$DIR"; }
     require_free
-    launch_window "$URL"
-    echo "opened"
+    if launch_window "$URL"; then
+      echo "opened"
+    else
+      diagnose_launch_failure "$(signin_pid)"
+      exit 1
+    fi
     ;;
 
   close)
