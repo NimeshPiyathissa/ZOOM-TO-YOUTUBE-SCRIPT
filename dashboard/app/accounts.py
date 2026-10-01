@@ -16,9 +16,10 @@ whether *this specific Chrome profile on the VPS* (the one that
 actually plays age-restricted YouTube videos and backs Zoom's "Sign in
 with Google") has a live session. An OAuth-based badge could show green
 while the VPS profile is signed out - a false green, discovered only
-when a stream fails. See Part 4 (a separate, genuinely OAuth-shaped
-feature: the YouTube Data API) for where an application token actually
-belongs.
+when a stream fails. (A separate YouTube Data API OAuth connection used
+to exist here alongside this check - it was removed: a second,
+easily-confused "connected" signal that nothing in /zoom, /remote or
+the stream itself ever actually depended on.)
 
 verify_status (the badge-facing state, derived - never stored directly)
 is one of:
@@ -43,7 +44,7 @@ import re
 import secrets
 import time
 
-from . import control, db, youtube_oauth
+from . import control, db
 
 
 class AccountError(Exception):
@@ -80,68 +81,7 @@ def _verify_status(state: str, email: str | None, expected_email: str | None) ->
     return "never"
 
 
-# ---------------------------------------------------------- Part 3: the
-# second, independent check (a connected YouTube Data API OAuth token for
-# the SAME Google account), combined with the browser-session check above
-# into one badge. The two are deliberately computed from separate sources
-# (this table vs. youtube_oauth's db-settings state) and merged only here,
-# at render time - see accounts.py's module docstring and
-# youtube_oauth.py's for why they're tracked independently.
-
-def _api_link_status(identity_email: str | None, oauth: dict) -> str:
-    """identity_email is the account's pinned/expected email (unmasked) -
-    None if this account has never had a successful browser-session verify
-    yet, in which case there is nothing to compare against."""
-    if not oauth["configured"]:
-        return "not_configured"
-    if oauth["status"] == "needs_reauth":
-        return "needs_reauth"
-    if oauth["status"] != "connected":
-        return "not_connected"
-    if not identity_email:
-        return "unmatched"
-    if oauth["connected_email"] and oauth["connected_email"] == identity_email:
-        return "connected_match"
-    return "wrong_account"
-
-
-_API_STATUS_TEXT = {
-    "not_configured": "YouTube API not set up",
-    "not_connected": "YouTube API not connected",
-    "needs_reauth": "YouTube API needs reconnecting",
-    "unmatched": "YouTube API connected (sign in to compare accounts)",
-    "connected_match": "YouTube API connected",
-    "wrong_account": "YouTube API: wrong account",
-}
-
-
-def _combined_badge(browser_verify_status: str, browser_badge_state: str, api_status: str) -> tuple[str, bool]:
-    """-> (badge_state_full, needs_reauth_full). Priority order: an actual
-    identity mismatch on either check wins (red); then the specific
-    "API's fine but this VPS profile is signed out" case the operator most
-    needs to see before going live (amber); then any other non-green
-    browser state passes through unchanged; then a connected-but-stale API
-    needing reconnect (amber); otherwise green. Never green from the API
-    check alone - the browser-session check always gates "Verified"
-    (see the module docstrings for why the API alone proves nothing about
-    this VPS Chrome profile)."""
-    browser_ok = browser_verify_status == "verified"
-    if browser_verify_status == "wrong_account":
-        return "wrong_account", True
-    if api_status == "wrong_account":
-        return "api_wrong_account", True
-    if not browser_ok and api_status == "connected_match":
-        return "api_connected_browser_signed_out", True
-    if not browser_ok:
-        return browser_badge_state, True
-    if api_status == "needs_reauth":
-        return "api_needs_reauth", True
-    return "verified", False
-
-
-def _row_view(r, oauth: dict | None = None) -> dict:
-    if oauth is None:
-        oauth = youtube_oauth.linking_info()
+def _row_view(r) -> dict:
     email = r["email"]
     expected_email = r["expected_email"]
     verify_status = _verify_status(r["state"], email, expected_email)
@@ -152,8 +92,6 @@ def _row_view(r, oauth: dict | None = None) -> dict:
     # their icon/colour off, so "why is this amber" always has exactly
     # one answer instead of two fields to cross-reference.
     badge_state = "stale" if (verify_status == "verified" and is_stale) else verify_status
-    api_status = _api_link_status(expected_email or email, oauth)
-    badge_state_full, needs_reauth_full = _combined_badge(verify_status, badge_state, api_status)
     return {
         "id": r["id"],
         "label": r["label"],
@@ -176,15 +114,6 @@ def _row_view(r, oauth: dict | None = None) -> dict:
         "last_verified_at": last_verified_at,
         "last_result": r["last_result"],
         "created_at": r["created_at"],
-        # ---- Part 3: YouTube Data API link, independent of the above ----
-        "api_status": api_status,
-        "api_status_text": _API_STATUS_TEXT[api_status],
-        "badge_state_full": badge_state_full,
-        # verified_full: the ONE badge Zoom/Remote/broadcast-creation should
-        # all treat as "every capability this account needs is good right
-        # now" - never true from the API check alone (see _combined_badge).
-        "verified_full": badge_state_full == "verified",
-        "needs_reauth_full": needs_reauth_full,
     }
 
 
@@ -195,9 +124,8 @@ def _find_by_profile(profile_id: str) -> dict | None:
 
 
 def list_accounts() -> list[dict]:
-    oauth = youtube_oauth.linking_info()
     with db.get_conn() as conn:
-        return [_row_view(r, oauth) for r in conn.execute("SELECT * FROM accounts ORDER BY id").fetchall()]
+        return [_row_view(r) for r in conn.execute("SELECT * FROM accounts ORDER BY id").fetchall()]
 
 
 def get_account(account_id: int) -> dict | None:

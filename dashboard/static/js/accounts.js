@@ -7,21 +7,16 @@
 import { connectVnc } from '/static/js/vnc-embed.js';
 
 // Mirrors the BADGE_ICON/BADGE_TEXT maps in templates/accounts.html -
-// keep both in sync when adding a state. badge_state_full combines the
-// browser-session check with the YouTube Data API link check (Part 3,
-// see accounts.py's _combined_badge) - it's the one value the card's
-// main badge keys off; badge_state (browser-only) still drives the
-// Sign in/Re-authenticate button text.
+// keep both in sync when adding a state. badge_state is the one value
+// the card's main badge keys off, and also drives the Sign
+// in/Re-authenticate button text.
 const BADGE_ICON = {
   never: "circle-help", verified: "circle-check", stale: "alert-triangle",
   wrong_account: "circle-slash", signed_out: "user-x", check_failed: "alert-circle", checking: "loader-circle",
-  api_wrong_account: "circle-slash", api_needs_reauth: "alert-triangle", api_connected_browser_signed_out: "alert-triangle",
 };
 const BADGE_TEXT = {
   never: "Never verified", verified: "Verified", stale: "Needs re-authentication",
   wrong_account: "Wrong account", signed_out: "Signed out", check_failed: "Couldn't verify", checking: "Checking…",
-  api_wrong_account: "API: wrong account", api_needs_reauth: "API needs reconnecting",
-  api_connected_browser_signed_out: "API connected · browser signed out",
 };
 const $ = (id) => document.getElementById(id);
 const post = (url, body) => apiFetch(url, { method: "POST", body: body ? JSON.stringify(body) : undefined });
@@ -48,9 +43,9 @@ function setChecking(card, on) {
 
 function paintCard(card, a) {
   if (a.label != null) { card.dataset.label = a.label; card.querySelector(".account-label").textContent = a.label; }
-  if (a.badge_state_full) {
-    setBadge(card, a.badge_state_full);
-    card.dataset.state = a.badge_state_full;
+  if (a.badge_state) {
+    setBadge(card, a.badge_state);
+    card.dataset.state = a.badge_state;
     card.querySelector(".act-signin span").textContent = a.needs_reauth ? "Re-authenticate" : "Sign in";
   }
   const identityEl = card.querySelector(".account-identity");
@@ -64,10 +59,6 @@ function paintCard(card, a) {
   } else if (a.identity_masked !== undefined) {
     delete identityEl.dataset.wrong;
     identityEl.textContent = a.identity_masked || "identity unknown";
-  }
-  if (a.api_status_text !== undefined) {
-    const apiEl = card.querySelector(".account-api-status");
-    if (apiEl) { apiEl.textContent = a.api_status_text; apiEl.dataset.apiStatus = a.api_status; }
   }
   if (a.last_verified_at !== undefined) { const el = card.querySelector(".account-verified"); el.dataset.ts = a.last_verified_at || ""; el.textContent = fmtVerified(a.last_verified_at); }
   if (a.last_result !== undefined) card.querySelector(".account-result").textContent = a.last_result || "";
@@ -355,128 +346,3 @@ $("ac-zoom-signout").addEventListener("click", (e) => withLoading(e.currentTarge
   try { await post("/api/zoom/signout"); await post("/api/zoom/account", { signed_in: false }); await zoomAccount(); toast("Zoom signed out"); } catch (err) { toast(err.message, "err"); }
 }));
 zoomAccount();
-
-// ---------------------------------------------------------------- YouTube Data API (Part 4)
-// A separate connection from the Google accounts above: an application
-// token for the YouTube Data API, not a signed-in Chrome profile. Connect
-// is a normal top-level browser redirect to Google (never noVNC) - the
-// POST here only mints the PKCE state/authorize_url; the actual consent
-// happens in the operator's own browser tab.
-
-const YT_ICON = { disconnected: "circle-help", connected: "circle-check", needs_reauth: "alert-triangle" };
-const YT_TEXT = { disconnected: "Not connected", connected: "Connected", needs_reauth: "Needs reconnecting" };
-// Mirrors youtube_oauth.CLIENT_ID_RE - client-side is just fast feedback;
-// app/youtube_oauth.py's set_client_credentials() is the actual gate, so a
-// bad value can never reach Google even if this check is bypassed.
-const OAUTH_CLIENT_ID_RE = /^[0-9]+-[a-z0-9]+\.apps\.googleusercontent\.com$/;
-
-function paintYtOauth(st) {
-  const wrap = $("yt-oauth-status");
-  if (!wrap) return;
-  wrap.dataset.state = st.status;
-  const badge = wrap.querySelector(".yt-oauth-badge");
-  badge.dataset.state = st.status;
-  badge.querySelector(".yt-oauth-badge-text").textContent = YT_TEXT[st.status] || st.status;
-  badge.querySelector(".yt-oauth-badge-icon use").setAttribute("href", `#i-${YT_ICON[st.status] || "circle-help"}`);
-  $("yt-oauth-channel").textContent = st.status === "connected"
-    ? [st.channel_title || "(channel name unavailable)", st.connected_email_masked].filter(Boolean).join(" · ") : "";
-  const errEl = $("yt-oauth-error");
-  if (errEl) { errEl.textContent = st.last_error || ""; errEl.dataset.hasError = st.last_error ? "true" : "false"; }
-  const idField = $("oauth-yt-client-id");
-  if (idField && st.client_id !== undefined) idField.value = st.client_id;
-  const secretDisplay = $("oauth-yt-secret-display");
-  if (secretDisplay && st.client_secret_display !== undefined) secretDisplay.textContent = st.client_secret_display;
-  const connectBtn = $("yt-connect"), checkBtn = $("yt-check"), disconnectBtn = $("yt-disconnect");
-  if (connectBtn) {
-    connectBtn.disabled = !st.configured;
-    connectBtn.querySelector("span").textContent = st.status === "needs_reauth" ? "Reconnect" : "Connect";
-  }
-  if (checkBtn) checkBtn.disabled = st.status !== "connected";
-  if (disconnectBtn) disconnectBtn.disabled = st.status === "disconnected";
-  const disabledHint = $("yt-connect-disabled-hint");
-  if (disabledHint) disabledHint.hidden = !!st.configured;
-}
-
-function setFieldError(id, message) {
-  const el = $(id);
-  if (!el) return;
-  el.textContent = message || "";
-  el.hidden = !message;
-}
-
-const ytSaveBtn = $("yt-save-config");
-if (ytSaveBtn) {
-  ytSaveBtn.addEventListener("click", (e) => withLoading(e.currentTarget, async () => {
-    setFieldError("oauth-yt-client-id-error", null);
-    setFieldError("oauth-yt-client-secret-warning", null);
-    const client_id = $("oauth-yt-client-id").value.trim();
-    const client_secret = $("oauth-yt-client-secret").value.trim();
-    if (!client_id || !client_secret) { toast("Client ID and Client Secret are both required", "err"); return; }
-    if (!OAUTH_CLIENT_ID_RE.test(client_id)) {
-      setFieldError("oauth-yt-client-id-error",
-        "That doesn't look like a Google OAuth Client ID (should end in .apps.googleusercontent.com). "
-        + "Copy it from Google Cloud Console, not a dashboard username or password.");
-      return;
-    }
-    try {
-      const st = await post("/api/youtube/oauth/config", { client_id, client_secret });
-      $("oauth-yt-client-secret").value = "";
-      paintYtOauth(st);
-      if (st.warning) { setFieldError("oauth-yt-client-secret-warning", st.warning); toast(st.warning, "err"); }
-      else toast("Saved - you can Connect now");
-    } catch (err) {
-      setFieldError("oauth-yt-client-id-error", err.message);
-      toast(err.message, "err");
-    }
-  }));
-}
-
-const ytConnectBtn = $("yt-connect");
-if (ytConnectBtn) {
-  ytConnectBtn.addEventListener("click", (e) => withLoading(e.currentTarget, async () => {
-    try {
-      const r = await post("/api/youtube/oauth/start");
-      window.location.href = r.authorize_url;
-    } catch (err) { toast(err.message, "err"); }
-  }));
-}
-
-const ytCheckBtn = $("yt-check");
-if (ytCheckBtn) {
-  ytCheckBtn.addEventListener("click", (e) => withLoading(e.currentTarget, async () => {
-    try { const st = await post("/api/youtube/oauth/check"); paintYtOauth(st); toast("Connection is good"); }
-    catch (err) { const st = await apiFetch("/api/youtube/oauth/status").catch(() => null); if (st) paintYtOauth(st); toast(err.message, "err"); }
-  }));
-}
-
-const ytDisconnectBtn = $("yt-disconnect");
-if (ytDisconnectBtn) {
-  ytDisconnectBtn.addEventListener("click", (e) => withLoading(e.currentTarget, async () => {
-    if (!(await confirmDialog("Disconnect the YouTube Data API? The stored token is revoked with Google and removed. Reconnecting later needs the consent screen again.", { danger: true, confirmText: "Disconnect" }))) return;
-    try { const st = await post("/api/youtube/oauth/disconnect"); paintYtOauth(st); toast("Disconnected"); }
-    catch (err) { toast(err.message, "err"); }
-  }));
-}
-
-const ytCopyBtn = $("yt-copy-redirect");
-if (ytCopyBtn) {
-  ytCopyBtn.addEventListener("click", async () => {
-    try { await navigator.clipboard.writeText($("yt-redirect-uri").textContent); toast("Copied"); }
-    catch (err) { toast("Couldn't copy - select and copy manually", "err"); }
-  });
-}
-
-// After Google redirects back from the consent screen (see
-// api_youtube_oauth_callback in main.py): show the result once, then
-// scrub the query string so a page refresh doesn't re-show the toast.
-(function handleYtOauthRedirect() {
-  const params = new URLSearchParams(window.location.search);
-  const result = params.get("yt_oauth");
-  if (!result) return;
-  if (result === "connected") toast("YouTube Data API connected");
-  else if (result === "error") toast(params.get("reason") || "Connection failed", "err");
-  const url = new URL(window.location.href);
-  url.searchParams.delete("yt_oauth");
-  url.searchParams.delete("reason");
-  window.history.replaceState({}, "", url.pathname + url.search + url.hash);
-})();
