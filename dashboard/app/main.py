@@ -1727,11 +1727,13 @@ async def api_youtube_oauth_config(request: Request):
     deps.require_csrf(request, session)
     body = await request.json()
     try:
-        youtube_oauth.set_client_credentials(str(body.get("client_id", "")), str(body.get("client_secret", "")))
+        result = youtube_oauth.set_client_credentials(str(body.get("client_id", "")), str(body.get("client_secret", "")))
     except (YouTubeOAuthError, secret_store.VaultLockedError) as exc:
         return _api_error(exc)
     db.audit(session["username"], "youtube_oauth_config", "", deps.client_ip(request))
-    return youtube_oauth.status()
+    out = youtube_oauth.status()
+    out["warning"] = result.get("warning")
+    return out
 
 
 @app.post("/api/youtube/oauth/start")
@@ -1740,7 +1742,7 @@ async def api_youtube_oauth_start(request: Request):
     deps.require_csrf(request, session)
     deps.require_rate_limit(session, "youtube_oauth_start", max_calls=5, window_seconds=60)
     try:
-        authorize_url = youtube_oauth.start(_youtube_oauth_redirect_uri())
+        authorize_url = youtube_oauth.start(_youtube_oauth_redirect_uri(), session["id"])
     except (YouTubeOAuthError, secret_store.VaultLockedError) as exc:
         return _api_error(exc)
     db.audit(session["username"], "youtube_oauth_start", "", deps.client_ip(request))
@@ -1751,21 +1753,27 @@ async def api_youtube_oauth_start(request: Request):
 async def api_youtube_oauth_callback(request: Request):
     """Google redirects the operator's own browser here after consent - a
     plain top-level GET, so no CSRF header is possible; the single-use
-    `state` value (bound to the PKCE verifier server-side) is what
-    actually proves this completes a flow this dashboard started."""
+    `state` value (bound to both the PKCE verifier and the session that
+    started the flow, server-side) is what actually proves this completes
+    a flow this dashboard itself started, for the same admin who started it."""
     session = deps.get_session(request)
     username = session["username"] if session else None
     error = request.query_params.get("error")
     code = request.query_params.get("code")
     state = request.query_params.get("state", "")
     if error:
-        reason = "Access was denied on Google's consent screen" if error == "access_denied" else f"Google reported: {error}"
+        reason = youtube_oauth.GOOGLE_ERROR_HINTS.get(error, f"Google reported: {error}")
         db.audit(username, "youtube_oauth_callback", f"error:{error}", deps.client_ip(request))
         return RedirectResponse(f"/accounts?yt_oauth=error&reason={quote(reason)}#youtube-api", status_code=303)
     if not code:
         return RedirectResponse(f"/accounts?yt_oauth=error&reason={quote('Missing authorization code')}#youtube-api", status_code=303)
+    if session is None:
+        return RedirectResponse(
+            f"/accounts?yt_oauth=error&reason={quote('Your dashboard session expired during sign-in - log in and press Connect again')}#youtube-api",
+            status_code=303,
+        )
     try:
-        result = await run_in_threadpool(youtube_oauth.complete, code, state, _youtube_oauth_redirect_uri())
+        result = await run_in_threadpool(youtube_oauth.complete, code, state, _youtube_oauth_redirect_uri(), session["id"])
     except (YouTubeOAuthError, secret_store.VaultLockedError) as exc:
         db.audit(username, "youtube_oauth_callback", f"error:{exc}", deps.client_ip(request))
         return RedirectResponse(f"/accounts?yt_oauth=error&reason={quote(str(exc))}#youtube-api", status_code=303)

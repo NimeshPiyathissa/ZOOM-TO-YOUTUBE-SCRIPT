@@ -21,18 +21,22 @@
     </div>
 
     {% set BADGE_ICON = {"never": "circle-help", "verified": "circle-check", "stale": "alert-triangle",
-                          "wrong_account": "circle-slash", "signed_out": "user-x", "check_failed": "alert-circle"} %}
+                          "wrong_account": "circle-slash", "signed_out": "user-x", "check_failed": "alert-circle",
+                          "api_wrong_account": "circle-slash", "api_needs_reauth": "alert-triangle",
+                          "api_connected_browser_signed_out": "alert-triangle"} %}
     {% set BADGE_TEXT = {"never": "Never verified", "verified": "Verified", "stale": "Needs re-authentication",
-                          "wrong_account": "Wrong account", "signed_out": "Signed out", "check_failed": "Couldn't verify"} %}
+                          "wrong_account": "Wrong account", "signed_out": "Signed out", "check_failed": "Couldn't verify",
+                          "api_wrong_account": "API: wrong account", "api_needs_reauth": "API needs reconnecting",
+                          "api_connected_browser_signed_out": "API connected · browser signed out"} %}
     <div class="account-list" id="account-list">
       {% for a in accounts %}
-      <article class="account-card" data-account-id="{{ a.id }}" data-label="{{ a.label }}" data-state="{{ a.verify_status }}">
+      <article class="account-card" data-account-id="{{ a.id }}" data-label="{{ a.label }}" data-state="{{ a.badge_state_full }}">
         <div class="account-card-main">
           <div class="account-card-head">
             <span class="account-label">{{ a.label }}</span>
-            <span class="badge account-state" data-state="{{ a.badge_state }}">
-              <svg class="icon account-state-icon" aria-hidden="true"><use href="#i-{{ BADGE_ICON[a.badge_state] }}"></use></svg>
-              <span class="account-state-text">{{ BADGE_TEXT[a.badge_state] }}</span>
+            <span class="badge account-state" data-state="{{ a.badge_state_full }}">
+              <svg class="icon account-state-icon" aria-hidden="true"><use href="#i-{{ BADGE_ICON[a.badge_state_full] }}"></use></svg>
+              <span class="account-state-text">{{ BADGE_TEXT[a.badge_state_full] }}</span>
             </span>
           </div>
           <div class="account-meta">
@@ -43,6 +47,7 @@
             {% endif %}
             <span class="hint account-verified tnum" data-ts="{{ a.last_verified_at or '' }}">{{ "never verified" if not a.last_verified_at else "" }}</span>
           </div>
+          <div class="hint account-api-status" data-api-status="{{ a.api_status }}">{{ a.api_status_text }}</div>
           <div class="hint account-result">{{ a.last_result or "" }}</div>
         </div>
         <div class="account-card-actions">
@@ -126,21 +131,41 @@
       <svg class="icon yt-oauth-badge-icon" aria-hidden="true"><use href="#i-{{ YT_ICON[yt_oauth.status] }}"></use></svg>
       <span class="yt-oauth-badge-text">{{ YT_TEXT[yt_oauth.status] }}</span>
     </span>
-    <span class="readout" id="yt-oauth-channel">{% if yt_oauth.status == "connected" %}{{ yt_oauth.channel_title or "(channel name unavailable)" }}{% endif %}</span>
+    <span class="readout" id="yt-oauth-channel">{% if yt_oauth.status == "connected" %}{{ yt_oauth.channel_title or "(channel name unavailable)" }}{% if yt_oauth.connected_email_masked %} · {{ yt_oauth.connected_email_masked }}{% endif %}{% endif %}</span>
     <span class="hint m-0" id="yt-oauth-error" data-has-error="{{ 'true' if yt_oauth.last_error else 'false' }}">{{ yt_oauth.last_error or "" }}</span>
   </div>
+  <p class="hint">If this OAuth client's consent screen is still in <strong>Testing</strong> mode, Google expires
+    the refresh token after 7 days regardless of use - Test connection (or the next scheduled check) will then
+    report <em>needs reconnecting</em>. Publish the consent screen, or just reconnect weekly, to avoid that.</p>
 
   {% if yt_oauth.vault_locked %}
   <p class="hint">The encrypted secret vault is locked - <a href="/config">unlock it</a> first to manage this connection.</p>
   {% else %}
   <div class="yt-oauth-config">
+    <!-- Decoy username/password pair: absorbs Chrome/Firefox/password-manager
+         autofill heuristics that key off "a text field followed by a password
+         field" regardless of id/name/autocomplete on the real fields below.
+         This is what let a saved dashboard login get written into the real
+         fields previously (client_id="admin", secret=the admin password) -
+         see app/youtube_oauth.py's module docstring. Never submitted. -->
+    <input type="text" name="username" autocomplete="username" class="oauth-decoy" tabindex="-1" aria-hidden="true">
+    <input type="password" name="password" autocomplete="current-password" class="oauth-decoy" tabindex="-1" aria-hidden="true">
     <div class="input-group mt-2">
-      <input type="text" id="yt-client-id" class="input" placeholder="Client ID" value="{{ yt_oauth.client_id_masked }}" autocomplete="off" spellcheck="false">
-      <input type="password" id="yt-client-secret" class="input" placeholder="Client Secret" autocomplete="off">
+      <input type="text" inputmode="text" id="oauth-yt-client-id" name="oauth_yt_client_id"
+             class="input" placeholder="Client ID (ends in .apps.googleusercontent.com)"
+             value="{{ yt_oauth.client_id }}" autocomplete="off" autocapitalize="off" autocorrect="off"
+             spellcheck="false" data-lpignore="true" data-1p-ignore="true" readonly>
+      <input type="password" id="oauth-yt-client-secret" name="oauth_yt_client_secret"
+             class="input" placeholder="Client Secret" autocomplete="new-password" autocapitalize="off"
+             autocorrect="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" readonly>
       <button id="yt-save-config" class="btn btn-secondary btn-touch">{{ icon("key-round") }}Save</button>
     </div>
-    <p class="hint">From your own project's OAuth client in Google Cloud Console. Authorized redirect URI to
-      register there: <code id="yt-redirect-uri">{{ yt_oauth_redirect_uri }}</code>
+    <p class="hint" id="oauth-yt-client-id-error" role="alert" hidden></p>
+    <p class="hint" id="oauth-yt-client-secret-warning" role="status" hidden></p>
+    <p class="hint" id="oauth-yt-secret-display">{{ yt_oauth.client_secret_display }}</p>
+    <p class="hint">From your own project's OAuth client in Google Cloud Console (APIs &amp; Services &gt;
+      Credentials &gt; OAuth client ID &gt; Web application). Authorized redirect URI to register there,
+      byte-for-byte: <code id="yt-redirect-uri">{{ yt_oauth_redirect_uri }}</code>
       <button type="button" class="btn btn-ghost btn-icon btn-sm" id="yt-copy-redirect" aria-label="Copy redirect URI">{{ icon("copy", "icon-sm") }}</button>
     </p>
   </div>

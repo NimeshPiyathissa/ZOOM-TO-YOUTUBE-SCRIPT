@@ -7,12 +7,22 @@
 import { connectVnc } from '/static/js/vnc-embed.js';
 
 // Mirrors the BADGE_ICON/BADGE_TEXT maps in templates/accounts.html -
-// keep both in sync when adding a state. badge_state is verify_status
-// (never/verified/wrong_account/signed_out/check_failed) with one extra
-// value, "stale", for a verified-but-overdue-for-recheck session - see
-// accounts.py's _row_view for why that's collapsed into one field.
-const BADGE_ICON = { never: "circle-help", verified: "circle-check", stale: "alert-triangle", wrong_account: "circle-slash", signed_out: "user-x", check_failed: "alert-circle", checking: "loader-circle" };
-const BADGE_TEXT = { never: "Never verified", verified: "Verified", stale: "Needs re-authentication", wrong_account: "Wrong account", signed_out: "Signed out", check_failed: "Couldn't verify", checking: "Checking…" };
+// keep both in sync when adding a state. badge_state_full combines the
+// browser-session check with the YouTube Data API link check (Part 3,
+// see accounts.py's _combined_badge) - it's the one value the card's
+// main badge keys off; badge_state (browser-only) still drives the
+// Sign in/Re-authenticate button text.
+const BADGE_ICON = {
+  never: "circle-help", verified: "circle-check", stale: "alert-triangle",
+  wrong_account: "circle-slash", signed_out: "user-x", check_failed: "alert-circle", checking: "loader-circle",
+  api_wrong_account: "circle-slash", api_needs_reauth: "alert-triangle", api_connected_browser_signed_out: "alert-triangle",
+};
+const BADGE_TEXT = {
+  never: "Never verified", verified: "Verified", stale: "Needs re-authentication",
+  wrong_account: "Wrong account", signed_out: "Signed out", check_failed: "Couldn't verify", checking: "Checking…",
+  api_wrong_account: "API: wrong account", api_needs_reauth: "API needs reconnecting",
+  api_connected_browser_signed_out: "API connected · browser signed out",
+};
 const $ = (id) => document.getElementById(id);
 const post = (url, body) => apiFetch(url, { method: "POST", body: body ? JSON.stringify(body) : undefined });
 
@@ -38,9 +48,9 @@ function setChecking(card, on) {
 
 function paintCard(card, a) {
   if (a.label != null) { card.dataset.label = a.label; card.querySelector(".account-label").textContent = a.label; }
-  if (a.badge_state) {
-    setBadge(card, a.badge_state);
-    card.dataset.state = a.verify_status || a.badge_state;
+  if (a.badge_state_full) {
+    setBadge(card, a.badge_state_full);
+    card.dataset.state = a.badge_state_full;
     card.querySelector(".act-signin span").textContent = a.needs_reauth ? "Re-authenticate" : "Sign in";
   }
   const identityEl = card.querySelector(".account-identity");
@@ -54,6 +64,10 @@ function paintCard(card, a) {
   } else if (a.identity_masked !== undefined) {
     delete identityEl.dataset.wrong;
     identityEl.textContent = a.identity_masked || "identity unknown";
+  }
+  if (a.api_status_text !== undefined) {
+    const apiEl = card.querySelector(".account-api-status");
+    if (apiEl) { apiEl.textContent = a.api_status_text; apiEl.dataset.apiStatus = a.api_status; }
   }
   if (a.last_verified_at !== undefined) { const el = card.querySelector(".account-verified"); el.dataset.ts = a.last_verified_at || ""; el.textContent = fmtVerified(a.last_verified_at); }
   if (a.last_result !== undefined) card.querySelector(".account-result").textContent = a.last_result || "";
@@ -278,6 +292,10 @@ zoomAccount();
 
 const YT_ICON = { disconnected: "circle-help", connected: "circle-check", needs_reauth: "alert-triangle" };
 const YT_TEXT = { disconnected: "Not connected", connected: "Connected", needs_reauth: "Needs reconnecting" };
+// Mirrors youtube_oauth.CLIENT_ID_RE - client-side is just fast feedback;
+// app/youtube_oauth.py's set_client_credentials() is the actual gate, so a
+// bad value can never reach Google even if this check is bypassed.
+const OAUTH_CLIENT_ID_RE = /^[0-9]+-[a-z0-9]+\.apps\.googleusercontent\.com$/;
 
 function paintYtOauth(st) {
   const wrap = $("yt-oauth-status");
@@ -287,9 +305,14 @@ function paintYtOauth(st) {
   badge.dataset.state = st.status;
   badge.querySelector(".yt-oauth-badge-text").textContent = YT_TEXT[st.status] || st.status;
   badge.querySelector(".yt-oauth-badge-icon use").setAttribute("href", `#i-${YT_ICON[st.status] || "circle-help"}`);
-  $("yt-oauth-channel").textContent = st.status === "connected" ? (st.channel_title || "(channel name unavailable)") : "";
+  $("yt-oauth-channel").textContent = st.status === "connected"
+    ? [st.channel_title || "(channel name unavailable)", st.connected_email_masked].filter(Boolean).join(" · ") : "";
   const errEl = $("yt-oauth-error");
   if (errEl) { errEl.textContent = st.last_error || ""; errEl.dataset.hasError = st.last_error ? "true" : "false"; }
+  const idField = $("oauth-yt-client-id");
+  if (idField && st.client_id !== undefined) idField.value = st.client_id;
+  const secretDisplay = $("oauth-yt-secret-display");
+  if (secretDisplay && st.client_secret_display !== undefined) secretDisplay.textContent = st.client_secret_display;
   const connectBtn = $("yt-connect"), checkBtn = $("yt-check"), disconnectBtn = $("yt-disconnect");
   if (connectBtn) {
     connectBtn.disabled = !st.configured;
@@ -299,18 +322,49 @@ function paintYtOauth(st) {
   if (disconnectBtn) disconnectBtn.disabled = st.status === "disconnected";
 }
 
+// Both real fields start `readonly` (templates/accounts.html) so Chrome's
+// password manager can't silently autofill them on page load before the
+// operator ever touches the page - only removed once the operator
+// actually interacts with the field.
+["oauth-yt-client-id", "oauth-yt-client-secret"].forEach((id) => {
+  const el = $(id);
+  if (!el) return;
+  const unlock = () => el.removeAttribute("readonly");
+  el.addEventListener("focus", unlock, { once: true });
+  el.addEventListener("pointerdown", unlock, { once: true });
+});
+
+function setFieldError(id, message) {
+  const el = $(id);
+  if (!el) return;
+  el.textContent = message || "";
+  el.hidden = !message;
+}
+
 const ytSaveBtn = $("yt-save-config");
 if (ytSaveBtn) {
   ytSaveBtn.addEventListener("click", (e) => withLoading(e.currentTarget, async () => {
-    const client_id = $("yt-client-id").value.trim();
-    const client_secret = $("yt-client-secret").value.trim();
+    setFieldError("oauth-yt-client-id-error", null);
+    setFieldError("oauth-yt-client-secret-warning", null);
+    const client_id = $("oauth-yt-client-id").value.trim();
+    const client_secret = $("oauth-yt-client-secret").value.trim();
     if (!client_id || !client_secret) { toast("Client ID and Client Secret are both required", "err"); return; }
+    if (!OAUTH_CLIENT_ID_RE.test(client_id)) {
+      setFieldError("oauth-yt-client-id-error",
+        "That doesn't look like a Google OAuth Client ID (should end in .apps.googleusercontent.com). "
+        + "Copy it from Google Cloud Console, not a dashboard username or password.");
+      return;
+    }
     try {
       const st = await post("/api/youtube/oauth/config", { client_id, client_secret });
-      $("yt-client-secret").value = "";
+      $("oauth-yt-client-secret").value = "";
       paintYtOauth(st);
-      toast("Saved - you can Connect now");
-    } catch (err) { toast(err.message, "err"); }
+      if (st.warning) { setFieldError("oauth-yt-client-secret-warning", st.warning); toast(st.warning, "err"); }
+      else toast("Saved - you can Connect now");
+    } catch (err) {
+      setFieldError("oauth-yt-client-id-error", err.message);
+      toast(err.message, "err");
+    }
   }));
 }
 

@@ -12,13 +12,22 @@ What's stored where:
     Console OAuth client) and the refresh token: secret_store, the
     encrypted vault (Part 0) - see CLIENT_ID_KEY / CLIENT_SECRET_KEY /
     REFRESH_TOKEN_KEY below.
-  - Everything else (connected channel id/title, granted scope,
-    connected_at, last_refreshed_at, status, last error) - db.py's
-    key/value settings table, as one JSON blob under SETTINGS_KEY. None
-    of it is secret.
+  - Everything else (connected channel id/title/email, granted scope,
+    connected_at, last_refreshed_at, status, last error, and a non-secret
+    *display hint* for the secret - last 4 characters, never enough to
+    reconstruct it) - db.py's key/value settings table, as one JSON blob
+    under SETTINGS_KEY. None of it is secret.
   - The short-lived access token lives only in this process's memory
     (module-level cache with its own expiry) - never persisted, never
     returned to the browser.
+
+Client ID/Secret are validated before they're ever saved (see
+set_client_credentials): a dashboard login autofilled into these fields
+by a browser's password manager previously got saved as "the OAuth
+client" (client_id="admin", client_secret=the admin password) and
+produced Google's invalid_client error - see docs/README for the
+incident. Validation here is what stops that from reaching Google at
+all, rather than catching it after a failed redirect.
 
 status is one of:
   disconnected  - never connected, or disconnected/revoked deliberately
@@ -35,6 +44,7 @@ import base64
 import hashlib
 import json
 import logging
+import re
 import secrets
 import time
 from urllib.parse import urlencode
@@ -48,25 +58,61 @@ logger = logging.getLogger("zoom-stream.youtube_oauth")
 AUTH_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth"
 TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token"
 REVOKE_ENDPOINT = "https://oauth2.googleapis.com/revoke"
+TOKENINFO_ENDPOINT = "https://oauth2.googleapis.com/tokeninfo"
 API_BASE = "https://www.googleapis.com/youtube/v3"
 # youtube.force-ssl: the scope Google's own Live Streaming API docs ask
-# for to manage broadcasts/streams - narrower than no alternative exists
-# for liveBroadcasts.insert/bind, broader scopes like plain "youtube"
+# for to manage broadcasts/streams - no narrower scope covers
+# liveBroadcasts.insert/bind, and broader scopes like plain "youtube"
 # grant nothing this feature needs beyond what force-ssl already covers.
-SCOPE = "https://www.googleapis.com/auth/youtube.force-ssl"
+# openid + email: only to learn WHICH Google account/channel this is (so
+# accounts.py can tell the operator when it doesn't match the VPS Chrome
+# profile they think it does) - not an extra permission over the channel.
+SCOPE = "https://www.googleapis.com/auth/youtube.force-ssl openid email"
 
 SETTINGS_KEY = "youtube_oauth_state"
 CLIENT_ID_KEY = "YOUTUBE_OAUTH_CLIENT_ID"
 CLIENT_SECRET_KEY = "YOUTUBE_OAUTH_CLIENT_SECRET"
 REFRESH_TOKEN_KEY = "YOUTUBE_OAUTH_REFRESH_TOKEN"
 
+# A real Google OAuth Web-client ID: <numeric project ref>-<hash>.apps.googleusercontent.com.
+# This is the single check that would have rejected "admin" outright.
+CLIENT_ID_RE = re.compile(r"^[0-9]+-[a-z0-9]+\.apps\.googleusercontent\.com$")
+# Current Google client secrets start with this; older ones (still valid)
+# don't, so a mismatch is a warning, not a hard rejection.
+CLIENT_SECRET_PREFIX = "GOCSPX-"
+
 PENDING_FLOW_TTL_SECONDS = 600  # 10 minutes to complete Google's consent screen
 HTTP_TIMEOUT = 15.0
 
 _DEFAULT_STATE = {
     "status": "disconnected", "channel_id": None, "channel_title": None,
-    "scope": None, "connected_at": None, "last_refreshed_at": None,
-    "last_error": None, "last_error_at": None,
+    "connected_email": None, "scope": None, "connected_at": None,
+    "last_refreshed_at": None, "last_error": None, "last_error_at": None,
+    "client_secret_hint": None,
+}
+
+# Shown inline on the Accounts page next to whichever Google error surfaced,
+# so "invalid_client" etc. are never just dumped at the operator raw. Also
+# used for the `error=` query param Google sometimes appends to the
+# callback redirect itself (consent-screen-level failures).
+GOOGLE_ERROR_HINTS: dict[str, str] = {
+    "invalid_client": "Google rejected the Client ID/Secret pair itself. Re-check both values "
+                       "against Google Cloud Console (APIs & Services -> Credentials) and Save again.",
+    "redirect_uri_mismatch": "The redirect URI this request sent doesn't match what's registered for "
+                              "this OAuth client. In Cloud Console, add this exact URI under Authorized "
+                              "redirect URIs, then try Connect again.",
+    "access_denied": "Access was denied on Google's consent screen. If this OAuth client is still in "
+                      "Testing mode, make sure your Google account is added under OAuth consent screen -> "
+                      "Test users, then try again.",
+    "org_internal": "This OAuth client's consent screen is restricted to internal Workspace users. In "
+                     "Cloud Console, change the OAuth consent screen's User type to External (Testing is fine).",
+    "admin_policy_enforced": "A Google Workspace admin policy is blocking this app for this account. Use a "
+                              "personal Google account, or ask the admin to allow it.",
+    "disallowed_useragent": "Google blocked this request's browser. Open Connect in a normal browser tab, "
+                             "not an embedded app or webview.",
+    "invalid_request": "Google rejected the request as malformed - try Connect again; if it repeats, "
+                        "re-save the Client ID/Secret.",
+    "invalid_scope": "Google rejected the requested permissions. This is a bug in this app if it persists.",
 }
 
 
@@ -93,10 +139,10 @@ class QuotaExceededError(YouTubeOAuthError):
 
 # ------------------------------------------------------------- pending flows
 
-# state -> {"code_verifier": str, "created_at": float}. In-memory only
-# (single uvicorn worker, same pattern as deps.py's rate-limit buckets) -
-# losing this on a process restart just means "start Connect again", not
-# a security issue.
+# state -> {"code_verifier": str, "session_id": str, "created_at": float}.
+# In-memory only (single uvicorn worker, same pattern as deps.py's
+# rate-limit buckets) - losing this on a process restart just means
+# "start Connect again", not a security issue.
 _pending: dict[str, dict] = {}
 
 # Cached access token: {"token": str | None, "expires_at": float}. Never
@@ -122,21 +168,45 @@ def is_configured() -> bool:
     return bool(secret_store.get_secret(CLIENT_ID_KEY) and secret_store.get_secret(CLIENT_SECRET_KEY))
 
 
-def set_client_credentials(client_id: str, client_secret: str) -> None:
+def validate_client_id(client_id: str) -> None:
+    if not CLIENT_ID_RE.match(client_id or ""):
+        raise YouTubeOAuthError(
+            "That doesn't look like a Google OAuth Client ID. It should look like "
+            "123456789012-abc123def456.apps.googleusercontent.com - copy it from Google Cloud "
+            "Console (APIs & Services -> Credentials), not a dashboard username or password."
+        )
+
+
+def set_client_credentials(client_id: str, client_secret: str) -> dict:
+    """Validates and saves the Client ID/Secret. Returns {"warning": str|None}
+    - a warning is informational (e.g. an unusual-looking secret) and does
+    NOT stop the save; only a YouTubeOAuthError does that, and it means
+    nothing was written to the vault."""
     client_id = (client_id or "").strip()
     client_secret = (client_secret or "").strip()
     if not client_id or not client_secret:
         raise YouTubeOAuthError("Client ID and Client Secret are both required")
+    validate_client_id(client_id)
+    warning = None
+    if not client_secret.startswith(CLIENT_SECRET_PREFIX):
+        warning = (
+            "This doesn't start with \"GOCSPX-\", which current Google client secrets do. "
+            "It was still saved - double check it's really the Client Secret from Cloud Console, "
+            "not something else, if Connect fails."
+        )
     secret_store.set_secrets({CLIENT_ID_KEY: client_id, CLIENT_SECRET_KEY: client_secret})
+    hint = client_secret[-4:] if len(client_secret) >= 4 else client_secret
+    _save_state(client_secret_hint=hint)
+    return {"warning": warning}
 
 
-def masked_client_id() -> str:
-    if not secret_store.is_unlocked():
-        return ""
-    cid = secret_store.get_secret(CLIENT_ID_KEY)
-    if not cid:
-        return ""
-    return cid if len(cid) <= 12 else cid[:8] + "…" + cid[-4:]
+def client_secret_display() -> str:
+    """Never the secret itself - a safe, non-secret hint derived from it at
+    save time and stored in db.py's settings table (see set_client_credentials)."""
+    if not is_configured():
+        return "Not configured"
+    hint = _load_state().get("client_secret_hint")
+    return f"Configured, ends in ••••{hint}" if hint else "Configured"
 
 
 # -------------------------------------------------------------------- state
@@ -161,18 +231,31 @@ def _save_state(**updates) -> dict:
     return state
 
 
+def _mask_email(email: str | None) -> str | None:
+    if not email or "@" not in email:
+        return None
+    local, domain = email.split("@", 1)
+    if len(local) <= 2:
+        return f"{local[0]}•••@{domain}"
+    return f"{local[0]}•••{local[-1]}@{domain}"
+
+
 def status() -> dict:
     """Everything the /accounts page needs to render the YouTube API card -
-    safe to return to the browser as-is (no secrets in here)."""
+    safe to return to the browser as-is (no secrets in here). client_id is
+    shown in full: Google client IDs aren't secret (they appear in the
+    browser's own address bar during consent) - only the secret is masked."""
     vault_locked = not secret_store.is_unlocked()
     state = _load_state()
     return {
         "vault_locked": vault_locked,
         "configured": False if vault_locked else is_configured(),
-        "client_id_masked": masked_client_id(),
+        "client_id": "" if vault_locked else (secret_store.get_secret(CLIENT_ID_KEY) or ""),
+        "client_secret_display": "Vault is locked" if vault_locked else client_secret_display(),
         "status": state["status"],
         "channel_id": state.get("channel_id"),
         "channel_title": state.get("channel_title"),
+        "connected_email_masked": _mask_email(state.get("connected_email")),
         "scope": state.get("scope"),
         "connected_at": state.get("connected_at"),
         "last_refreshed_at": state.get("last_refreshed_at"),
@@ -181,12 +264,34 @@ def status() -> dict:
     }
 
 
+def connected_email_raw() -> str | None:
+    """Unmasked connected identity email, for server-side comparison only
+    (accounts.py matching an OAuth connection to an account) - never
+    returned from status() / the API."""
+    return _load_state().get("connected_email")
+
+
+def linking_info() -> dict:
+    """The minimal, server-internal view accounts.py needs to decide
+    whether this OAuth connection belongs to a given account - deliberately
+    separate from status() so nothing ever has to remember to mask an email
+    before it reaches a template."""
+    state = _load_state()
+    return {
+        "configured": is_configured(),
+        "status": state["status"],
+        "connected_email": state.get("connected_email"),
+    }
+
+
 # --------------------------------------------------------------- the flow
 
-def start(redirect_uri: str) -> str:
+def start(redirect_uri: str, session_id: str) -> str:
     """Begins a PKCE authorization-code flow. Returns the URL to send the
     operator's browser to - a normal top-level redirect; Google's consent
-    screen is never framed (this app's CSP wouldn't allow it either)."""
+    screen is never framed (this app's CSP wouldn't allow it either).
+    `session_id` binds the flow to the dashboard session that started it,
+    so completing someone else's Connect link (login-CSRF) can't happen."""
     if not is_configured():
         raise NotConfiguredError("Save a Client ID and Client Secret first")
     _prune_pending()
@@ -194,7 +299,7 @@ def start(redirect_uri: str) -> str:
     code_verifier = _b64url(secrets.token_bytes(64))
     code_challenge = _b64url(hashlib.sha256(code_verifier.encode("ascii")).digest())
     state = _b64url(secrets.token_bytes(32))
-    _pending[state] = {"code_verifier": code_verifier, "created_at": time.time()}
+    _pending[state] = {"code_verifier": code_verifier, "session_id": session_id, "created_at": time.time()}
     params = {
         "client_id": client_id,
         "redirect_uri": redirect_uri,
@@ -228,6 +333,25 @@ def _channel_info(access_token: str) -> dict:
     return {"channel_id": ch.get("id"), "channel_title": (ch.get("snippet") or {}).get("title")}
 
 
+def _identity_email(id_token: str | None) -> str | None:
+    """Verifies the id_token with Google's own tokeninfo endpoint (Google
+    does the signature/audience/expiry checks server-side and hands back
+    the claims) rather than decoding and verifying a JWT locally - avoids
+    pulling in a JWT/crypto dependency for one field. Never raises: a
+    failure here just means the identity email is unknown, not that the
+    connection itself failed."""
+    if not id_token:
+        return None
+    try:
+        r = httpx.get(TOKENINFO_ENDPOINT, params={"id_token": id_token}, timeout=HTTP_TIMEOUT)
+        if r.status_code != 200:
+            return None
+        claims = r.json()
+    except (httpx.HTTPError, ValueError):
+        return None
+    return claims.get("email") if claims.get("email_verified") in ("true", True) else claims.get("email")
+
+
 def _token_error_message(r: httpx.Response) -> str:
     try:
         body = r.json()
@@ -236,21 +360,25 @@ def _token_error_message(r: httpx.Response) -> str:
     err = body.get("error", "")
     if err == "invalid_grant":
         return "Google rejected the authorization code (expired or already used) - try Connect again"
-    if err == "access_denied":
-        return "Access was denied on Google's consent screen"
+    if err in GOOGLE_ERROR_HINTS:
+        return GOOGLE_ERROR_HINTS[err]
     desc = body.get("error_description") or err or f"HTTP {r.status_code}"
     return f"Google rejected the request: {desc}"
 
 
-def complete(code: str, state: str, redirect_uri: str) -> dict:
+def complete(code: str, state: str, redirect_uri: str, session_id: str) -> dict:
     """Exchanges Google's authorization code for tokens, looks up the
-    connected channel, and persists the refresh token + metadata. Raises
-    YouTubeOAuthError with a message that's safe to show the operator -
-    never includes the code, tokens, or client secret."""
+    connected channel and identity, and persists the refresh token +
+    metadata. Raises YouTubeOAuthError with a message that's safe to show
+    the operator - never includes the code, tokens, or client secret."""
     _prune_pending()
     pending = _pending.pop(state, None)
     if pending is None:
         raise YouTubeOAuthError("This sign-in link expired or was already used - start Connect again")
+    if pending.get("session_id") and pending["session_id"] != session_id:
+        raise YouTubeOAuthError(
+            "This browser session changed since Connect started - sign in to the dashboard again and retry"
+        )
     if not is_configured():
         raise NotConfiguredError("Client ID/Secret went missing mid-flow - save them again and retry")
     client_id = secret_store.get_secret(CLIENT_ID_KEY)
@@ -287,11 +415,13 @@ def complete(code: str, state: str, redirect_uri: str) -> dict:
         info = _channel_info(access_token)
     except httpx.HTTPError:
         info = {"channel_id": None, "channel_title": None}
+    email = _identity_email(tok.get("id_token"))
     secret_store.set_secrets({REFRESH_TOKEN_KEY: refresh_token})
     now = time.time()
     return _save_state(
         status="connected", channel_id=info["channel_id"], channel_title=info["channel_title"],
-        scope=scope, connected_at=now, last_refreshed_at=now, last_error=None, last_error_at=None,
+        connected_email=email, scope=scope, connected_at=now, last_refreshed_at=now,
+        last_error=None, last_error_at=None,
     )
 
 
@@ -329,7 +459,9 @@ def _refresh_access_token() -> str:
             pass
         if body.get("error") == "invalid_grant":
             secret_store.set_secrets({REFRESH_TOKEN_KEY: ""})
-            msg = "Google revoked or expired this connection - reconnect required"
+            msg = ("Google revoked or expired this connection - reconnect required. If this OAuth "
+                   "client's consent screen is still in Testing mode, Google expires refresh tokens "
+                   "after 7 days; publish the consent screen (or reconnect weekly) to avoid this.")
             _save_state(status="needs_reauth", last_error=msg, last_error_at=time.time())
             raise NeedsReauthError(msg)
         msg = _token_error_message(r)
@@ -353,10 +485,25 @@ def get_access_token() -> str:
 
 def check_connection() -> dict:
     """"Test connection" action: forces a real refresh-token grant call
-    right now (bypassing the access-token cache) so a stale "connected"
-    badge can't hide a revoked/expired connection between broadcasts.
-    Raises the same errors as any other call that needs a fresh token."""
-    _refresh_access_token()
+    right now (bypassing the access-token cache), then makes an actual
+    YouTube Data API call (channels.list mine=true) so a stale "connected"
+    badge can't hide a revoked/expired connection, insufficient scope, or a
+    channel that no longer resolves. Raises the same errors as any other
+    call that needs a fresh token."""
+    access_token = _refresh_access_token()
+    try:
+        info = _channel_info(access_token)
+    except httpx.HTTPError as exc:
+        resp = getattr(exc, "response", None)
+        if resp is not None and resp.status_code == 403 and "quotaExceeded" in resp.text:
+            raise QuotaExceededError("YouTube API daily quota exceeded - try again later") from exc
+        if resp is not None and resp.status_code == 403:
+            raise YouTubeOAuthError(
+                "The connected token doesn't have permission to call channels.list - disconnect "
+                "and Connect again to grant the youtube.force-ssl scope"
+            ) from exc
+        raise YouTubeOAuthError("Couldn't reach the YouTube Data API to test the connection") from exc
+    _save_state(channel_id=info["channel_id"], channel_title=info["channel_title"])
     return status()
 
 
@@ -375,8 +522,8 @@ def disconnect() -> None:
         secret_store.set_secrets({REFRESH_TOKEN_KEY: ""})
     _access_cache["token"] = None
     _access_cache["expires_at"] = 0.0
-    _save_state(status="disconnected", channel_id=None, channel_title=None, scope=None,
-                connected_at=None, last_error=None, last_error_at=None)
+    _save_state(status="disconnected", channel_id=None, channel_title=None, connected_email=None,
+                scope=None, connected_at=None, last_error=None, last_error_at=None)
 
 
 # ------------------------------------------------------------- the API itself
@@ -384,7 +531,13 @@ def disconnect() -> None:
 def _api_error_message(r: httpx.Response) -> str:
     try:
         body = r.json()
-        return body.get("error", {}).get("message") or f"YouTube API error (HTTP {r.status_code})"
+        err = body.get("error", {})
+        errors = err.get("errors") or []
+        reason = errors[0].get("reason") if errors else None
+        if reason == "insufficientPermissions":
+            return ("The connected token doesn't have the youtube.force-ssl scope needed for this - "
+                    "disconnect and Connect again to grant it")
+        return err.get("message") or f"YouTube API error (HTTP {r.status_code})"
     except ValueError:
         return f"YouTube API error (HTTP {r.status_code})"
 

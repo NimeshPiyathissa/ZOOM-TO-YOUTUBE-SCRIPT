@@ -48,7 +48,10 @@
 .account-state[data-state="stale"],
 .account-state[data-state="check_failed"] { background: var(--warning-tint); color: var(--warning); }
 .account-state[data-state="wrong_account"],
-.account-state[data-state="signed_out"] { background: var(--live-tint); color: var(--live); }
+.account-state[data-state="signed_out"],
+.account-state[data-state="api_wrong_account"] { background: var(--live-tint); color: var(--live); }
+.account-state[data-state="api_needs_reauth"],
+.account-state[data-state="api_connected_browser_signed_out"] { background: var(--warning-tint); color: var(--warning); }
 .account-state[data-state="checking"] { background: var(--bg-hover); color: var(--text-dim); }
 .account-state[data-state="checking"] .account-state-icon {
   animation: account-spin 900ms linear infinite;
@@ -69,6 +72,14 @@
 
 .account-meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-3); }
 .account-result { min-height: 1.2em; }
+/* Part 3: the YouTube Data API link check, shown separately from the
+   browser-session identity line above it - two independent checks, each
+   visible on its own, even though the main badge combines them. */
+.account-api-status { color: var(--text-faint); }
+.account-api-status[data-api-status="wrong_account"] { color: var(--live); }
+.account-api-status[data-api-status="needs_reauth"] { color: var(--warning); }
+.account-api-status[data-api-status="connected_match"] { color: var(--success); }
+.account-api-status:empty { display: none; }
 
 .account-card-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-3); }
 /* Touch targets: .btn-touch already sets --btn-h:56px (components.css),
@@ -126,6 +137,13 @@
 .yt-oauth-config { margin-bottom: var(--space-2); }
 .yt-oauth-config code { font-size: var(--text-sm); padding: 2px 6px; border-radius: var(--radius-sm); background: var(--bg-hover); word-break: break-all; }
 .yt-oauth-config .input-group .btn { flex: none; }
+/* Decoy username/password pair: present in the DOM (so password managers
+   see a "normal" login-shaped pair to latch onto instead of the real
+   fields) but never visible or reachable - see templates/accounts.html. */
+.oauth-decoy { position: absolute; width: 1px; height: 1px; overflow: hidden; opacity: 0; pointer-events: none; left: -9999px; }
+#oauth-yt-client-id-error { color: var(--live); }
+#oauth-yt-client-secret-warning { color: var(--warning); }
+#oauth-yt-secret-display { color: var(--text-faint); }
 
 /* ---------------------------------------------------------------- mobile */
 @media (max-width: 767px) {

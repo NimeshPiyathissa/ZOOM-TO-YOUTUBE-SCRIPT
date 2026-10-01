@@ -58,6 +58,11 @@ def _reset_module_state():
     yo._access_cache["expires_at"] = 0.0
 
 
+VALID_CLIENT_ID = "123456789012-abc123def456.apps.googleusercontent.com"
+VALID_CLIENT_SECRET = "GOCSPX-abcSecret123"
+SESSION_ID = "sess-test-1"
+
+
 @pytest.fixture
 def unlocked_vault():
     secret_store.initialize("master password", unlock_mode="prompt")
@@ -66,7 +71,7 @@ def unlocked_vault():
 
 @pytest.fixture
 def configured(unlocked_vault):
-    yo.set_client_credentials("client-id-123", "client-secret-abc")
+    yo.set_client_credentials(VALID_CLIENT_ID, VALID_CLIENT_SECRET)
     yield
 
 
@@ -98,88 +103,114 @@ CHANNEL_OK = {"items": [{"id": "UC12345", "snippet": {"title": "My Channel"}}]}
 
 def test_start_requires_configuration(unlocked_vault):
     with pytest.raises(yo.NotConfiguredError):
-        yo.start("https://zoom.missakaart.lk/api/youtube/oauth/callback")
+        yo.start("https://zoom.missakaart.lk/api/youtube/oauth/callback", SESSION_ID)
 
 
 def test_start_builds_pkce_url_and_records_pending(configured):
-    url = yo.start("https://zoom.missakaart.lk/api/youtube/oauth/callback")
+    url = yo.start("https://zoom.missakaart.lk/api/youtube/oauth/callback", SESSION_ID)
     assert url.startswith(yo.AUTH_ENDPOINT + "?")
     assert "code_challenge=" in url
     assert "code_challenge_method=S256" in url
-    assert "client_id=client-id-123" in url
+    assert f"client_id={VALID_CLIENT_ID}" in url
     assert len(yo._pending) == 1
     state = next(iter(yo._pending))
     assert f"state={state}" in url
+    assert yo._pending[state]["session_id"] == SESSION_ID
 
 
 # ------------------------------------------------------------- complete()
 
 def test_complete_unknown_state_rejected(configured):
     with pytest.raises(yo.YouTubeOAuthError, match="expired or was already used"):
-        yo.complete("some-code", "bogus-state", "https://zoom.missakaart.lk/cb")
+        yo.complete("some-code", "bogus-state", "https://zoom.missakaart.lk/cb", SESSION_ID)
 
 
-def test_complete_success_stores_refresh_token_and_channel(configured, monkeypatch):
-    url = yo.start("https://zoom.missakaart.lk/cb")
+def test_complete_session_mismatch_rejected(configured):
+    yo.start("https://zoom.missakaart.lk/cb", SESSION_ID)
     state = next(iter(yo._pending))
+    with pytest.raises(yo.YouTubeOAuthError, match="session changed"):
+        yo.complete("auth-code", state, "https://zoom.missakaart.lk/cb", "a-different-session")
+
+
+def test_complete_success_stores_refresh_token_channel_and_identity(configured, monkeypatch):
+    yo.start("https://zoom.missakaart.lk/cb", SESSION_ID)
+    state = next(iter(yo._pending))
+    token_body = dict(TOKEN_OK, id_token="fake-id-token")
 
     def fake_post(endpoint, data=None, timeout=None):
         assert endpoint == yo.TOKEN_ENDPOINT
         assert data["grant_type"] == "authorization_code"
         assert data["code_verifier"]
-        return FakeResponse(200, TOKEN_OK)
+        return FakeResponse(200, token_body)
 
     def fake_get(endpoint, params=None, headers=None, timeout=None):
+        if endpoint == yo.TOKENINFO_ENDPOINT:
+            assert params["id_token"] == "fake-id-token"
+            return FakeResponse(200, {"email": "operator@gmail.com", "email_verified": "true"})
         assert headers["Authorization"] == "Bearer access-tok-1"
         return FakeResponse(200, CHANNEL_OK)
 
     monkeypatch.setattr(yo.httpx, "post", fake_post)
     monkeypatch.setattr(yo.httpx, "get", fake_get)
 
-    result = yo.complete("auth-code", state, "https://zoom.missakaart.lk/cb")
+    result = yo.complete("auth-code", state, "https://zoom.missakaart.lk/cb", SESSION_ID)
 
     assert result["status"] == "connected"
     assert result["channel_id"] == "UC12345"
     assert result["channel_title"] == "My Channel"
+    assert result["connected_email"] == "operator@gmail.com"
     assert secret_store.get_secret(yo.REFRESH_TOKEN_KEY) == "refresh-tok-1"
     # single-use: the state can't be replayed
     assert state not in yo._pending
     st = yo.status()
     assert st["status"] == "connected"
     assert st["channel_title"] == "My Channel"
+    assert st["connected_email_masked"] == "o•••r@gmail.com"
+    assert yo.connected_email_raw() == "operator@gmail.com"
 
 
 def test_complete_without_refresh_token_raises_and_stores_nothing(configured, monkeypatch):
-    yo.start("https://zoom.missakaart.lk/cb")
+    yo.start("https://zoom.missakaart.lk/cb", SESSION_ID)
     state = next(iter(yo._pending))
     body = dict(TOKEN_OK)
     del body["refresh_token"]
     monkeypatch.setattr(yo.httpx, "post", lambda *a, **k: FakeResponse(200, body))
     with pytest.raises(yo.YouTubeOAuthError, match="didn't return a refresh token"):
-        yo.complete("auth-code", state, "https://zoom.missakaart.lk/cb")
+        yo.complete("auth-code", state, "https://zoom.missakaart.lk/cb", SESSION_ID)
     assert secret_store.get_secret(yo.REFRESH_TOKEN_KEY) == ""
     assert yo.status()["status"] == "disconnected"
 
 
 def test_complete_token_endpoint_error(configured, monkeypatch):
-    yo.start("https://zoom.missakaart.lk/cb")
+    yo.start("https://zoom.missakaart.lk/cb", SESSION_ID)
     state = next(iter(yo._pending))
     monkeypatch.setattr(
         yo.httpx, "post",
         lambda *a, **k: FakeResponse(400, {"error": "invalid_grant", "error_description": "Bad code"}),
     )
     with pytest.raises(yo.YouTubeOAuthError, match="expired or already used"):
-        yo.complete("auth-code", state, "https://zoom.missakaart.lk/cb")
+        yo.complete("auth-code", state, "https://zoom.missakaart.lk/cb", SESSION_ID)
+
+
+def test_complete_invalid_client_error_uses_hint(configured, monkeypatch):
+    yo.start("https://zoom.missakaart.lk/cb", SESSION_ID)
+    state = next(iter(yo._pending))
+    monkeypatch.setattr(
+        yo.httpx, "post",
+        lambda *a, **k: FakeResponse(400, {"error": "invalid_client"}),
+    )
+    with pytest.raises(yo.YouTubeOAuthError, match="Client ID/Secret pair itself"):
+        yo.complete("auth-code", state, "https://zoom.missakaart.lk/cb", SESSION_ID)
 
 
 # ------------------------------------------------------- access token cache
 
 def _connect(monkeypatch):
-    yo.start("https://zoom.missakaart.lk/cb")
+    yo.start("https://zoom.missakaart.lk/cb", SESSION_ID)
     state = next(iter(yo._pending))
     monkeypatch.setattr(yo.httpx, "post", lambda *a, **k: FakeResponse(200, TOKEN_OK))
     monkeypatch.setattr(yo.httpx, "get", lambda *a, **k: FakeResponse(200, CHANNEL_OK))
-    yo.complete("auth-code", state, "https://zoom.missakaart.lk/cb")
+    yo.complete("auth-code", state, "https://zoom.missakaart.lk/cb", SESSION_ID)
 
 
 def test_get_access_token_uses_cache_without_a_new_call(configured, monkeypatch):
@@ -322,6 +353,21 @@ def test_quota_exceeded_does_not_disturb_connected_status(configured, monkeypatc
     assert yo.status()["status"] == "connected"
 
 
+# ----------------------------------------------------- check_connection()
+
+def test_check_connection_makes_a_real_channels_list_call(configured, monkeypatch):
+    """Part 2's "Test connection" requirement: not just a token refresh -
+    an actual channels.list(mine=true) call, and the result (channel name)
+    is what the operator sees."""
+    _connect(monkeypatch)
+    monkeypatch.setattr(yo.httpx, "post", lambda *a, **k: FakeResponse(200, {"access_token": "access-tok-2", "expires_in": 3600}))
+    monkeypatch.setattr(yo.httpx, "get", lambda *a, **k: FakeResponse(200, {"items": [{"id": "UC999", "snippet": {"title": "Renamed Channel"}}]}))
+    st = yo.check_connection()
+    assert st["status"] == "connected"
+    assert st["channel_title"] == "Renamed Channel"
+    assert st["channel_id"] == "UC999"
+
+
 def test_get_broadcast_health_combines_lifecycle_and_stream_health(configured, monkeypatch):
     _connect(monkeypatch)
 
@@ -366,8 +412,46 @@ def test_set_client_credentials_requires_both_fields(unlocked_vault):
         yo.set_client_credentials("id", "")
 
 
-def test_masked_client_id(configured):
-    assert yo.masked_client_id() == "client-i…-123"
+# -------------------------------------------- root-cause regression tests
+# A dashboard login autofilled into these fields by a browser password
+# manager previously got saved as the OAuth client (client_id="admin",
+# secret=the admin password) and reached Google as invalid_client. These
+# prove that can't happen again: a malformed Client ID is rejected before
+# anything is ever written to the vault.
+
+def test_set_client_credentials_rejects_non_google_client_id(unlocked_vault):
+    with pytest.raises(yo.YouTubeOAuthError, match="doesn't look like a Google OAuth Client ID"):
+        yo.set_client_credentials("admin", "whatever-the-dashboard-password-was")
+    assert not yo.is_configured()
+
+
+def test_set_client_credentials_rejects_malformed_but_nonempty_id(unlocked_vault):
+    for bad in ("123456", "not-an-id.apps.googleusercontent.com", "123-abc.example.com", ""):
+        with pytest.raises(yo.YouTubeOAuthError):
+            yo.set_client_credentials(bad, "GOCSPX-something")
+    assert not yo.is_configured()
+
+
+def test_set_client_credentials_accepts_real_looking_id(unlocked_vault):
+    result = yo.set_client_credentials(VALID_CLIENT_ID, VALID_CLIENT_SECRET)
+    assert result["warning"] is None
+    assert yo.is_configured()
+    assert yo.status()["client_id"] == VALID_CLIENT_ID
+
+
+def test_set_client_credentials_warns_but_saves_non_gocspx_secret(unlocked_vault):
+    result = yo.set_client_credentials(VALID_CLIENT_ID, "an-older-style-secret")
+    assert result["warning"] is not None
+    assert "GOCSPX-" in result["warning"]
+    # a warning doesn't block the save - Connect is still usable
+    assert yo.is_configured()
+
+
+def test_client_secret_display_never_exposes_the_secret(configured):
+    display = yo.client_secret_display()
+    assert "123" in display  # last 4 chars of VALID_CLIENT_SECRET as a hint
+    assert VALID_CLIENT_SECRET not in display
+    assert "ends in" in display
 
 
 # ------------------------------------------------------------------ routes
@@ -424,14 +508,32 @@ def test_config_route_requires_csrf(client):
     assert res.status_code == 403
 
 
+def test_config_route_rejects_malformed_client_id(client, unlocked_vault):
+    """End-to-end root-cause proof: posting client_id="admin" (what an
+    autofilled dashboard login looks like) through the actual route is
+    rejected inline - nothing is saved, and /start can't be reached from
+    this state since configured stays False."""
+    res = client.post(
+        "/api/youtube/oauth/config",
+        json={"client_id": "admin", "client_secret": "whatever-the-password-was"},
+        headers={"X-CSRF-Token": client.csrf},
+    )
+    assert res.status_code == 400
+    assert "doesn't look like a Google OAuth Client ID" in res.json()["error"]
+
+    res = client.post("/api/youtube/oauth/start", headers={"X-CSRF-Token": client.csrf})
+    assert res.status_code == 400  # NotConfiguredError - never got far enough to redirect to Google
+
+
 def test_config_then_start_route_returns_authorize_url(client, unlocked_vault):
     res = client.post(
         "/api/youtube/oauth/config",
-        json={"client_id": "id-1", "client_secret": "secret-1"},
+        json={"client_id": VALID_CLIENT_ID, "client_secret": VALID_CLIENT_SECRET},
         headers={"X-CSRF-Token": client.csrf},
     )
     assert res.status_code == 200
     assert res.json()["configured"] is True
+    assert res.json()["client_secret_display"].endswith(VALID_CLIENT_SECRET[-4:])
 
     res = client.post("/api/youtube/oauth/start", headers={"X-CSRF-Token": client.csrf})
     assert res.status_code == 200
@@ -439,15 +541,27 @@ def test_config_then_start_route_returns_authorize_url(client, unlocked_vault):
 
 
 def test_callback_route_error_param_redirects_with_reason(client):
+    from urllib.parse import unquote
     res = client.get("/api/youtube/oauth/callback?error=access_denied", follow_redirects=False)
     assert res.status_code == 303
     assert res.headers["location"].startswith("/accounts?yt_oauth=error&reason=")
+    assert "Test users" in unquote(res.headers["location"])  # GOOGLE_ERROR_HINTS, not a bare error code
+
+
+def test_callback_route_no_session_rejected(anon_client):
+    """A GET to the callback with no dashboard session at all (cookie
+    expired mid-flow) must not attempt complete() - just a clear redirect
+    asking to log in and retry, never a crash or a silent no-op."""
+    from urllib.parse import unquote
+    res = anon_client.get("/api/youtube/oauth/callback?code=auth-code&state=whatever", follow_redirects=False)
+    assert res.status_code == 303
+    assert "session expired" in unquote(res.headers["location"])
 
 
 def test_callback_route_success_redirects_connected(client, unlocked_vault, monkeypatch):
     client.post(
         "/api/youtube/oauth/config",
-        json={"client_id": "id-1", "client_secret": "secret-1"},
+        json={"client_id": VALID_CLIENT_ID, "client_secret": VALID_CLIENT_SECRET},
         headers={"X-CSRF-Token": client.csrf},
     )
     start_res = client.post("/api/youtube/oauth/start", headers={"X-CSRF-Token": client.csrf})
@@ -461,3 +575,36 @@ def test_callback_route_success_redirects_connected(client, unlocked_vault, monk
     res = client.get(f"/api/youtube/oauth/callback?code=auth-code&state={state}", follow_redirects=False)
     assert res.status_code == 303
     assert res.headers["location"] == "/accounts?yt_oauth=connected#youtube-api"
+
+
+def test_callback_route_rejects_a_different_sessions_state(client, unlocked_vault, monkeypatch):
+    """Login-CSRF proof: the state issued to one dashboard session can't be
+    completed by a request carrying a different session's cookie."""
+    client.post(
+        "/api/youtube/oauth/config",
+        json={"client_id": VALID_CLIENT_ID, "client_secret": VALID_CLIENT_SECRET},
+        headers={"X-CSRF-Token": client.csrf},
+    )
+    start_res = client.post("/api/youtube/oauth/start", headers={"X-CSRF-Token": client.csrf})
+    authorize_url = start_res.json()["authorize_url"]
+    from urllib.parse import urlparse, parse_qs
+    state = parse_qs(urlparse(authorize_url).query)["state"][0]
+
+    import time as _time
+    from app import security as security_mod
+    with db.get_conn() as conn:
+        cur = conn.execute(
+            "INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?)",
+            ("someone-else", security_mod.hash_password("another-password"), _time.time()),
+        )
+        other_user_id = cur.lastrowid
+    other_session_id, _ = security_mod.create_session(other_user_id, "127.0.0.1")
+
+    from starlette.testclient import TestClient
+    from app.main import app
+    other_client = TestClient(app, cookies={config.COOKIE_NAME: other_session_id})
+
+    from urllib.parse import unquote
+    res = other_client.get(f"/api/youtube/oauth/callback?code=auth-code&state={state}", follow_redirects=False)
+    assert res.status_code == 303
+    assert "session changed" in unquote(res.headers["location"])
