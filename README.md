@@ -186,9 +186,12 @@ entirely the accounts list above it.
 > holes are closed now: the Client ID is validated server-side against
 > `^[0-9]+-[a-z0-9]+\.apps\.googleusercontent\.com$` before it's ever saved
 > (reject, don't redirect to Google with it), and the two fields carry
-> `autocomplete="off"`/`"new-password"`, non-login `name`/`id`s, `readonly`
-> until first interaction, and a decoy username/password pair placed right
-> before them to absorb the autofill heuristic instead. If you set this up
+> `autocomplete="off"`/`"new-password"`, non-login `name`/`id`s, and a decoy
+> username/password pair placed right before them to absorb the autofill
+> heuristic instead (an earlier `readonly`-until-first-interaction layer was
+> tried too but broke pasting on some browsers, so it was dropped — the
+> decoy pair plus server-side validation are the load-bearing defenses). If
+> you set this up
 > before this fix, re-check the Client ID/Secret you saved — if they weren't
 > saved via a genuine Google Cloud Console copy-paste, re-enter them, and
 > rotate your dashboard password regardless, since this means it was written

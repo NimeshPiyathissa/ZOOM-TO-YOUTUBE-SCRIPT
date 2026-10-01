@@ -322,18 +322,6 @@ function paintYtOauth(st) {
   if (disconnectBtn) disconnectBtn.disabled = st.status === "disconnected";
 }
 
-// Both real fields start `readonly` (templates/accounts.html) so Chrome's
-// password manager can't silently autofill them on page load before the
-// operator ever touches the page - only removed once the operator
-// actually interacts with the field.
-["oauth-yt-client-id", "oauth-yt-client-secret"].forEach((id) => {
-  const el = $(id);
-  if (!el) return;
-  const unlock = () => el.removeAttribute("readonly");
-  el.addEventListener("focus", unlock, { once: true });
-  el.addEventListener("pointerdown", unlock, { once: true });
-});
-
 function setFieldError(id, message) {
   const el = $(id);
   if (!el) return;
