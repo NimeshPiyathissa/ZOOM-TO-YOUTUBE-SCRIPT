@@ -183,7 +183,20 @@
 <section class="section" id="signin-panel" hidden aria-labelledby="signin-title" aria-live="polite">
   <div class="section-head"><h2 id="signin-title">Sign in: <span id="signin-account-label"></span></h2></div>
   <div class="signin-grid">
-    <div class="vnc-frame-box signin-vnc" id="signin-vnc"></div>
+    <div class="vnc-frame-box signin-vnc" id="signin-vnc">
+      <div id="signin-vnc-canvas" class="vnc-canvas-stage"></div>
+      <div id="signin-vnc-overlay" class="vnc-status-overlay">
+        <div class="vnc-status-card">
+          <span class="spinner" id="signin-vnc-spinner"></span>
+          <div class="vnc-status-title" id="signin-vnc-overlay-text">Launching Chrome…</div>
+          <div class="vnc-status-desc" id="signin-vnc-overlay-sub">Opening the sign-in window on the remote screen</div>
+          <div class="btn-row mt-2" id="signin-vnc-overlay-actions" hidden>
+            <button id="signin-vnc-retry" class="btn btn-primary btn-sm">{{ icon("rotate-cw", "icon-sm") }}Retry</button>
+            <a href="/vnc" class="btn btn-secondary btn-sm">{{ icon("monitor", "icon-sm") }}Open Remote GUI</a>
+          </div>
+        </div>
+      </div>
+    </div>
     <div class="card signin-guide">
       <ol class="signin-steps">
         <li><strong>A Chrome window has opened on the remote screen</strong> at Google's sign-in page, maximized. If you only see black, wait a few seconds.</li>

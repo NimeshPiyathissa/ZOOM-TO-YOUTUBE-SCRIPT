@@ -191,20 +191,92 @@ async function runVerify(card, id) {
 // ---------------------------------------------------------------- sign-in flow (embedded noVNC)
 
 const panel = $("signin-panel");
-let signinCard = null, signinId = null, rfb = null, statusTimer = null;
+let signinCard = null, signinId = null, rfb = null, statusTimer = null, vncTimeoutTimer = null;
+
+const VNC_READY_TIMEOUT_MS = 20000;
+
+function setVncOverlay(state, message, subtext) {
+  const overlay = $("signin-vnc-overlay");
+  const spinner = $("signin-vnc-spinner");
+  const text = $("signin-vnc-overlay-text");
+  const sub = $("signin-vnc-overlay-sub");
+  const actions = $("signin-vnc-overlay-actions");
+  if (!overlay) return;
+  if (state === "ready") {
+    overlay.hidden = true;
+    return;
+  }
+  overlay.hidden = false;
+  if (spinner) spinner.hidden = state === "failed";
+  if (actions) actions.hidden = state !== "failed";
+  if (text) text.textContent = message || "";
+  if (sub) sub.textContent = subtext || "";
+}
+
+function clearVncTimeout() {
+  if (vncTimeoutTimer) { clearTimeout(vncTimeoutTimer); vncTimeoutTimer = null; }
+}
+
+function armVncTimeout() {
+  clearVncTimeout();
+  vncTimeoutTimer = setTimeout(() => {
+    setVncOverlay("failed", "Still not connected", `The remote screen didn't respond within ${VNC_READY_TIMEOUT_MS / 1000}s. The sign-in window may not have opened, or the connection stalled.`);
+  }, VNC_READY_TIMEOUT_MS);
+}
+
+function connectSigninVnc() {
+  const target = $("signin-vnc-canvas");
+  target.innerHTML = "";
+  setVncOverlay("connecting", "Connecting…", "Establishing the remote screen connection");
+  armVncTimeout();
+  rfb = connectVnc(target, {
+    onDisconnect: () => { rfb = null; },
+    onStatus: (state, message) => {
+      if (state === "connected") {
+        clearVncTimeout();
+        setVncOverlay("ready");
+        return;
+      }
+      if (state === "securityfailure") {
+        clearVncTimeout();
+        setVncOverlay("failed", "Authentication failed", message);
+        return;
+      }
+      // "disconnected" while the panel is still open - show failed with a
+      // Retry rather than silently going back to a black box.
+      if (signinId != null) {
+        setVncOverlay("failed", "Disconnected", message || "The remote screen connection was lost.");
+      }
+    },
+  });
+  post("/api/vnc/rate", { mode: "fast" }).catch(() => {});
+}
+
+$("signin-vnc-retry")?.addEventListener("click", () => {
+  if (rfb) { try { rfb.disconnect(); } catch (err) { /* already gone */ } rfb = null; }
+  connectSigninVnc();
+});
 
 async function startSignin(card, id) {
-  try { await post(`/api/accounts/${id}/signin/start`); }
-  catch (err) { toast(err.message, "err"); return; }
   signinCard = card; signinId = id;
   $("signin-account-label").textContent = card.dataset.label;
-  $("signin-status").textContent = "Chrome is opening on the remote screen…";
+  $("signin-status").textContent = "Launching Chrome on the remote screen…";
   panel.hidden = false;
   panel.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
-  const target = $("signin-vnc");
-  target.innerHTML = "";
-  rfb = connectVnc(target, { onDisconnect: () => { rfb = null; } });
-  post("/api/vnc/rate", { mode: "fast" }).catch(() => {});
+  setVncOverlay("launching", "Launching Chrome…", "Opening the sign-in window on the remote screen");
+  try {
+    const r = await post(`/api/accounts/${id}/signin/start`);
+    if (r && r.opened === false) {
+      setVncOverlay("failed", "Couldn't launch Chrome", "See the toast above for the reason.");
+      return;
+    }
+  } catch (err) {
+    toast(err.message, "err");
+    setVncOverlay("failed", "Couldn't launch Chrome", err.message);
+    return;
+  }
+  $("signin-status").textContent = "Chrome is opening on the remote screen…";
+  connectSigninVnc();
   announce(`Sign-in window opened for ${card.dataset.label}`);
   clearInterval(statusTimer);
   statusTimer = setInterval(pollSigninStatus, 5000);
@@ -222,10 +294,11 @@ async function pollSigninStatus() {
 
 function closePanel() {
   clearInterval(statusTimer); statusTimer = null;
+  clearVncTimeout();
+  signinCard = null; signinId = null;
   if (rfb) { try { rfb.disconnect(); } catch (e) { /* already gone */ } rfb = null; }
   post("/api/vnc/rate", { mode: "slow" }).catch(() => {});
   panel.hidden = true;
-  signinCard = null; signinId = null;
 }
 
 $("signin-done").addEventListener("click", async (e) => {

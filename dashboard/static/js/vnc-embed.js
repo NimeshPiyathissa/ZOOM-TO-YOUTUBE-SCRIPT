@@ -43,7 +43,7 @@ export function promptText(message) {
 }
 
 /**
- * connectVnc(target, { onDisconnect, onConnect, getPassword, password, path, scaleViewport })
+ * connectVnc(target, { onDisconnect, onConnect, onStatus, getPassword, password, path, scaleViewport, qualityLevel, showDotCursor })
  *  getPassword: optional async () => string|null. When given, it is
  *  called on 'credentialsrequired' instead of the built-in prompt (so a
  *  caller can remember the password in memory for the page's lifetime);
@@ -51,8 +51,17 @@ export function promptText(message) {
  *  password: optional string to auto-send when credentials are required.
  *  path: WebSocket endpoint path (default "/vnc/ws").
  *  scaleViewport: boolean (default true).
+ *  qualityLevel / showDotCursor: optional passthroughs to the RFB instance.
+ *  onStatus(state, message): optional - the single place every caller gets
+ *  told what's happening ("connecting", "connected", "disconnected" with a
+ *  `clean` third arg, or "securityfailure"), so a caller that wants a
+ *  status overlay (the
+ *  Remote GUI page, the Accounts sign-in panel) can drive it from one
+ *  source instead of re-deriving it from raw RFB events - this is what
+ *  replaced vnc.js's own parallel copy of this event wiring (see its
+ *  header comment / 2026-10-01 fix).
  */
-export function connectVnc(target, { onDisconnect, onConnect, getPassword, password, path = "/vnc/ws", scaleViewport = true } = {}) {
+export function connectVnc(target, { onDisconnect, onConnect, onStatus, getPassword, password, path = "/vnc/ws", scaleViewport = true, qualityLevel, showDotCursor } = {}) {
   const proto = location.protocol === "https:" ? "wss" : "ws";
   // Request the "binary" subprotocol explicitly. noVNC 1.4 defaults
   // wsProtocols to [] (no subprotocol requested); our /vnc/ws proxy
@@ -61,9 +70,12 @@ export function connectVnc(target, { onDisconnect, onConnect, getPassword, passw
   // handshake with code 1006 - the "VNC disconnected unexpectedly" bug.
   // Asking for "binary" here makes client and proxy agree.
   const wsUrl = `${proto}://${location.host}${path}`;
+  if (onStatus) onStatus("connecting", "Connecting to remote desktop…");
   const rfb = new RFB(target, wsUrl, { wsProtocols: ["binary"] });
   rfb.scaleViewport = scaleViewport;
   rfb.resizeSession = false;
+  if (qualityLevel !== undefined) rfb.qualityLevel = qualityLevel;
+  if (showDotCursor !== undefined) rfb.showDotCursor = showDotCursor;
   rfb.addEventListener("credentialsrequired", async () => {
     let pass = password;
     if (!pass) {
@@ -72,12 +84,21 @@ export function connectVnc(target, { onDisconnect, onConnect, getPassword, passw
     if (pass == null) { try { rfb.disconnect(); } catch (err) { /* already gone */ } return; }
     rfb.sendCredentials({ password: pass });
   });
-  if (onConnect) {
-    rfb.addEventListener("connect", onConnect);
-  }
+  rfb.addEventListener("securityfailure", (e) => {
+    const reason = e.detail && e.detail.reason ? e.detail.reason : "VNC authentication failed";
+    // Distinct from "disconnected": a caller must not treat a rejected
+    // password the same as a dropped connection (that way lies an
+    // infinite auto-reconnect loop hammering the same bad password).
+    if (onStatus) onStatus("securityfailure", reason);
+  });
+  rfb.addEventListener("connect", () => {
+    if (onStatus) onStatus("connected", "Connected");
+    if (onConnect) onConnect();
+  });
   rfb.addEventListener("disconnect", (e) => {
     const clean = e.detail && e.detail.clean;
     if (!clean && typeof toast === "function") toast("VNC disconnected unexpectedly", "err");
+    if (onStatus) onStatus("disconnected", clean ? "Disconnected" : "Connection lost unexpectedly", clean);
     if (onDisconnect) onDisconnect(clean);
   });
   return rfb;

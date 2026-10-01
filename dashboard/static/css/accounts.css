@@ -115,6 +115,18 @@
 
 .ac-zoom-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); min-height: 28px; }
 .signin-vnc { background: var(--rm-ink, #07090c); border-radius: var(--radius-md); overflow: hidden; }
+/* Canvas stage is an absolutely-positioned sibling of the status overlay
+   (base.css .vnc-status-overlay), both filling .signin-vnc (already
+   position:relative via .vnc-frame-box) - same pairing as /vnc's
+   #vnc-screen + #vnc-overlay-msg inside .vnc-viewport-card. noVNC's own
+   RFB instance (scaleViewport) watches this box and autoscales the real
+   framebuffer into it, letterboxed - no JS sizing needed here. */
+.vnc-canvas-stage {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center; overflow: hidden;
+}
+.vnc-canvas-stage > div { width: 100% !important; height: 100% !important; display: flex !important; align-items: center !important; justify-content: center !important; overflow: hidden !important; }
+.vnc-canvas-stage canvas { outline: none; }
 
 /* ---------------------------------------------------------------- YouTube Data API (Part 4)
    Deliberately its own card, its own icon (youtube, not user/shield-check)

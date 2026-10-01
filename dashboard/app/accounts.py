@@ -328,6 +328,18 @@ def signin_start(account_id: int) -> dict:
     acct = get_account(account_id)
     if not acct:
         raise AccountError("account not found")
+    # Only one sign-in session at a time: ask the ground truth (each other
+    # account's own chrome-account.sh status) rather than tracking a
+    # separate in-app flag that could drift from what's actually running.
+    with db.get_conn() as conn:
+        others = conn.execute("SELECT id, label FROM accounts WHERE id != ?", (account_id,)).fetchall()
+    for other in others:
+        try:
+            st = signin_status(other["id"])
+        except (AccountError, control.ControlError):
+            continue
+        if st.get("signin_open"):
+            raise AccountError(f"Sign-in already in progress for \"{other['label']}\" - finish or cancel that one first")
     out = control.account_profile_action("signin", acct["profile_id"])
     return {"opened": out in ("opened", "already-open")}
 

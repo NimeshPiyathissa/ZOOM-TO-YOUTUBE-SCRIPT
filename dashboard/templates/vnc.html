@@ -96,43 +96,8 @@
   outline: none;
   cursor: default;
 }
-.vnc-status-overlay {
-  position: absolute;
-  inset: 0;
-  background: rgba(9, 10, 15, 0.85);
-  backdrop-filter: blur(4px);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-3);
-  z-index: 10;
-  color: var(--text-base);
-}
-.vnc-status-overlay[hidden] {
-  display: none !important;
-}
-.vnc-status-card {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-6);
-  border-radius: var(--radius-lg);
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  max-width: 380px;
-  text-align: center;
-  box-shadow: var(--shadow-lg);
-}
-.vnc-status-title {
-  font-size: var(--text-md);
-  font-weight: var(--weight-medium);
-}
-.vnc-status-desc {
-  font-size: var(--text-sm);
-  color: var(--text-dim);
-}
+/* .vnc-status-overlay/.vnc-status-card/.vnc-status-title/.vnc-status-desc
+   now live in base.css (shared with the Accounts sign-in panel's embed). */
 .vnc-quick-bar {
   display: flex;
   align-items: center;

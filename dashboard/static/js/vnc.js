@@ -1,7 +1,10 @@
 // Remote GUI (/vnc) client using noVNC with auto-reconnect, fit-to-window scaling,
-// and automated VNC authentication.
-import RFB from '/static/vendor/novnc/core/rfb.js';
-import { promptText } from '/static/js/vnc-embed.js';
+// and automated VNC authentication. RFB construction/event-wiring itself lives in
+// vnc-embed.js's connectVnc() (shared with the Accounts sign-in panel, the /remote
+// Interact overlay and the global quick-peek overlay) - this file only owns the
+// page-level behaviour on top: the status overlay, auto-reconnect loop, fullscreen
+// toggle and quick actions.
+import { connectVnc, promptText } from '/static/js/vnc-embed.js';
 
 const $ = (id) => document.getElementById(id);
 const target = $("vnc-screen");
@@ -82,64 +85,59 @@ function connect() {
   intentionalDisconnect = false;
   setStatus("connecting");
 
-  const proto = location.protocol === "https:" ? "wss" : "ws";
-  const wsUrl = `${proto}://${location.host}/vnc/ws`;
-
   try {
-    rfb = new RFB(target, wsUrl, { wsProtocols: ["binary"] });
-    rfb.scaleViewport = scaleMode;
-    rfb.resizeSession = false;
-    rfb.qualityLevel = 6;
-    rfb.showDotCursor = true;
-
-    rfb.addEventListener("connect", () => {
-      isConnected = true;
-      setStatus("connected");
-      try { rfb.focus({ preventScroll: true }); } catch (err) { /* older noVNC */ }
-      post("/api/vnc/rate", { mode: "fast" }).catch(() => {});
-      if (typeof announce === "function") announce("Remote GUI connected");
-    });
-
-    rfb.addEventListener("credentialsrequired", async () => {
-      if (vncPassword) {
-        rfb.sendCredentials({ password: vncPassword });
-      } else {
+    rfb = connectVnc(target, {
+      path: "/vnc/ws",
+      scaleViewport: scaleMode,
+      qualityLevel: 6,
+      showDotCursor: true,
+      getPassword: async () => {
+        if (vncPassword) return vncPassword;
         const pass = await promptText("Enter the VNC password to connect to display :99.");
         if (pass == null) {
           intentionalDisconnect = true;
-          try { rfb.disconnect(); } catch (err) {}
           setStatus("disconnected", "Password cancelled", "Enter password to connect");
-          return;
+          return null;
         }
         vncPassword = pass;
-        rfb.sendCredentials({ password: pass });
-      }
-    });
-
-    rfb.addEventListener("securityfailure", (e) => {
-      vncPassword = null;
-      const reason = e.detail && e.detail.reason ? `: ${e.detail.reason}` : "";
-      if (typeof toast === "function") toast("VNC authentication failed" + reason, "err");
-      intentionalDisconnect = true;
-      setStatus("disconnected", "Authentication failed", "VNC password was rejected. Check settings.");
-    });
-
-    rfb.addEventListener("disconnect", (e) => {
-      const wasConnected = isConnected;
-      isConnected = false;
-      const clean = e.detail && e.detail.clean;
-
-      if (intentionalDisconnect || clean) {
-        setStatus("disconnected");
-      } else {
+        return pass;
+      },
+      onStatus: (state, message, clean) => {
+        if (state === "connected") {
+          isConnected = true;
+          setStatus("connected");
+          try { rfb.focus({ preventScroll: true }); } catch (err) { /* older noVNC */ }
+          post("/api/vnc/rate", { mode: "fast" }).catch(() => {});
+          if (typeof announce === "function") announce("Remote GUI connected");
+          return;
+        }
+        if (state === "securityfailure") {
+          // A rejected password must never auto-retry - that would hammer
+          // the proxy with the same bad password forever.
+          vncPassword = null;
+          isConnected = false;
+          intentionalDisconnect = true;
+          setStatus("disconnected", "Authentication failed", "VNC password was rejected. Check settings.");
+          return;
+        }
+        // state === "disconnected"
+        const wasConnected = isConnected;
+        isConnected = false;
+        if (intentionalDisconnect) {
+          // Whatever intentional-disconnect path set (e.g. "Password
+          // cancelled") already painted the overlay - don't stomp it with
+          // the generic disconnect message that immediately follows it.
+          return;
+        }
+        if (clean) {
+          setStatus("disconnected", message);
+          return;
+        }
         // Auto-reconnect after 2 seconds
         setStatus("reconnecting", "Reconnecting in 2s…", wasConnected ? "Connection lost unexpectedly" : "Could not establish initial connection");
-        reconnectTimer = setTimeout(() => {
-          connect();
-        }, 2000);
-      }
+        reconnectTimer = setTimeout(() => { connect(); }, 2000);
+      },
     });
-
   } catch (err) {
     setStatus("disconnected", "Failed to start viewer", err.message);
   }

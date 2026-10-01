@@ -112,9 +112,47 @@ a:hover { text-decoration: underline; }
 .grid-cols-3 { grid-template-columns: repeat(3, 1fr); }
 .card-danger { border-color: var(--live); }
 .vnc-frame-box {
+  position: relative;
   border-radius: var(--radius-md); overflow: hidden; border: 1px solid var(--border);
   background: #000; min-height: 60vh;
 }
+
+/* Status overlay for an embedded noVNC viewer - shared by /vnc
+   (templates/vnc.html) and the Accounts sign-in panel
+   (templates/accounts.html) so neither one can ever be a canvas with no
+   feedback: every embed must show Connecting/Launching/Ready/Failed, not
+   silently sit black. Needs a `position: relative` ancestor - every
+   .vnc-frame-box use already has that above. */
+.vnc-status-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(9, 10, 15, 0.85);
+  backdrop-filter: blur(4px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  z-index: 10;
+  color: var(--text-base);
+  text-align: center;
+  padding: var(--space-4);
+}
+.vnc-status-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-6);
+  border-radius: var(--radius-lg);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  max-width: 380px;
+  text-align: center;
+  box-shadow: var(--shadow-lg);
+}
+.vnc-status-title { font-size: var(--text-md); font-weight: var(--weight-medium); }
+.vnc-status-desc { font-size: var(--text-sm); color: var(--text-dim); }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
