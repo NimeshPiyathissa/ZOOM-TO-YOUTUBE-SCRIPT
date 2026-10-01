@@ -1766,7 +1766,14 @@ async def api_youtube_oauth_callback(request: Request):
         db.audit(username, "youtube_oauth_callback", f"error:{error}", deps.client_ip(request))
         return RedirectResponse(f"/accounts?yt_oauth=error&reason={quote(reason)}#youtube-api", status_code=303)
     if not code:
-        return RedirectResponse(f"/accounts?yt_oauth=error&reason={quote('Missing authorization code')}#youtube-api", status_code=303)
+        # Reached with neither code nor error - almost always this URL was
+        # opened directly (a stale/bookmarked link, browser back/forward,
+        # or a reload after already completing a flow) rather than a real
+        # failure partway through Connect.
+        return RedirectResponse(
+            f"/accounts?yt_oauth=error&reason={quote('No authorization code was received - this page is only meant to be reached by clicking Connect. Go back to Accounts and press Connect again.')}#youtube-api",
+            status_code=303,
+        )
     if session is None:
         return RedirectResponse(
             f"/accounts?yt_oauth=error&reason={quote('Your dashboard session expired during sign-in - log in and press Connect again')}#youtube-api",

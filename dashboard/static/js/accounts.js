@@ -320,6 +320,8 @@ function paintYtOauth(st) {
   }
   if (checkBtn) checkBtn.disabled = st.status !== "connected";
   if (disconnectBtn) disconnectBtn.disabled = st.status === "disconnected";
+  const disabledHint = $("yt-connect-disabled-hint");
+  if (disabledHint) disabledHint.hidden = !!st.configured;
 }
 
 function setFieldError(id, message) {

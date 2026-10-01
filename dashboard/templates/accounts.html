@@ -172,6 +172,9 @@
   <div class="btn-row mt-3">
     <button id="yt-connect" class="btn btn-primary btn-touch" {% if not yt_oauth.configured %}disabled{% endif %}>{{ icon("log-in") }}<span>{{ "Reconnect" if yt_oauth.status == "needs_reauth" else "Connect" }}</span></button>
     <button id="yt-check" class="btn btn-secondary btn-touch" {% if yt_oauth.status != "connected" %}disabled{% endif %}>{{ icon("shield-check") }}Test connection</button>
+    {% if not yt_oauth.configured %}
+    <span class="hint m-0" id="yt-connect-disabled-hint">Greyed out until you Save a Client ID and Secret above - there's nothing to Connect to yet.</span>
+    {% endif %}
     <button id="yt-disconnect" class="btn btn-ghost btn-touch ac-danger" {% if yt_oauth.status == "disconnected" %}disabled{% endif %}>{{ icon("log-out") }}Disconnect</button>
   </div>
   {% endif %}
