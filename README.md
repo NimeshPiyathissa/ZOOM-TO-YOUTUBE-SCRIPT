@@ -149,6 +149,25 @@ An OAuth-based badge could read green while the VPS profile is signed out: a
 false green, discovered only when a stream fails. See the "why session
 verification" note at the top of `app/accounts.py` for the full reasoning.
 
+**What "Verified" actually combines:** each account card runs *two*
+independent checks and only shows green once both agree, when both apply —
+
+1. **Browser session** (above): does the VPS Chrome profile have a live
+   Google session, for the expected identity?
+2. **YouTube Data API link** (below): is there a *connected* OAuth token, for
+   the *same* Google account as this profile's identity?
+
+If the API is connected but for a different email than this profile, the card
+shows **API: wrong account** in red. If the browser session is signed out (or
+wrong-account/couldn't-verify) while the API connection for that same identity
+is otherwise fine, the card shows **API connected · browser signed out** in
+amber with a Re-authenticate button — the API being connected is never, by
+itself, shown as green, because Zoom joining and YouTube playback both need the
+*browser* session specifically. An account that simply isn't the one the API
+happens to be connected to just shows the API row as "not connected" /
+"not set up" without blocking its own green badge — the API check only matters
+for the account it's actually linked to by matching emails.
+
 ## YouTube Data API connection (also on `/accounts`, its own card)
 
 A separate, genuinely OAuth-shaped feature from the section above: an
@@ -158,44 +177,91 @@ their stream health. This is **not** a signed-in Chrome profile and has no
 effect on which account a meeting or webpage source joins as; that's still
 entirely the accounts list above it.
 
-**Setup** (optional — skip this whole section if you don't need it):
+> **Root-cause note:** this card's Client ID/Client Secret fields previously
+> had no server-side format validation and sat in a plain text+password pair
+> that some browsers' password managers will autofill into *any* such pair on
+> a page, form or no form. A dashboard login autofilled here once got saved as
+> the OAuth client (`client_id="admin"`, secret = the admin password),
+> producing Google's `invalid_client` error on every Connect attempt. Both
+> holes are closed now: the Client ID is validated server-side against
+> `^[0-9]+-[a-z0-9]+\.apps\.googleusercontent\.com$` before it's ever saved
+> (reject, don't redirect to Google with it), and the two fields carry
+> `autocomplete="off"`/`"new-password"`, non-login `name`/`id`s, `readonly`
+> until first interaction, and a decoy username/password pair placed right
+> before them to absorb the autofill heuristic instead. If you set this up
+> before this fix, re-check the Client ID/Secret you saved — if they weren't
+> saved via a genuine Google Cloud Console copy-paste, re-enter them, and
+> rotate your dashboard password regardless, since this means it was written
+> into the secret vault (encrypted at rest, but still — rotate it).
+
+**Setup:**
 
 1. Requires the Caddy + real-domain HTTPS setup (`docs/remote-access.md`) —
    Google rejects a bare-IP redirect URI outright.
 2. In [Google Cloud Console](https://console.cloud.google.com/), create a
    project (or reuse one), enable the **YouTube Data API v3**, configure the
-   OAuth consent screen, and create an **OAuth client ID** (type: Web
-   application).
-3. Add this exact **Authorized redirect URI** (also shown on the `/accounts`
-   page itself, with a copy button): `https://<your-domain>/api/youtube/oauth/callback`
+   OAuth consent screen (**External**, Testing is fine — do not choose
+   Internal/`org_internal` unless you're on a Google Workspace org and want it
+   restricted to that org), and add your own Google account under **OAuth
+   consent screen → Test users**.
+3. Create an **OAuth client ID** (type: **Web application**) and add this
+   exact **Authorized redirect URI** (also shown on the `/accounts` page
+   itself, with a copy button), byte-for-byte including scheme and no trailing
+   slash: `https://<your-domain>/api/youtube/oauth/callback`
 4. On `/accounts`, under "YouTube Data API", paste in the Client ID and
-   Client Secret from that OAuth client and **Save**, then **Connect** — this
-   opens Google's consent screen in your own browser tab (never noVNC; there's
-   no "which profile" question here, only "which channel"). `prompt=consent`
-   is always forced so Google reliably hands back a refresh token.
-5. If your OAuth consent screen is still in **Testing** mode, Google expires
-   the grant after 7 days and only lets pre-added test users connect at all —
-   either add yourself as a test user, or publish the app (no Google review is
-   required unless you request sensitive/restricted scopes; the YouTube scope
-   used here does require verification for a *published, public* app, but
-   Testing mode with your own account added as a test user works indefinitely
-   for personal use).
+   Client Secret from that OAuth client and **Save** — a malformed Client ID
+   (not matching the pattern above) or an empty Secret is rejected inline,
+   right there, before anything is stored or any request reaches Google; a
+   Secret that doesn't start with `GOCSPX-` (the current Google format) saves
+   but shows a warning, since some older still-valid secrets don't have it.
+5. **Connect** — this opens Google's consent screen in your own browser tab
+   (never noVNC; there's no "which profile" question here, only "which
+   channel"), using PKCE (S256) and a random `state` bound to both the PKCE
+   verifier and your dashboard session server-side, so completing someone
+   else's half-started flow isn't possible. `access_type=offline` +
+   `prompt=consent` are always forced so Google reliably hands back a refresh
+   token even on a repeat consent.
+6. If your OAuth consent screen is still in **Testing** mode, Google expires
+   the refresh token after 7 days regardless of use, and only lets pre-added
+   test users connect at all — either add yourself as a test user (step 2) and
+   reconnect weekly, or publish the app (no Google review is required unless
+   you request sensitive/restricted scopes; the `youtube.force-ssl` scope used
+   here does require verification for a *published, public* app, but Testing
+   mode with your own account added as a test user works indefinitely for
+   personal use — see the in-app note on the card too).
 
 **What's stored where:** Client ID/Secret and the refresh token live in the
 same encrypted vault as every other secret in this app (Part 0) — never in
-plaintext, never returned to the browser. The connected channel's id/title,
-granted scope, and connection status live in the small settings table
-alongside everything else non-secret. The short-lived access token is kept in
-memory only, for the life of the dashboard process.
+plaintext, never returned to the browser; the Secret field is write-only, and
+after saving the card shows only "configured, ends in ••••xxxx" (the last 4
+characters, kept as a non-secret hint alongside everything else below). The
+connected channel's id/title, the connected Google account's email (shown
+masked, e.g. `n•••e@gmail.com`, used server-side to match this connection to
+the right account card above), granted scope, and connection status live in
+the small settings table alongside everything else non-secret. The short-lived
+access token is kept in memory only, for the life of the dashboard process.
 
 **Status states:** *Not connected*, *Connected* (shows the connected channel's
-title), and *Needs reconnecting* — Google rejected the stored refresh token
-(revoked from your Google Account, the Testing-mode 7-day grant expired, or
-the consent screen was reconfigured). Needs reconnecting clears the useless
-refresh token automatically rather than silently retrying it; only a fresh
-Connect fixes it. **Test connection** forces a real check with Google right
-now rather than trusting a cached badge. **Disconnect** revokes the token with
-Google and clears it from the vault.
+title and masked identity email), and *Needs reconnecting* — Google rejected
+the stored refresh token (revoked from your Google Account, the Testing-mode
+7-day grant expired, or the consent screen was reconfigured). Needs
+reconnecting clears the useless refresh token automatically rather than
+silently retrying it; only a fresh Connect fixes it. **Test connection** forces
+a real refresh-token grant *and* a real `channels.list` call right now, rather
+than trusting a cached badge, and reports the channel name back.
+**Disconnect** revokes the token with Google and clears it from the vault.
+
+**Google error messages, decoded:** `invalid_client` (the Client ID/Secret
+pair itself is wrong — re-check both in Cloud Console), `redirect_uri_mismatch`
+(the URI above isn't registered exactly), `access_denied` (consent was
+declined, or — very commonly — your account isn't added as a test user yet),
+`org_internal` (the consent screen is restricted to an internal Workspace org
+— switch its User type to External), `invalid_grant` (the refresh token was
+revoked or expired — shows as *Needs reconnecting*), `quotaExceeded` (the
+YouTube Data API's daily quota is used up — try later, nothing to reconnect),
+and a connected token missing the `youtube.force-ssl` scope (disconnect and
+Connect again). Every one of these surfaces as plain text on the card or as a
+toast — never a bare Google error code.
 
 ## Watermark
 
