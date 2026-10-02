@@ -268,6 +268,11 @@ SOURCE_ENV_KEYS = (
     # operator-initiated join so the script's rejoin counter resets.
     "ZOOM_AUTO_REJOIN", "ZOOM_REJOIN_MAX", "ZOOM_JOIN_EPOCH",
     "ZOOM_AUDIO_ON", "ZOOM_VIDEO_ON", "ZOOM_VIEW",
+    # "Meeting only" full-frame mode (see zoom_set_meeting_only() and
+    # scripts/stream.sh). FIT changes ffmpeg's filter graph, which is
+    # fixed at process start - toggling it while live needs an encoder
+    # restart, same as a resolution/bitrate change.
+    "ZOOM_MEETING_ONLY", "ZOOM_MEETING_ONLY_FIT",
     # "client" (desktop, join-zoom.sh) or "web" (Zoom's web client, run by
     # browser-source.sh against the same ZOOM_LINK/ZOOM_PASSCODE already
     # in .env - no separate secret storage needed). Not secret itself.
@@ -358,6 +363,8 @@ def _source_env_lines(source: dict) -> dict[str, str]:
         values["ZOOM_AUDIO_ON"] = "1" if options.get("audio_on") else "0"
         values["ZOOM_VIDEO_ON"] = "1" if options.get("video_on") else "0"
         values["ZOOM_VIEW"] = str(options.get("view", "speaker"))
+        values["ZOOM_MEETING_ONLY"] = "1" if options.get("meeting_only") else "0"
+        values["ZOOM_MEETING_ONLY_FIT"] = str(options.get("meeting_only_fit", "fit") or "fit")
         # auto always starts on the client - the fallback watcher (Part 4)
         # flips this to "web" mid-join if the client path never gets off
         # the ground; it never starts on web first.
@@ -793,6 +800,7 @@ def audio_selftest() -> dict:
 # guess when the control can't be found.
 
 ZOOM_SHORTCUT_SCRIPT = config.STREAM_SCRIPTS_DIR / "zoom-shortcut.sh"
+ZOOM_MEETING_ONLY_SCRIPT = config.STREAM_SCRIPTS_DIR / "zoom-meeting-only.sh"
 ZOOM_ATSPI_SCRIPT = config.STREAM_SCRIPTS_DIR / "zoom-atspi.py"
 ZOOM_STATUS_SCRIPT = config.STREAM_SCRIPTS_DIR / "zoom-status.py"
 ZOOM_DIALOG_SCRIPT = config.STREAM_SCRIPTS_DIR / "zoom-dialog.py"
@@ -1074,7 +1082,46 @@ def zoom_apply_join_options(source: dict) -> dict:
         report["applied"].append("view")
     except ControlError as exc:
         report["view"] = {"want": view, "sent": False, "note": str(exc)}
+    if options.get("meeting_only"):
+        try:
+            report["meeting_only"] = zoom_set_meeting_only(True)
+            report["applied"].append("meeting_only")
+        except ControlError as exc:
+            report["meeting_only"] = {"applied": False, "note": str(exc)}
+            report["skipped"].append("meeting_only")
     return report
+
+
+def zoom_set_meeting_only(enabled: bool) -> dict:
+    """Full-frame mode's window-level half: true (window-manager level)
+    fullscreen on the Zoom meeting window, verified by reading back
+    Openbox's own _NET_WM_STATE via xprop rather than assuming Zoom's
+    internal "Alt+F" fullscreen (which only resizes Zoom's own window,
+    not the WM decoration state) took effect - see
+    scripts/zoom-meeting-only.sh.
+
+    What this deliberately does NOT do: force-close the chat/participants
+    panels or touch Zoom's "Always show meeting controls" setting. Zoom's
+    documented shortcuts for those panels (Alt+H / Alt+U) are pure
+    toggles with no readable open/closed state anywhere in the AT-SPI
+    tree, so sending one blind could just as easily open a panel that was
+    already closed as close one that was open - worse than doing nothing.
+    In practice the floating toolbar already auto-hides on its own after
+    a few seconds with no real pointer activity (this VPS's Xvfb session
+    never gets one), which is Zoom's default unless an operator
+    explicitly turned "always show" on in this profile.
+
+    The video-shape half (Fit vs Fill, i.e. whether bars from a
+    non-16:9 meeting are left alone or cropped out) is an encoder
+    setting, not a window one - see ZOOM_MEETING_ONLY_FIT in
+    current-source.env and scripts/stream.sh's CROP_FILTER, applied on
+    the next ffmpeg-stream start/restart."""
+    argv = [SUDO, "-u", config.ZOOMBOT_USER, str(ZOOM_MEETING_ONLY_SCRIPT), "on" if enabled else "off"]
+    proc = run_as_zoombot(argv, timeout=10)
+    if proc.returncode != 0:
+        raise ControlError(proc.stderr.decode(errors="replace").strip() or "could not change full-screen state")
+    out = proc.stdout.decode(errors="replace").strip()
+    return {"applied": True, "enabled": enabled, "detail": out}
 
 
 def zoom_quit_to_slate() -> list[dict]:

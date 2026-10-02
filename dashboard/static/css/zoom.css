@@ -113,6 +113,8 @@ button.zm-ctl:focus-visible { outline: 2px solid var(--accent-ring); outline-off
 .zm-ctl-view { cursor: default; }
 .zm-ctl-view .zm-seg { margin: 2px 0; }
 .zm-apply-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); margin-top: var(--space-3); }
+.zm-meeting-only { margin-top: var(--space-3); display: grid; gap: var(--space-2); }
+.zm-meeting-only .zm-seg { align-self: flex-start; }
 @media (max-width: 480px) { .zm-controls { grid-template-columns: 1fr 1fr; } .zm-ctl-view { grid-column: 1 / -1; } }
 
 /* segmented, tighter for these tiles */

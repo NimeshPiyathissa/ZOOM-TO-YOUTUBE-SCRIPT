@@ -245,6 +245,33 @@ $("zm-apply-options").addEventListener("click", (e) => withLoading(e.currentTarg
   catch (err) { toast(err.message, "err"); }
 }));
 
+// ---------------------------------------------------------------- meeting only (full frame)
+
+function renderMeetingOnly() {
+  const a = active(); const o = (a && a.options) || {};
+  $("zm-meeting-only").checked = !!o.meeting_only;
+  $("zm-meeting-only").disabled = !a;
+  $("zm-meeting-only-fit-seg").hidden = !o.meeting_only;
+  setSeg($("zm-meeting-only-fit-seg"), o.meeting_only_fit || "fit");
+}
+async function applyMeetingOnly() {
+  const a = active(); if (!a) return;
+  const enabled = $("zm-meeting-only").checked;
+  const fit = segValue($("zm-meeting-only-fit-seg")) || "fit";
+  $("zm-meeting-only-fit-seg").hidden = !enabled;
+  try {
+    const r = await post("/api/zoom/meeting-only", { enabled, fit });
+    const win = r.window || {};
+    const bits = [enabled ? "Meeting only on" : "Meeting only off"];
+    if (enabled && win.applied === false) bits.push(`window: ${win.note || "not applied"}`);
+    if (r.restart_needed) bits.push("Fill needs the stream restarted to take effect");
+    toast(bits.join(" · "), win.applied === false ? "err" : "ok");
+    await refreshSources(true);
+  } catch (err) { toast(err.message, "err"); }
+}
+$("zm-meeting-only").addEventListener("change", () => { $("zm-meeting-only").disabled = true; applyMeetingOnly().finally(() => { $("zm-meeting-only").disabled = false; }); });
+initSegmented($("zm-meeting-only-fit-seg"), () => { if ($("zm-meeting-only").checked) applyMeetingOnly(); });
+
 // ---------------------------------------------------------------- remote screen (noVNC through the authed proxy)
 
 let rfb = null;
@@ -491,6 +518,7 @@ function renderLibrary() {
 function renderActiveHeader() {
   const a = active();
   $("zm-active").hidden = !a; $("zm-active-empty").hidden = !!a;
+  renderMeetingOnly();
   if (!a) return;
   const o = a.options || {}; const kind = o.meeting_kind || "meeting";
   $("zm-active-kind").className = "zm-kind zm-kind-" + kind; $("zm-active-kind").innerHTML = icon(kind === "webinar" ? "ticket" : kind === "pmi" ? "house" : "video", "icon-sm") + esc(KIND[kind] || kind);

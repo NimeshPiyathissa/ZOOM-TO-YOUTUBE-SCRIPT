@@ -325,6 +325,13 @@
       <button id="z-view-speaker" class="btn btn-secondary btn-touch">{{ icon("user") }}Speaker view</button>
       <button id="z-view-gallery" class="btn btn-secondary btn-touch">{{ icon("layout-dashboard") }}Gallery view</button>
     </div>
+    <div class="remote-action-row mt-3">
+      <button id="z-meeting-only" class="btn btn-secondary btn-touch" aria-pressed="false">{{ icon("maximize") }}<span>Meeting only</span></button>
+      <div class="segmented zm-seg" id="z-meeting-only-fit-seg" role="group" aria-label="Full-frame fit" hidden>
+        <button class="seg-btn is-active" data-value="fit">Fit</button>
+        <button class="seg-btn" data-value="fill">Fill</button>
+      </div>
+    </div>
     <div class="hint mt-2" id="zoom-readback"></div>
   </section>
 

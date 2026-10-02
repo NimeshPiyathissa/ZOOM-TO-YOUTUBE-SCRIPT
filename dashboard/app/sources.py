@@ -298,6 +298,9 @@ def _validate_zoom_options(options: dict, url: str = "") -> dict:
     if registrant_email and not _EMAIL_RE.match(registrant_email):
         raise ValidationError('"Registered with" must be a real email address (e.g. name@gmail.com) - '
                                f"{registrant_email!r} isn't one")
+    meeting_only_fit = str(options.get("meeting_only_fit", "fit") or "fit").strip().lower()
+    if meeting_only_fit not in config.ZOOM_MEETING_ONLY_FIT_MODES:
+        raise ValidationError(f"meeting_only_fit must be one of {sorted(config.ZOOM_MEETING_ONLY_FIT_MODES)}")
     # Set by control.set_last_join_method() after a join actually happens
     # (the honest "joined via" record for auto mode) - a save just carries
     # it through unchanged; anything not a real mode is dropped rather
@@ -318,6 +321,8 @@ def _validate_zoom_options(options: dict, url: str = "") -> dict:
         "join_method": join_method,
         "registrant_email": registrant_email,
         "last_join_method": last_join_method,
+        "meeting_only": bool(options.get("meeting_only", False)),
+        "meeting_only_fit": meeting_only_fit,
     }
 
 

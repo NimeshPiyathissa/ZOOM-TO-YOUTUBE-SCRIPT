@@ -90,6 +90,21 @@ if [[ -n "$WATERMARK_FILTER" && "$SOURCE_TYPE" == "direct" && "${DIRECT_MODE:-re
   log "Watermark is enabled but DIRECT_MODE=copy can't carry a burned-in filter - re-encoding this run instead"
 fi
 
+# "Meeting only" full-frame mode, Fill sub-option: a fixed, modest edge
+# trim + scale back to the target resolution - not dynamic black-bar
+# detection (ffmpeg's cropdetect only logs detected bounds, it doesn't
+# feed them back into the same single-pass filter graph), so this is a
+# deliberate approximation for the common cases (gallery tiles not quite
+# 16:9, a 4:3 screen share centered with side bars), not a tracked crop
+# of the actual content region. Fit mode (the default) adds no filter at
+# all - ZOOM_MEETING_ONLY_FIT only matters once ZOOM_MEETING_ONLY=1.
+CROP_FILTER=""
+if [[ "$SOURCE_TYPE" == "zoom" && "${ZOOM_MEETING_ONLY:-0}" == "1" && "${ZOOM_MEETING_ONLY_FIT:-fit}" == "fill" ]]; then
+  FILL_PCT="${ZOOM_MEETING_ONLY_FILL_PCT:-8}"
+  CROP_FILTER="crop=iw*(100-${FILL_PCT})/100:ih*(100-${FILL_PCT})/100,scale=${RESOLUTION%x*}:${RESOLUTION#*x}"
+  log "Meeting-only Fill: cropping ${FILL_PCT}% and rescaling to ${RESOLUTION}"
+fi
+
 # ---------------------------------------------------------------- encode args
 
 if [[ "$SOURCE_TYPE" == "direct" && "${DIRECT_MODE:-reencode}" == "copy" && -z "$WATERMARK_FILTER" ]]; then
@@ -111,12 +126,24 @@ fi
 if [[ -n "$WATERMARK_FILTER" ]]; then
   INPUT_ARGS+=("${WATERMARK_EXTRA_INPUT_ARGS[@]}")
   if [[ "${WATERMARK_MODE:-text}" == "image" ]]; then
+    FILTER_COMPLEX="$WATERMARK_FILTER"
+    if [[ -n "$CROP_FILTER" ]]; then
+      # Prepend the crop to the main video input, then redirect the
+      # watermark filter's own [0:v] reference to the cropped output -
+      # build_watermark_filter()'s image-mode template references [0:v]
+      # exactly once, so a literal substitution is safe here.
+      FILTER_COMPLEX="[0:v]${CROP_FILTER}[zcrop];${FILTER_COMPLEX//\[0:v\]/[zcrop]}"
+    fi
     # filter_complex disables ffmpeg's default stream auto-mapping, so
     # both the filtered video and the original audio need an explicit -map.
-    ENCODE_ARGS+=(-filter_complex "$WATERMARK_FILTER" -map "[vout]" -map "$AUDIO_MAP")
+    ENCODE_ARGS+=(-filter_complex "$FILTER_COMPLEX" -map "[vout]" -map "$AUDIO_MAP")
   else
-    ENCODE_ARGS+=(-vf "$WATERMARK_FILTER")
+    VF="$WATERMARK_FILTER"
+    [[ -n "$CROP_FILTER" ]] && VF="${CROP_FILTER},${VF}"
+    ENCODE_ARGS+=(-vf "$VF")
   fi
+elif [[ -n "$CROP_FILTER" ]]; then
+  ENCODE_ARGS+=(-vf "$CROP_FILTER")
 fi
 
 # Plain redirection (not a pipe) so this process image IS ffmpeg after exec -

@@ -662,6 +662,48 @@ async def api_zoom_apply_options(request: Request):
     return report
 
 
+@app.post("/api/zoom/meeting-only")
+async def api_zoom_meeting_only(request: Request):
+    """Toggle "Meeting only" full-frame mode for the active Zoom source:
+    persists meeting_only/meeting_only_fit on the source (so it's
+    reapplied on every future join - see zoom_apply_join_options) and
+    writes current-source.env immediately, then makes a best-effort
+    attempt to apply the window-level part (true fullscreen) right now
+    if a meeting window already exists. The Fill crop is baked into
+    ffmpeg's filter graph at process start, so a change there only takes
+    effect on the next ffmpeg-stream start/restart - reported back as
+    `restart_needed` rather than silently restarting a possibly-live
+    encoder out from under the operator."""
+    session = deps.require_session_api(request)
+    deps.require_csrf(request, session)
+    deps.require_rate_limit(session, "zoom_meeting_only", max_calls=10, window_seconds=30)
+    body = await request.json()
+    enabled = bool(body.get("enabled"))
+    fit = str(body.get("fit", "fit") or "fit").strip().lower()
+    if fit not in config.ZOOM_MEETING_ONLY_FIT_MODES:
+        raise HTTPException(status_code=400, detail=f"fit must be one of {sorted(config.ZOOM_MEETING_ONLY_FIT_MODES)}")
+    active = sources_mod.get_active_source()
+    if not active or active["type"] != "zoom":
+        raise HTTPException(status_code=400, detail="the active source isn't a Zoom meeting")
+    source = sources_mod.get_source(active["id"])
+    options = dict(source.get("options") or {})
+    was_fit = options.get("meeting_only_fit", "fit")
+    options["meeting_only"] = enabled
+    options["meeting_only_fit"] = fit
+    await run_in_threadpool(sources_mod.update_source, active["id"], source["name"], "zoom", source["url"], options, source.get("account_id"))
+    updated = sources_mod.get_source(active["id"])
+    await run_in_threadpool(control.write_current_source, updated)
+    window_result = None
+    try:
+        window_result = await run_in_threadpool(control.zoom_set_meeting_only, enabled)
+    except control.ControlError as exc:
+        window_result = {"applied": False, "note": str(exc)}
+    ffmpeg_up = await run_in_threadpool(control._ffmpeg_is_up)
+    restart_needed = enabled and fit == "fill" and fit != was_fit and ffmpeg_up
+    db.audit(session["username"], "zoom_meeting_only", f"enabled={enabled} fit={fit}", deps.client_ip(request))
+    return {"enabled": enabled, "fit": fit, "window": window_result, "restart_needed": restart_needed}
+
+
 @app.post("/api/zoom/reset")
 async def api_zoom_reset(request: Request):
     """Reset Zoom window: dismiss stale dialogs, and if Zoom is still

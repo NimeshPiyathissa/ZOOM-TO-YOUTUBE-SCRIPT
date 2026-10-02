@@ -85,6 +85,18 @@
       <button id="zm-apply-options" class="btn btn-secondary btn-sm">{{ icon("sparkles", "icon-sm") }}Apply this meeting's saved mic / camera / view</button>
       <span class="hint m-0" id="zm-apply-result"></span>
     </div>
+
+    <div class="zm-meeting-only">
+      <label class="zm-opt">
+        <span class="zm-opt-main">{{ icon("maximize", "icon-sm") }}<span>Meeting only (full frame)</span></span>
+        <span class="switch"><input type="checkbox" id="zm-meeting-only" aria-describedby="zm-meeting-only-hint"><span class="track"></span></span>
+      </label>
+      <div class="segmented zm-seg" id="zm-meeting-only-fit-seg" role="group" aria-label="Full-frame fit" hidden>
+        <button class="seg-btn is-active" data-value="fit">Fit - minimal bars</button>
+        <button class="seg-btn" data-value="fill">Fill - no bars, slight crop</button>
+      </div>
+      <div class="hint m-0" id="zm-meeting-only-hint">Hides the WM window border via true full screen and re-applies after every join, rejoin and view change. Doesn't touch Zoom's chat/participants panels or mic/camera. Fill changes the encoder's filter graph, so it only takes effect on the next stream (re)start.</div>
+    </div>
   </section>
 
   <!-- ============================================================ embedded remote screen -->

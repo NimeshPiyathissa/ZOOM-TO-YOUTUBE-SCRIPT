@@ -156,6 +156,12 @@ ZOOM_SIGNIN_MODES = {"guest", "google"}
 # browser-source producer instead - see control.py's _producer_unit), or
 # "auto" (try client, fall back to web only on a mechanism-level failure).
 ZOOM_JOIN_MODES = {"client", "web", "auto"}
+# "Meeting only" full-frame mode's bar-removal strategy when the meeting
+# content isn't 16:9 (gallery tiles, a 4:3 screen share): fit = whole
+# meeting visible, bars allowed; fill = ffmpeg crops/scales to the frame
+# with no bars, at the cost of a small edge trim. See control.py's
+# zoom_set_meeting_only() and scripts/stream.sh's CROP_FILTER.
+ZOOM_MEETING_ONLY_FIT_MODES = {"fit", "fill"}
 # x264 presets the panel offers, fastest (least CPU) first. ultrafast is
 # the current default on this box for headroom while live at 720p.
 X264_PRESETS = ["ultrafast", "superfast", "veryfast", "faster", "fast", "medium"]

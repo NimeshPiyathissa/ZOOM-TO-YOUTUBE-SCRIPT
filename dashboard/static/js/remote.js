@@ -227,6 +227,7 @@ function showContextPanel() {
     ytPoll(); ytTimer = setInterval(ytPoll, 2000);
   } else if (s.type === "zoom") {
     document.getElementById("zoom-registration").hidden = !(s.link_kind === "registration");
+    renderMeetingOnlyBtn(s);
     canvasPoll();  // the always-on canvas poll (below) also feeds this panel
   } else if (s.type === "direct") {
     document.getElementById("direct-url").textContent = s.url;
@@ -750,6 +751,41 @@ document.getElementById("z-mic").addEventListener("click", zoomShortcut("mic"));
 document.getElementById("z-camera").addEventListener("click", zoomShortcut("camera"));
 document.getElementById("z-view-speaker").addEventListener("click", zoomShortcut("view-speaker"));
 document.getElementById("z-view-gallery").addEventListener("click", zoomShortcut("view-gallery"));
+
+// ---------------------------------------------------------------- meeting only (full frame)
+
+const meetingOnlyFitSeg = document.getElementById("z-meeting-only-fit-seg");
+
+function renderMeetingOnlyBtn(s) {
+  const o = s.options || {};
+  const btn = document.getElementById("z-meeting-only");
+  btn.setAttribute("aria-pressed", String(!!o.meeting_only));
+  btn.classList.toggle("btn-primary", !!o.meeting_only);
+  btn.classList.toggle("btn-secondary", !o.meeting_only);
+  meetingOnlyFitSeg.hidden = !o.meeting_only;
+  meetingOnlyFitSeg.querySelectorAll(".seg-btn").forEach((b) => {
+    const on = b.dataset.value === (o.meeting_only_fit || "fit");
+    b.classList.toggle("is-active", on);
+    b.setAttribute("aria-pressed", String(on));
+  });
+}
+async function applyMeetingOnlyRemote(enabled, fit) {
+  const s = sourceById(activeSourceId); if (!s) return;
+  try {
+    const r = await post("/api/zoom/meeting-only", { enabled, fit: fit || (s.options || {}).meeting_only_fit || "fit" });
+    const win = r.window || {};
+    const bits = [enabled ? "Meeting only on" : "Meeting only off"];
+    if (enabled && win.applied === false) bits.push(`window: ${win.note || "not applied"}`);
+    if (r.restart_needed) bits.push("Fill needs the stream restarted to take effect");
+    toast(bits.join(" · "), win.applied === false ? "err" : "ok");
+    await syncSources();
+  } catch (err) { toast(err.message, "err"); }
+}
+document.getElementById("z-meeting-only").addEventListener("click", (e) => withLoading(e.currentTarget, () => {
+  const nowOn = e.currentTarget.getAttribute("aria-pressed") === "true";
+  return applyMeetingOnlyRemote(!nowOn);
+}));
+initSegmented(meetingOnlyFitSeg, (v) => applyMeetingOnlyRemote(true, v));
 
 document.getElementById("z-join").addEventListener("click", async (e) => {
   await withLoading(e.currentTarget, async () => {
