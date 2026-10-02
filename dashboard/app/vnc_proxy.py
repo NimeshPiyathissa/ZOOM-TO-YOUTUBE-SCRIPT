@@ -166,7 +166,16 @@ async def proxy(websocket: WebSocket) -> None:
     await websocket.accept(subprotocol=subprotocol)
     await _session_opened()
     try:
-        async with websockets.connect(WEBSOCKIFY_URL, subprotocols=["binary"], max_size=None) as upstream:
+        # ping_interval/ping_timeout default to 20s each in the `websockets`
+        # library. This hop is loopback-only (127.0.0.1) with essentially
+        # zero latency, but under heavy encoder CPU load (ffmpeg-stream
+        # live) the event loop can stall past 20s and miss a pong, which
+        # the library then treats as a dead connection and closes - a
+        # false "disconnected" that had nothing to do with the actual
+        # link. Disabled here: a real failure still surfaces immediately
+        # (ConnectionClosed on the next send/recv) without needing an
+        # active heartbeat on a link this short.
+        async with websockets.connect(WEBSOCKIFY_URL, subprotocols=["binary"], max_size=None, ping_interval=None) as upstream:
 
             # A recv() over the starlette websocket that yields bytes and
             # raises WebSocketDisconnect at close - used by the handshake

@@ -4,7 +4,7 @@
 // Interact overlay and the global quick-peek overlay) - this file only owns the
 // page-level behaviour on top: the status overlay, auto-reconnect loop, fullscreen
 // toggle and quick actions.
-import { connectVnc, promptText } from '/static/js/vnc-embed.js';
+import { connectVnc, promptText, reconnectDelayMs } from '/static/js/vnc-embed.js';
 
 const $ = (id) => document.getElementById(id);
 const target = $("vnc-screen");
@@ -27,6 +27,7 @@ let vncPassword = vncConfig.password || null;
 let rfb = null;
 let scaleMode = true;
 let reconnectTimer = null;
+let reconnectAttempt = 0;
 let intentionalDisconnect = false;
 let isConnected = false;
 
@@ -105,6 +106,7 @@ function connect() {
       onStatus: (state, message, clean) => {
         if (state === "connected") {
           isConnected = true;
+          reconnectAttempt = 0;
           setStatus("connected");
           try { rfb.focus({ preventScroll: true }); } catch (err) { /* older noVNC */ }
           post("/api/vnc/rate", { mode: "fast" }).catch(() => {});
@@ -133,9 +135,13 @@ function connect() {
           setStatus("disconnected", message);
           return;
         }
-        // Auto-reconnect after 2 seconds
-        setStatus("reconnecting", "Reconnecting in 2s…", wasConnected ? "Connection lost unexpectedly" : "Could not establish initial connection");
-        reconnectTimer = setTimeout(() => { connect(); }, 2000);
+        // Auto-reconnect with backoff (1s, 2s, 4s... capped at 20s) -
+        // retries forever rather than giving up, but doesn't hammer the
+        // proxy every couple of seconds during a longer outage.
+        reconnectAttempt += 1;
+        const delay = reconnectDelayMs(reconnectAttempt);
+        setStatus("reconnecting", `Reconnecting in ${Math.round(delay / 1000)}s… (attempt ${reconnectAttempt})`, wasConnected ? "Connection lost unexpectedly" : "Could not establish initial connection");
+        reconnectTimer = setTimeout(() => { connect(); }, delay);
       },
     });
   } catch (err) {
@@ -146,10 +152,12 @@ function connect() {
 // Controls: Reconnect
 reconnectBtn?.addEventListener("click", () => {
   intentionalDisconnect = false;
+  reconnectAttempt = 0;
   connect();
 });
 overlayBtn?.addEventListener("click", () => {
   intentionalDisconnect = false;
+  reconnectAttempt = 0;
   connect();
 });
 

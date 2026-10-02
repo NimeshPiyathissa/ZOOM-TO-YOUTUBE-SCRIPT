@@ -13,6 +13,16 @@
 // for a proxy/server that still presents VNC auth.
 import RFB from '/static/vendor/novnc/core/rfb.js';
 
+// Shared backoff schedule for every page that auto-reconnects a VNC
+// session (vnc.js, interact.js, accounts.js, base.js's quick-peek
+// overlay): 1s, 2s, 4s, 8s, 16s, capped at 20s - retries forever rather
+// than giving up, since these panels are meant to come back on their own
+// after a transient blip, but backs off so a sustained outage doesn't get
+// hammered every couple of seconds.
+export function reconnectDelayMs(attempt, { baseMs = 1000, maxMs = 20000 } = {}) {
+  return Math.min(baseMs * 2 ** Math.max(0, attempt - 1), maxMs);
+}
+
 export function promptText(message) {
   return new Promise((resolve) => {
     const backdrop = document.createElement("div");

@@ -24,7 +24,7 @@
 // confirmation when the stream is LIVE, auto-off when the tab is hidden.
 // The x11vnc poll rate is raised by the server only while a VNC session
 // exists (app/vnc_proxy.py), so a dead page can never leave it fast.
-import { connectVnc, promptText } from '/static/js/vnc-embed.js';
+import { connectVnc, promptText, reconnectDelayMs } from '/static/js/vnc-embed.js';
 
 const $ = (id) => document.getElementById(id);
 const box = $("panel-preview"), viewport = $("rd-viewport"), stage = $("rd-stage"), img = $("preview-img");
@@ -213,25 +213,39 @@ async function getPassword() {
 
 function setStatus(text) { statusEl.textContent = text; }
 
-async function turnOn() {
-  if (state.active) return;
-  if (isLive() && !(await confirmDialog(
-      "Enable direct control while LIVE? Every tap, drag and keypress on the preview happens on the real display and is visible to viewers.",
-      { danger: true, confirmText: "Enable" }))) return;
-  state.active = true; state.connected = false;
-  resetZoom();
-  box.classList.add("is-interactive");
-  viewport.hidden = false; connectingEl.hidden = false; img.hidden = true; $("preview-placeholder").hidden = true;
-  badge.hidden = false; quick.hidden = false;
-  toggleBtn.setAttribute("aria-pressed", "true"); toggleBtn.classList.replace("btn-secondary", "btn-primary");
-  kbdToggle.disabled = false;
-  setStatus("Interactive · connecting…");
+let reconnectTimer = null;
+let reconnectAttempt = 0;
+
+function clearReconnect() {
+  if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+  reconnectAttempt = 0;
+}
+
+function connectInteract() {
+  connectingEl.hidden = false;
   try {
-    const rfb = connectVnc(stage, { getPassword, onDisconnect: (clean) => { if (state.active) turnOff(clean ? "disconnected" : "connection lost"); } });
+    const rfb = connectVnc(stage, {
+      getPassword,
+      onDisconnect: (clean) => {
+        if (!state.active) return;   // turnOff() already cleaned up - not a real drop
+        state.connected = false;
+        if (clean) { turnOff("disconnected"); return; }
+        // Unexpected drop while still meant to be on: keep Interact "on"
+        // visually and retry with backoff instead of silently falling back
+        // to the passive preview - this used to require the operator to
+        // notice and re-tap the toggle themselves.
+        reconnectAttempt += 1;
+        const delay = reconnectDelayMs(reconnectAttempt);
+        connectingEl.hidden = false;
+        setStatus(`Interactive · connection lost - reconnecting in ${Math.round(delay / 1000)}s… (attempt ${reconnectAttempt})`);
+        reconnectTimer = setTimeout(connectInteract, delay);
+      },
+    });
     state.rfb = rfb;
     rfb.qualityLevel = 5;         // lighter JPEG for x11vnc to encode at the higher poll rate
     rfb.showDotCursor = true;     // always see where a tap will land
     rfb.addEventListener("connect", () => {
+      clearReconnect();
       state.connected = true; connectingEl.hidden = true;
       setStatus("Interactive · live (~60 fps) · tap = click · hold = right-click · 2 fingers = scroll · pinch = zoom");
       layoutStage();
@@ -252,7 +266,24 @@ async function turnOn() {
   }
 }
 
+async function turnOn() {
+  if (state.active) return;
+  if (isLive() && !(await confirmDialog(
+      "Enable direct control while LIVE? Every tap, drag and keypress on the preview happens on the real display and is visible to viewers.",
+      { danger: true, confirmText: "Enable" }))) return;
+  state.active = true; state.connected = false;
+  resetZoom();
+  box.classList.add("is-interactive");
+  viewport.hidden = false; connectingEl.hidden = false; img.hidden = true; $("preview-placeholder").hidden = true;
+  badge.hidden = false; quick.hidden = false;
+  toggleBtn.setAttribute("aria-pressed", "true"); toggleBtn.classList.replace("btn-secondary", "btn-primary");
+  kbdToggle.disabled = false;
+  setStatus("Interactive · connecting…");
+  connectInteract();
+}
+
 function turnOff(reason) {
+  clearReconnect();
   const rfb = state.rfb; state.rfb = null;
   state.active = false; state.connected = false;
   if (rfb) { try { rfb.disconnect(); } catch (err) { /* already gone */ } }
