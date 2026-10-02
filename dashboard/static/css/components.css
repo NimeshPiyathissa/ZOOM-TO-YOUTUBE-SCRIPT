@@ -33,6 +33,7 @@
 }
 .btn:active { transform: translateY(1px); }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; pointer-events: none; }
+.btn:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--accent-ring); }
 
 .btn-sm { --btn-h: 28px; padding: 0 var(--space-3); font-size: var(--text-xs); gap: var(--space-1); }
 .btn-lg { --btn-h: 44px; padding: 0 var(--space-6); font-size: var(--text-base); }
@@ -155,7 +156,12 @@ select.input {
   transition: background var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
 }
 .segmented .seg-btn:hover { color: var(--text); }
-.segmented .seg-btn.is-active { background: var(--bg-elevated); color: var(--text); box-shadow: var(--shadow-sm); }
+.segmented .seg-btn:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--accent-ring); }
+.segmented .seg-btn.is-active {
+  background: var(--accent-solid); color: var(--text-on-accent); font-weight: var(--weight-semibold);
+  box-shadow: var(--shadow-sm);
+}
+.segmented .seg-btn.is-active:hover { color: var(--text-on-accent); }
 
 /* toggle switch */
 .switch { position: relative; display: inline-flex; align-items: center; width: 40px; height: 24px; flex: none; }

@@ -257,11 +257,13 @@ function initMenus() {
 // ---------------------------------------------------------------- segmented control
 
 function initSegmented(container, onSelect) {
+  container.querySelectorAll(".seg-btn").forEach((b) => b.setAttribute("aria-pressed", String(b.classList.contains("is-active"))));
   container.addEventListener("click", (e) => {
     const btn = e.target.closest(".seg-btn");
     if (!btn) return;
-    container.querySelectorAll(".seg-btn").forEach((b) => b.classList.remove("is-active"));
+    container.querySelectorAll(".seg-btn").forEach((b) => { b.classList.remove("is-active"); b.setAttribute("aria-pressed", "false"); });
     btn.classList.add("is-active");
+    btn.setAttribute("aria-pressed", "true");
     if (onSelect) onSelect(btn.dataset.value, btn);
   });
 }

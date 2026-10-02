@@ -212,14 +212,21 @@ main.page,
   opacity: 0.95;
 }
 
-/* 6. Action Buttons & Navigation Tabs (No Vertical Text Clipping) */
-button,
-.btn,
-.btn-secondary,
-.btn-touch,
-.btn-action,
-.btn-passwall,
-.tab-btn {
+/* 6. Action Buttons & Navigation Tabs (No Vertical Text Clipping)
+   :not([hidden]) on every selector here: this block used to force
+   display:inline-flex !important unconditionally, which beat base.css's
+   [hidden]{display:none!important} on source order and left every
+   hidden button (Disconnect, Leave & stop, Dismiss dialog, sticky-leave,
+   edit-cancel, etc.) visible and clickable even when its own page logic
+   had hidden it - the real cause behind "clicks sometimes don't
+   register" and buttons with no visible state. */
+button:not([hidden]):not(.seg-btn),
+.btn:not([hidden]),
+.btn-secondary:not([hidden]),
+.btn-touch:not([hidden]),
+.btn-action:not([hidden]),
+.btn-passwall:not([hidden]),
+.tab-btn:not([hidden]) {
   min-height: 40px !important;
   height: auto !important;
   padding: 8px 16px !important;
@@ -323,9 +330,9 @@ button.btn-icon.btn-sm,
   gap: 8px;
 }
 
-.badge,
-.status-badge,
-.status-pill {
+.badge:not([hidden]),
+.status-badge:not([hidden]),
+.status-pill:not([hidden]) {
   padding: 4px 10px !important;
   line-height: 1.3 !important;
   min-height: 24px !important;
@@ -390,16 +397,16 @@ button.btn-icon.btn-sm,
 }
 
 /* 9. Form Inputs & Select Dropdowns (No Vertical Text Clipping) */
-select,
-.form-select,
-.input,
-select.input,
-input[type="text"],
-input[type="password"],
-input[type="search"],
-input[type="url"],
-input[type="number"],
-input.input {
+select:not([hidden]),
+.form-select:not([hidden]),
+.input:not([hidden]),
+select.input:not([hidden]),
+input[type="text"]:not([hidden]),
+input[type="password"]:not([hidden]),
+input[type="search"]:not([hidden]),
+input[type="url"]:not([hidden]),
+input[type="number"]:not([hidden]),
+input.input:not([hidden]) {
   min-height: 44px !important;
   height: auto !important;
   padding: 10px 14px !important;

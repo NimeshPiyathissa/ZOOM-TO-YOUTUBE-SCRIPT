@@ -308,7 +308,13 @@ $("zm-mid").addEventListener("input", (e) => {
   const d = e.target.value.replace(/\D/g, "").slice(0, 11);
   e.target.value = d.length === 11 ? `${d.slice(0, 3)} ${d.slice(3, 7)} ${d.slice(7)}` : d.length > 6 ? `${d.slice(0, 3)} ${d.slice(3, 6)} ${d.slice(6)}` : d.length > 3 ? `${d.slice(0, 3)} ${d.slice(3)}` : d;
 });
-function setSeg(seg, value) { seg.querySelectorAll(".seg-btn").forEach((b) => b.classList.toggle("is-active", b.dataset.value === value)); }
+function setSeg(seg, value) {
+  seg.querySelectorAll(".seg-btn").forEach((b) => {
+    const active = b.dataset.value === value;
+    b.classList.toggle("is-active", active);
+    b.setAttribute("aria-pressed", String(active));
+  });
+}
 function segValue(seg) { const b = seg.querySelector(".seg-btn.is-active"); return b ? b.dataset.value : null; }
 initSegmented($("zm-kind-seg"));
 initSegmented($("zm-form-view-seg"));
@@ -445,7 +451,10 @@ function renderLibrary() {
     const warnings = (m.warnings || []).length ? `<div class="zm-card-warning">${icon("alert-triangle", "icon-sm")}<span>${esc(m.warnings.join(" "))}</span></div>` : "";
     const joinVia = { client: "Desktop client", web: "Web client", auto: "Auto" }[o.join_method] || "Desktop client";
     const lastVia = o.last_join_method ? ` (last joined via ${o.last_join_method === "web" ? "web" : "desktop"})` : "";
-    const acct = m.account_id ? (($("zm-account").querySelector(`option[value="${m.account_id}"]`) || {}).textContent || "account").replace(/\s*\(.*\)$/, "") : "guest";
+    // The option's full text is "label · identity · state" - the card only
+    // has room for the label (identity/state are already shown elsewhere),
+    // so take just the first segment instead of the whole string.
+    const acct = m.account_id ? ((($("zm-account").querySelector(`option[value="${m.account_id}"]`) || {}).textContent || "account").split("·")[0].trim()) : "guest";
     const reg = m.link_kind === "registration" ? `
       <div class="zm-card-reg">
         <button class="btn btn-secondary btn-sm" data-act="register" data-id="${m.id}">${icon("clipboard-list", "icon-sm")}Open registration</button>
