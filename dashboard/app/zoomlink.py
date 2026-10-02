@@ -265,6 +265,26 @@ def _finish(out: dict) -> dict:
     return out
 
 
+def _assign_passcode(d: dict, pc: str | None) -> None:
+    """Apply a manually-entered/extracted passcode to a parse result.
+
+    The link's own pwd= always wins and the typed value is silently
+    dropped (shown in the UI as "in the link") - it is never validated
+    in that case, since it's commonly stale leftovers (or, worse,
+    something a password manager autofilled) that was never going to be
+    used anyway. Only when there is no pwd= in the link is it checked
+    against Zoom's passcode shape and surfaced as an error if it fails."""
+    if not pc:
+        return
+    if classify(d.get("url") or "")["has_pwd"]:
+        return
+    if not _PWD_RE.match(pc):
+        d["errors"].append("Passcode contains characters Zoom never uses (letters, digits, . _ - = only).")
+        return
+    if not d.get("passcode"):
+        d["passcode"] = pc
+
+
 def _from_https(url: str, out: dict, text_passcode: str | None = None) -> dict:
     url = normalize_url(url)
     info = classify(url)
@@ -289,7 +309,7 @@ def _from_https(url: str, out: dict, text_passcode: str | None = None) -> dict:
         if pwd and not _PWD_RE.match(pwd):
             out["errors"].append("The pwd= value in this link contains characters Zoom never uses.")
         if not pwd and text_passcode:
-            out["passcode"] = text_passcode
+            _assign_passcode(out, text_passcode)
         elif not pwd:
             out["warnings"].append("No passcode in the link. If the meeting needs one, add it below.")
         return out
@@ -353,9 +373,6 @@ def parse_any(text: str, passcode: str | None = None) -> dict:
     out = _empty()
     text = (text or "").strip()
     passcode = (passcode or "").strip() or None
-    if passcode and not _PWD_RE.match(passcode):
-        out["errors"].append("Passcode contains characters Zoom never uses (letters, digits, . _ - = only).")
-        passcode = None
     if not text:
         out["errors"].append("Paste a Zoom link, meeting ID or invite text.")
         return _finish(out)
@@ -364,9 +381,11 @@ def parse_any(text: str, passcode: str | None = None) -> dict:
     m = _ZOOMMTG_RE.search(text)
     if m:
         res = _from_zoommtg(m.group(0), out)
-        if passcode and not res.get("passcode") and not classify(res.get("url") or "")["has_pwd"]:
-            res["passcode"] = passcode
-            res["warnings"] = [w for w in res["warnings"] if not w.startswith("No passcode")]
+        if passcode and not res.get("passcode"):
+            before = len(res["errors"])
+            _assign_passcode(res, passcode)
+            if res.get("passcode") or len(res["errors"]) > before:
+                res["warnings"] = [w for w in res["warnings"] if not w.startswith("No passcode")]
         return _finish(res)
 
     # 2. any zoom.us https URL in the text (a bare link, or inside an invite)
@@ -398,8 +417,6 @@ def parse_any(text: str, passcode: str | None = None) -> dict:
                     res["input_kind"] = "invite"
                 if res.get("meeting_kind") is None and re.search(r"\bwebinar\b", text, re.I):
                     res["meeting_kind"] = "webinar"
-                if passcode and not res.get("passcode") and not classify(res["url"] or "")["has_pwd"]:
-                    res["passcode"] = passcode
                 return _finish(res)
 
     # 3. "Meeting ID: 123 4567 8901" in invite text, or a bare ID
@@ -409,8 +426,8 @@ def parse_any(text: str, passcode: str | None = None) -> dict:
         if 9 <= len(mid) <= 11:
             out["input_kind"] = "invite" if _ID_LABEL_RE.search(text) else "meeting_id"
             out["meeting_id"] = mid
-            out["passcode"] = text_pass or passcode
             out["url"] = build_join_url(mid)
+            _assign_passcode(out, text_pass or passcode)
             if re.search(r"\bwebinar\b", text, re.I):
                 out["meeting_kind"] = "webinar"
             if not out["passcode"]:

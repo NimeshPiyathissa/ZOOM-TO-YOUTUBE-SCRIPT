@@ -111,13 +111,25 @@
     <h2 id="zm-editor-h" class="rack-title">{{ icon("plus", "icon-sm") }}<span id="zm-editor-title">Add a meeting</span>
       <span class="rack-title-end"><button id="zm-edit-cancel" class="btn btn-ghost btn-sm" hidden>{{ icon("x", "icon-sm") }}Cancel edit</button></span></h2>
 
+    <!-- Decoy username/password pair, invisible and never read by any
+         JS here: Chrome's autofill groups any password field with the
+         nearest plausible text field into a synthetic "unowned form"
+         even with no <form> element on the page, and autocomplete="off"
+         alone doesn't stop it. Giving it a pair to latch onto first is
+         what actually keeps it off the real Passcode / Registered-with
+         fields below (see zoom-page-and-shared-sources memory). -->
+    <div class="visually-hidden" aria-hidden="true">
+      <input type="text" name="username" autocomplete="username" tabindex="-1">
+      <input type="password" name="password" autocomplete="current-password" tabindex="-1">
+    </div>
+
     <div class="field">
       <label class="label" for="zm-paste">Paste anything from the invite</label>
-      <textarea id="zm-paste" class="input zm-paste" rows="3" spellcheck="false" autocapitalize="off"
+      <textarea id="zm-paste" class="input zm-paste" rows="3" spellcheck="false" autocapitalize="off" autocomplete="off"
         placeholder="Join link, personal (tk=) link, registration page, meeting ID, personal room URL, zoommtg:// link - or the whole email"></textarea>
       <div class="zm-paste-row">
         <div class="zm-secret">
-          <input type="password" id="zm-passcode" class="input" placeholder="Passcode (if not in the link)" autocomplete="off" maxlength="128" aria-label="Passcode">
+          <input type="password" id="zm-passcode" class="input" placeholder="Passcode (if not in the link)" autocomplete="new-password" maxlength="128" aria-label="Passcode">
           <button type="button" class="btn btn-ghost btn-icon zm-reveal" data-for="zm-passcode" aria-label="Show passcode" aria-pressed="false">{{ icon("eye") }}</button>
         </div>
         <button id="zm-parse" class="btn btn-secondary btn-touch">{{ icon("sparkles") }}Detect</button>
@@ -156,11 +168,11 @@
       <div class="zm-form-grid">
         <div class="field">
           <label class="label" for="zm-name">Name in the library</label>
-          <input id="zm-name" class="input" maxlength="64" placeholder="Monday town hall">
+          <input id="zm-name" class="input" maxlength="64" placeholder="Monday town hall" autocomplete="off">
         </div>
         <div class="field">
           <label class="label" for="zm-bot-name">Bot's display name</label>
-          <input id="zm-bot-name" class="input" maxlength="64" value="Stream Bot">
+          <input id="zm-bot-name" class="input" maxlength="64" value="Stream Bot" autocomplete="off">
         </div>
       </div>
 
@@ -174,7 +186,12 @@
           <select id="zm-account" class="input" hidden aria-label="Google account">
             <option value="">Choose an account…</option>
 {% set signed = accounts | selectattr("verified") | list %}
-            {% for a in accounts %}<option value="{{ a.id }}" {% if a.state == "never" and not a.identity_masked %}disabled{% endif %}>{{ a.label }}{% if a.identity_masked %} · {{ a.identity_masked }}{% endif %} · {{ "signed in" if a.verified else ("wrong account" if a.verify_status == "wrong_account" else ("needs re-authentication" if a.needs_reauth else a.state)) }}</option>{% endfor %}
+            {# The label is often the account's own email, so repeating
+               identity_masked here just duplicates it and overflows this
+               native <select> - one identity + the state is enough; the
+               fuller "label + masked identity" detail still shows on the
+               library cards and the Accounts page, where there's room. #}
+            {% for a in accounts %}<option value="{{ a.id }}" {% if a.state == "never" and not a.identity_masked %}disabled{% endif %}>{{ a.label }} · {{ "signed in" if a.verified else ("wrong account" if a.verify_status == "wrong_account" else ("needs re-authentication" if a.needs_reauth else a.state)) }}</option>{% endfor %}
             {% if not signed and not accounts %}<option value="" disabled>No signed-in account yet - sign in on the Accounts page</option>{% endif %}
           </select>
           <a href="/accounts" class="hint m-0" id="zm-account-hint" hidden>{{ "Manage or add accounts on the Accounts page" if (signed or accounts) else "No signed-in account yet - sign in on the Accounts page first" }}</a>

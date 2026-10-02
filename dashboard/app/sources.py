@@ -238,7 +238,7 @@ ZOOM_VIEWS = {"speaker", "gallery"}
 ZOOM_REJOIN_MAX_RANGE = (1, 20)
 
 
-def _validate_zoom_options(options: dict) -> dict:
+def _validate_zoom_options(options: dict, url: str = "") -> dict:
     passcode = str(options.get("passcode", "") or "").strip()
     bot_name = str(options.get("bot_name", "Stream Bot") or "Stream Bot").strip()
     signin_mode = str(options.get("signin_mode", "guest") or "guest").strip().lower()
@@ -247,7 +247,13 @@ def _validate_zoom_options(options: dict) -> dict:
         raise ValidationError("Bot name must be 1-64 characters, no newlines")
     if signin_mode not in config.ZOOM_SIGNIN_MODES:
         raise ValidationError(f"signin_mode must be one of {sorted(config.ZOOM_SIGNIN_MODES)}")
-    if passcode and not zoomlink._PWD_RE.match(passcode):
+    if zoomlink.classify(url)["has_pwd"]:
+        # The link's own pwd= is authoritative - a stray value in the
+        # separate passcode field (stale leftovers, or a password
+        # manager's autofill) is dropped silently, never validated or
+        # saved, so it can't ever be mistaken for the real passcode.
+        passcode = ""
+    elif passcode and not zoomlink._PWD_RE.match(passcode):
         raise ValidationError("Passcode may only contain letters, digits and . _ - = (max 128)")
     if join_url:
         # The personal (tk=) link saved after completing a registration
@@ -290,7 +296,8 @@ def _validate_zoom_options(options: dict) -> dict:
         raise ValidationError(f"join_method must be one of {sorted(config.ZOOM_JOIN_MODES)}")
     registrant_email = str(options.get("registrant_email", "") or "").strip()
     if registrant_email and not _EMAIL_RE.match(registrant_email):
-        raise ValidationError("registrant_email doesn't look like an email address")
+        raise ValidationError('"Registered with" must be a real email address (e.g. name@gmail.com) - '
+                               f"{registrant_email!r} isn't one")
     # Set by control.set_last_join_method() after a join actually happens
     # (the honest "joined via" record for auto mode) - a save just carries
     # it through unchanged; anything not a real mode is dropped rather
@@ -387,7 +394,10 @@ def validate_source(type_: str, url: str, options: dict) -> tuple[str, dict]:
             url = url_security.validate_url(url, type_)
         except url_security.URLSecurityError as exc:
             raise ValidationError(str(exc))
-    validated_options = _OPTION_VALIDATORS[type_](options or {})
+    if type_ == "zoom":
+        validated_options = _validate_zoom_options(options or {}, url)
+    else:
+        validated_options = _OPTION_VALIDATORS[type_](options or {})
     return url.strip(), validated_options
 
 
