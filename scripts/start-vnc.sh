@@ -10,13 +10,19 @@ if [[ ! -f "$PASSWD_FILE" ]]; then
   exit 1
 fi
 
+# -shared alone only sets the DEFAULT for a client that doesn't state a
+# preference - a client explicitly requesting a non-shared (exclusive)
+# session still kicks every other viewer off, which is what broke /vnc,
+# /remote's Interact preview and /accounts' sign-in view from ever being
+# open at the same time. -alwaysshared forces every client to be treated
+# as shared regardless of what it asks for.
 log "Starting x11vnc on 127.0.0.1:5900 (localhost only, ~10 updates/sec cap)"
 exec /usr/bin/x11vnc \
   -display "$DISPLAY" \
   -rfbport 5900 \
   -localhost \
   -rfbauth "$PASSWD_FILE" \
-  -forever -shared \
+  -forever -shared -alwaysshared \
   -xrandr \
   -wait 100 \
   -desktop "zoom-stream-bot" \
