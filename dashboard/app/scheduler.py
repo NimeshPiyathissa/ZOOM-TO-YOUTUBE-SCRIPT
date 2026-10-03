@@ -53,8 +53,16 @@ async def _send_alert(message: str) -> None:
 
 async def _watchdog() -> None:
     global _last_alert_ts
+    # unit_show()/read_current_source()/zoom_meeting_status() below all
+    # shell out (sudo -u zoombot ...) - real fork/exec/PAM/D-Bus latency.
+    # This watchdog runs as a recurring job on the same asyncio event loop
+    # that serves /vnc/ws (app/vnc_proxy.py); calling them synchronously
+    # here is exactly the "Reconnecting -> disconnected" bug (see
+    # app/main.py's api_state fix) via a different call site - off the
+    # loop via run_in_executor instead.
+    loop = asyncio.get_event_loop()
     try:
-        show = control.unit_show("ffmpeg-stream")
+        show = await loop.run_in_executor(None, control.unit_show, "ffmpeg-stream")
     except control.ControlError:
         return
     if show["active_state"] != "failed":
@@ -101,9 +109,9 @@ async def _watchdog() -> None:
     try:
         from . import telegram, slate
         if show.get("phase") == control.PHASE_LIVE:
-            cur_source = control.read_current_source()
+            cur_source = await loop.run_in_executor(None, control.read_current_source)
             if cur_source.get("SOURCE_TYPE") == "zoom":
-                z_status = control.zoom_meeting_status()
+                z_status = await loop.run_in_executor(None, control.zoom_meeting_status)
                 st = z_status.get("status")
                 if st == "in_meeting":
                     _prev_zoom_in_meeting = True
@@ -511,7 +519,10 @@ def _list_enabled_rich_schedules() -> list[dict]:
 
 
 async def _rich_schedule_tick() -> None:
-    _refresh_ntp_cache()
+    # _refresh_ntp_cache() shells out (timedatectl) - same event-loop-
+    # blocking hazard as _watchdog()'s unit_show() above, off the loop
+    # for the same reason.
+    await asyncio.get_event_loop().run_in_executor(None, _refresh_ntp_cache)
     now = _now()
     for schedule in _list_enabled_rich_schedules():
         try:
