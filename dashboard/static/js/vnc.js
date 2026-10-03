@@ -167,10 +167,19 @@ function connect() {
           // the generic disconnect message that immediately follows it.
           return;
         }
-        if (clean) {
-          setStatus("disconnected", message);
-          return;
-        }
+        // Deliberately NOT branching on `clean` here. noVNC only ever
+        // marks a disconnect unclean (_rfbCleanDisconnect = false) from
+        // inside its own _fail(), which exclusively fires during the
+        // handshake/connecting phase - a server closing an already-
+        // CONNECTED session (x11vnc restarting, the proxy losing its
+        // upstream) goes through _socketClose()'s plain 'connected' case
+        // instead, which always reports clean=true regardless of the
+        // real WebSocket close code or reason. Trusting that flag here
+        // meant a mid-session server-side drop (e.g. "restart x11vnc")
+        // was read as an intentional disconnect and silently gave up
+        // instead of retrying - intentionalDisconnect above is already
+        // the reliable signal for every case where *we* chose to stop.
+        //
         // Auto-reconnect with backoff (1s, 2s, 4s... capped at 20s) -
         // retries forever rather than giving up, but doesn't hammer the
         // proxy every couple of seconds during a longer outage.

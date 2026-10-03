@@ -229,7 +229,16 @@ function connectInteract() {
       onDisconnect: (clean) => {
         if (!state.active) return;   // turnOff() already cleaned up - not a real drop
         state.connected = false;
-        if (clean) { turnOff("disconnected"); return; }
+        // Deliberately NOT branching on `clean` here - see vnc.js's
+        // onStatus handler for why: noVNC only reports a disconnect as
+        // unclean from inside its own _fail(), which exclusively fires
+        // during the handshake/connecting phase. A server closing an
+        // already-connected session (x11vnc restarting, the proxy losing
+        // its upstream) always reports clean=true regardless of the real
+        // close code, which made a mid-session server-side drop turn off
+        // Interact and fall back to the passive preview silently instead
+        // of retrying. `state.active` above is already the reliable
+        // signal for every case where turning Interact off was on purpose.
         // Unexpected drop while still meant to be on: keep Interact "on"
         // visually and retry with backoff instead of silently falling back
         // to the passive preview - this used to require the operator to
