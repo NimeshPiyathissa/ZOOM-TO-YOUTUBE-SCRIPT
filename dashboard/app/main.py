@@ -19,7 +19,7 @@ from starlette.concurrency import run_in_threadpool
 
 from . import config, db, security, deps, control, env_store, profiles as profiles_mod
 from . import logs as logs_mod
-from . import preview, stats, scheduler, vnc_proxy, vncauth
+from . import preview, stats, scheduler, vnc_proxy
 from . import sources as sources_mod
 from . import probe as probe_mod
 from . import url_security
@@ -330,11 +330,15 @@ async def vnc_page(request: Request):
     session = _require_page(request)
     if isinstance(session, RedirectResponse):
         return session
-    vnc_pass = vncauth.current_password()
+    # No VNC password is passed to the template: /vnc/ws (app/vnc_proxy.py)
+    # authenticates to x11vnc server-side and offers the browser only the
+    # "None" security type, so the real password has no reason to ever
+    # reach the page source (it used to, as a dead fallback for
+    # noVNC's own credential prompt - see static/js/vnc-embed.js).
     return templates.TemplateResponse(
         "vnc.html",
         {
-            "request": request, "username": session["username"], "vnc_password": vnc_pass,
+            "request": request, "username": session["username"],
             "csrf_token": session["csrf_token"],
         },
     )

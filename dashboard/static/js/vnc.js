@@ -21,8 +21,12 @@ const scaleText = $("vnc-scale-text");
 const reconnectBtn = $("vnc-btn-reconnect");
 const fullscreenBtn = $("vnc-btn-fullscreen");
 
-const vncConfig = JSON.parse($("vnc-config")?.textContent || "{}");
-let vncPassword = vncConfig.password || null;
+// No password is ever embedded in the page: /vnc/ws authenticates to
+// x11vnc server-side and offers the browser only the "None" security
+// type, so getPassword() below should never actually be invoked. It
+// stays only as a fallback (remembered in memory for this tab only,
+// never persisted or sent to the server) in case that ever changes.
+let vncPassword = null;
 
 let rfb = null;
 let scaleMode = true;
