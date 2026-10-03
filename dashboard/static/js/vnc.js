@@ -34,6 +34,19 @@ let reconnectTimer = null;
 let reconnectAttempt = 0;
 let intentionalDisconnect = false;
 let isConnected = false;
+// Bumped on every connect() call. connect() replaces `rfb` by calling
+// disconnect() on whatever the old one was - but that old RFB object's
+// own 'disconnect' event fires asynchronously, sometimes arriving after
+// a *new* connection has already been created (even after it's already
+// healthy). Without this, that stale event reads intentionalDisconnect
+// as false (already reset for the new attempt) and schedules its own
+// reconnectTimer, silently overwriting/orphaning the new connection's
+// own timer - which then fires later and kills a perfectly good session.
+// Root cause of "connects fine, then drops a moment later, forever" with
+// nothing resembling a real failure anywhere in the server-side logs.
+// Each onStatus closure captures its own connectionId at creation time
+// and ignores itself once a newer connect() has superseded it.
+let connectionId = 0;
 
 const post = (url, body) => apiFetch(url, { method: "POST", body: body ? JSON.stringify(body) : undefined });
 
@@ -87,6 +100,7 @@ function connect() {
   }
   target.innerHTML = "";
 
+  const myConnectionId = ++connectionId;
   intentionalDisconnect = false;
   setStatus("connecting");
 
@@ -108,9 +122,27 @@ function connect() {
         return pass;
       },
       onStatus: (state, message, clean) => {
+        if (myConnectionId !== connectionId) {
+          // Stale event from an RFB instance connect() has since replaced
+          // (see connectionId's header comment) - this is not the active
+          // connection any more, so acting on it would only corrupt the
+          // real one's state (orphaned reconnect timers, wrong badge).
+          return;
+        }
         if (state === "connected") {
           isConnected = true;
           reconnectAttempt = 0;
+          // A reconnectTimer can already be pending here: a brief early
+          // hiccup during this same connection attempt can fire
+          // onStatus("disconnected", clean=false) - which schedules a
+          // retry - moments before the attempt actually completes and
+          // reaches "connected". Nothing previously cancelled that timer
+          // once we *did* connect, so ~1s later it fired anyway and tore
+          // down an otherwise healthy session, forever, in a tight loop.
+          if (reconnectTimer) {
+            clearTimeout(reconnectTimer);
+            reconnectTimer = null;
+          }
           setStatus("connected");
           try { rfb.focus({ preventScroll: true }); } catch (err) { /* older noVNC */ }
           post("/api/vnc/rate", { mode: "fast" }).catch(() => {});
