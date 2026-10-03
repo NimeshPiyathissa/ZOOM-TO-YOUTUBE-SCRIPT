@@ -209,6 +209,16 @@ def _detect_system_timezone() -> str:
 
 TIMEZONE = _detect_system_timezone()
 
+# The Live Studio / Schedule-page scheduler (app/scheduler.py) deliberately
+# does NOT use TIMEZONE above. That's auto-detected from the box's own
+# /etc/timezone, which on this deployment is UTC - but the Schedule page's
+# UI has always labelled itself "Asia/Colombo", and the operator's runs are
+# planned in Sri Lanka wall-clock time regardless of what timezone the VPS
+# itself happens to be set to. Hardcoded per explicit requirement, not
+# derived from the host, so a future box with a different /etc/timezone
+# can't silently shift every scheduled run.
+SCHEDULE_TIMEZONE = "Asia/Colombo"
+
 # Trust X-Forwarded-Proto for the Secure cookie flag only when running
 # behind a local reverse proxy (e.g. optional Caddy setup). False = the
 # app terminates TLS itself (self-signed cert) for the SSH-tunnel-only path.

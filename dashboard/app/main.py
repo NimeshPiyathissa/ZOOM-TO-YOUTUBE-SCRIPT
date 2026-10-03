@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import datetime as dt
 import json
 import logging
 import pathlib
@@ -247,6 +248,7 @@ async def studio_page(request: Request):
         "rtmp_ingest_url": "rtmps://a.rtmps.youtube.com:443/live2",
         "studio_settings": studio_settings,
         "sources_rev": sources_mod.sources_rev(),
+        "sources": sources_mod.list_sources_public(),
     })
 
 
@@ -345,7 +347,7 @@ async def schedule_page(request: Request):
         return session
     return templates.TemplateResponse("schedule.html", {
         "request": request, "csrf_token": session["csrf_token"], "username": session["username"],
-        "sources": sources_mod.list_sources_public(), "schedules": _list_schedules(),
+        "sources": sources_mod.list_sources_public(),
     })
 
 
@@ -471,6 +473,12 @@ async def api_stream_action(action: str, request: Request):
     verb = {"go-live": "start", "stop": "stop", "restart": "restart"}.get(action)
     if not verb:
         raise HTTPException(status_code=400, detail="invalid action")
+    if verb in ("stop", "restart"):
+        # Manual control always wins: if a schedule's window is what's
+        # currently live, a manual stop/restart here must suppress that
+        # schedule for the rest of its occurrence (no auto-rejoin/re-go-live)
+        # - see app/scheduler.py's note_manual_override().
+        await run_in_threadpool(scheduler.note_manual_override)
     try:
         result = control.unit_action("ffmpeg-stream", verb)
     except control.ControlError as exc:
@@ -1825,6 +1833,8 @@ async def api_zoom_leave_with_choice(request: Request):
     then = str(body.get("then", "slate"))
     if then not in ("stop", "slate"):
         raise HTTPException(status_code=400, detail="'then' must be 'stop' or 'slate'")
+    if then == "stop":
+        await run_in_threadpool(scheduler.note_manual_override)
     try:
         results = await run_in_threadpool(control.zoom_leave, then)
     except control.ControlError as exc:
@@ -2342,17 +2352,153 @@ async def api_audio_selftest(request: Request):
 
 
 # ---------------------------------------------------------------- api: schedules
+# Live Studio "Schedule" card and the /schedule page share this one API and
+# the same `schedules` table rows - see app/scheduler.py's "rich schedules"
+# section for the reconciliation engine behind it.
+
+REPEAT_MODES = {"once", "daily", "weekdays", "custom"}
+
+
+def _parse_hhmm(value: str, field: str) -> tuple[int, int]:
+    try:
+        h, m = str(value).split(":")
+        h, m = int(h), int(m)
+    except (ValueError, AttributeError):
+        raise HTTPException(status_code=400, detail=f"{field} must be HH:MM") from None
+    if not (0 <= h <= 23 and 0 <= m <= 59):
+        raise HTTPException(status_code=400, detail=f"{field} must be a valid 24h time")
+    return h, m
+
+
+def _row_to_schedule_view(row: dict) -> dict:
+    source = sources_mod.get_source(row["source_id"]) if row.get("source_id") else None
+    warnings: list[str] = []
+    if source and source["type"] == "zoom":
+        warnings = sources_mod.zoom_warnings(source)
+        account_id = source.get("account_id")
+        if account_id:
+            acc = accounts_mod.get_account(account_id)
+            if acc and acc.get("state") != "signed_in":
+                warnings.append(f"The Google account bound to this source isn't currently verified (state: {acc.get('state')}).")
+    info = scheduler.next_run_info(row)
+    custom_days = [int(x) for x in (row.get("custom_days") or "").split(",") if x.strip().isdigit()]
+    return {
+        "id": row["id"], "label": row.get("label") or "", "enabled": bool(row["enabled"]),
+        "source_id": row.get("source_id"), "source_name": source["name"] if source else None,
+        "source_type": source["type"] if source else None,
+        "repeat_mode": row.get("repeat_mode") or "once",
+        "start_date": row.get("start_date"), "custom_days": custom_days,
+        "start_time": f"{int(row['start_hour']):02d}:{int(row['start_minute']):02d}" if row.get("start_hour") is not None else None,
+        "end_time": f"{int(row['end_hour']):02d}:{int(row['end_minute']):02d}" if row.get("end_hour") is not None else None,
+        "overnight": bool(row.get("overnight")), "join_lead_minutes": row.get("join_lead_minutes"),
+        "keep_meeting_open": bool(row.get("keep_meeting_open")), "skip_next": bool(row.get("skip_next")),
+        "state": row.get("state") or "idle", "state_detail": row.get("state_detail"),
+        "last_run_at": row.get("last_run_at"), "warnings": warnings,
+        **info,
+    }
+
 
 def _list_schedules() -> list[dict]:
     with db.get_conn() as conn:
-        rows = conn.execute("SELECT * FROM schedules ORDER BY hour, minute").fetchall()
+        rows = conn.execute("SELECT * FROM schedules ORDER BY id").fetchall()
         return [dict(r) for r in rows]
+
+
+def _get_schedule_row(schedule_id: int) -> dict:
+    with db.get_conn() as conn:
+        row = conn.execute("SELECT * FROM schedules WHERE id=?", (schedule_id,)).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="schedule not found")
+    return dict(row)
+
+
+def _validate_schedule_payload(body: dict, exclude_id: int | None = None) -> dict:
+    repeat_mode = body.get("repeat_mode", "once")
+    if repeat_mode not in REPEAT_MODES:
+        raise HTTPException(status_code=400, detail="repeat_mode must be once, daily, weekdays or custom")
+
+    source_id = body.get("source_id")
+    if not source_id:
+        raise HTTPException(status_code=400, detail="a source is required")
+    source = sources_mod.get_source(int(source_id))
+    if not source:
+        raise HTTPException(status_code=400, detail="that source no longer exists")
+    if source["type"] == "zoom":
+        missing = sources_mod.zoom_missing(source)
+        if missing:
+            raise HTTPException(status_code=400, detail="This source isn't joinable yet: " + "; ".join(missing))
+
+    start_hour, start_minute = _parse_hhmm(body.get("start_time", ""), "start_time")
+    end_hour, end_minute = _parse_hhmm(body.get("end_time", ""), "end_time")
+    overnight = bool(body.get("overnight"))
+    same_or_before = (end_hour, end_minute) <= (start_hour, start_minute)
+    if same_or_before and not overnight:
+        raise HTTPException(status_code=400, detail="End time must be after start time - check 'ends next day' for an overnight run")
+
+    custom_days: list[int] = []
+    if repeat_mode == "custom":
+        custom_days = sorted({int(d) for d in (body.get("custom_days") or []) if 0 <= int(d) <= 6})
+        if not custom_days:
+            raise HTTPException(status_code=400, detail="pick at least one day for a custom repeat")
+
+    join_lead_minutes = int(body.get("join_lead_minutes", 5))
+    if not (0 <= join_lead_minutes <= 120):
+        raise HTTPException(status_code=400, detail="join lead time must be between 0 and 120 minutes")
+
+    now = scheduler.now()
+    start_date_str = body.get("start_date") or now.date().isoformat()
+    try:
+        start_date = dt.date.fromisoformat(start_date_str)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="start_date must be YYYY-MM-DD") from None
+
+    if repeat_mode == "once":
+        start_at = dt.datetime.combine(start_date, dt.time(start_hour, start_minute), tzinfo=scheduler.TZ)
+        if start_at < now:
+            raise HTTPException(status_code=400, detail="That date/time is in the past")
+    elif start_date < now.date():
+        # Recurring schedules just need *a* valid day pattern going forward -
+        # silently clamp an old "active from" date to today rather than
+        # rejecting (the day-pattern is what matters, not this anchor).
+        start_date = now.date()
+        start_date_str = start_date.isoformat()
+
+    payload = {
+        "label": (body.get("label") or "").strip() or None,
+        "source_id": int(source_id),
+        "repeat_mode": repeat_mode,
+        "start_date": start_date_str,
+        "custom_days": ",".join(str(d) for d in custom_days) if repeat_mode == "custom" else None,
+        "start_hour": start_hour, "start_minute": start_minute,
+        "end_hour": end_hour, "end_minute": end_minute,
+        "overnight": 1 if overnight else 0,
+        "join_lead_minutes": join_lead_minutes,
+        "keep_meeting_open": 1 if body.get("keep_meeting_open") else 0,
+    }
+
+    candidate = dict(payload)
+    candidate["id"] = exclude_id
+    with db.get_conn() as conn:
+        others = conn.execute("SELECT * FROM schedules WHERE enabled=1 AND id != ?",
+                              (exclude_id or -1,)).fetchall()
+    for other in others:
+        if scheduler.schedules_overlap(candidate, dict(other)):
+            label = other["label"] or f"schedule #{other['id']}"
+            raise HTTPException(status_code=400, detail=f"This overlaps an existing enabled schedule ('{label}')")
+
+    return payload
 
 
 @app.get("/api/schedules")
 async def api_schedules_list(request: Request):
     deps.require_session_api(request)
-    return _list_schedules()
+    rows = await run_in_threadpool(_list_schedules)
+    return {
+        "schedules": [_row_to_schedule_view(r) for r in rows],
+        "ntp_synced": scheduler.ntp_synced(),
+        "timezone": config.SCHEDULE_TIMEZONE,
+        "server_time": scheduler.now().isoformat(),
+    }
 
 
 @app.post("/api/schedules")
@@ -2360,24 +2506,47 @@ async def api_schedules_create(request: Request):
     session = deps.require_session_api(request)
     deps.require_csrf(request, session)
     body = await request.json()
-    action = body.get("action")
-    if action not in ("go_live", "stop"):
-        raise HTTPException(status_code=400, detail="action must be go_live or stop")
-    hour, minute = int(body.get("hour", 0)), int(body.get("minute", 0))
-    if not (0 <= hour <= 23 and 0 <= minute <= 59):
-        raise HTTPException(status_code=400, detail="invalid time")
-    days = str(body.get("days_of_week", "mon,tue,wed,thu,fri,sat,sun"))
-    source_id = body.get("source_id")
+    payload = await run_in_threadpool(_validate_schedule_payload, body)
     with db.get_conn() as conn:
         cur = conn.execute(
-            "INSERT INTO schedules (source_id, action, hour, minute, days_of_week, enabled) "
-            "VALUES (?,?,?,?,?,1)",
-            (source_id, action, hour, minute, days),
+            "INSERT INTO schedules (source_id, action, hour, minute, days_of_week, enabled, "
+            "label, repeat_mode, start_date, custom_days, start_hour, start_minute, end_hour, end_minute, "
+            "overnight, join_lead_minutes, keep_meeting_open, state, updated_at) "
+            "VALUES (?, 'go_live', 0, 0, '', 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'idle', ?)",
+            (payload["source_id"], payload["label"], payload["repeat_mode"], payload["start_date"],
+             payload["custom_days"], payload["start_hour"], payload["start_minute"],
+             payload["end_hour"], payload["end_minute"], payload["overnight"],
+             payload["join_lead_minutes"], payload["keep_meeting_open"], time.time()),
         )
         sid = cur.lastrowid
     scheduler.load_schedules()
-    db.audit(session["username"], "schedule_create", f"{action} {hour:02d}:{minute:02d}", deps.client_ip(request))
-    return {"id": sid}
+    db.audit(session["username"], "schedule_create",
+              f"id={sid} {payload['start_hour']:02d}:{payload['start_minute']:02d}-{payload['end_hour']:02d}:{payload['end_minute']:02d}",
+              deps.client_ip(request))
+    return _row_to_schedule_view(_get_schedule_row(sid))
+
+
+@app.put("/api/schedules/{schedule_id}")
+async def api_schedules_update(schedule_id: int, request: Request):
+    session = deps.require_session_api(request)
+    deps.require_csrf(request, session)
+    _get_schedule_row(schedule_id)  # 404 if missing
+    body = await request.json()
+    payload = await run_in_threadpool(_validate_schedule_payload, body, schedule_id)
+    with db.get_conn() as conn:
+        conn.execute(
+            "UPDATE schedules SET source_id=?, label=?, repeat_mode=?, start_date=?, custom_days=?, "
+            "start_hour=?, start_minute=?, end_hour=?, end_minute=?, overnight=?, join_lead_minutes=?, "
+            "keep_meeting_open=?, state='idle', state_occurrence_date=NULL, state_detail=NULL, updated_at=? "
+            "WHERE id=?",
+            (payload["source_id"], payload["label"], payload["repeat_mode"], payload["start_date"],
+             payload["custom_days"], payload["start_hour"], payload["start_minute"],
+             payload["end_hour"], payload["end_minute"], payload["overnight"],
+             payload["join_lead_minutes"], payload["keep_meeting_open"], time.time(), schedule_id),
+        )
+    scheduler.load_schedules()
+    db.audit(session["username"], "schedule_update", f"id={schedule_id}", deps.client_ip(request))
+    return _row_to_schedule_view(_get_schedule_row(schedule_id))
 
 
 @app.delete("/api/schedules/{schedule_id}")
@@ -2389,6 +2558,53 @@ async def api_schedules_delete(schedule_id: int, request: Request):
     scheduler.load_schedules()
     db.audit(session["username"], "schedule_delete", str(schedule_id), deps.client_ip(request))
     return {"ok": True}
+
+
+@app.post("/api/schedules/{schedule_id}/enable")
+async def api_schedules_enable(schedule_id: int, request: Request):
+    session = deps.require_session_api(request)
+    deps.require_csrf(request, session)
+    _get_schedule_row(schedule_id)
+    await run_in_threadpool(scheduler.set_enabled, schedule_id, True)
+    scheduler.load_schedules()
+    db.audit(session["username"], "schedule_enable", str(schedule_id), deps.client_ip(request))
+    return _row_to_schedule_view(_get_schedule_row(schedule_id))
+
+
+@app.post("/api/schedules/{schedule_id}/disable")
+async def api_schedules_disable(schedule_id: int, request: Request):
+    session = deps.require_session_api(request)
+    deps.require_csrf(request, session)
+    _get_schedule_row(schedule_id)
+    await run_in_threadpool(scheduler.set_enabled, schedule_id, False)
+    scheduler.load_schedules()
+    db.audit(session["username"], "schedule_disable", str(schedule_id), deps.client_ip(request))
+    return _row_to_schedule_view(_get_schedule_row(schedule_id))
+
+
+@app.post("/api/schedules/{schedule_id}/skip-next")
+async def api_schedules_skip_next(schedule_id: int, request: Request):
+    session = deps.require_session_api(request)
+    deps.require_csrf(request, session)
+    _get_schedule_row(schedule_id)
+    await run_in_threadpool(scheduler.set_skip_next, schedule_id, True)
+    db.audit(session["username"], "schedule_skip_next", str(schedule_id), deps.client_ip(request))
+    return _row_to_schedule_view(_get_schedule_row(schedule_id))
+
+
+@app.post("/api/schedules/{schedule_id}/run-now")
+async def api_schedules_run_now(schedule_id: int, request: Request):
+    session = deps.require_session_api(request)
+    deps.require_csrf(request, session)
+    row = _get_schedule_row(schedule_id)
+    if not row.get("enabled"):
+        raise HTTPException(status_code=400, detail="enable this schedule first")
+    try:
+        await run_in_threadpool(scheduler.run_now, schedule_id)
+    except ValueError as exc:
+        return _api_error(exc)
+    scheduler.load_schedules()
+    return _row_to_schedule_view(_get_schedule_row(schedule_id))
 
 
 # ---------------------------------------------------------------- api: logs / errors / audit

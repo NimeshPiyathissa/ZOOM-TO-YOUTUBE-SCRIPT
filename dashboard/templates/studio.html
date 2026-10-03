@@ -248,6 +248,19 @@
 
   </div>
 
+  <!-- ================================================================ Schedule -->
+  <h2 class="floating-section-title">
+    {{ icon("calendar-clock", "icon-sm") }}Schedule
+  </h2>
+
+  <section class="card" aria-labelledby="studio-schedule-h">
+    <h2 id="studio-schedule-h" class="rack-title">
+      {{ icon("calendar-clock", "icon-sm") }}Scheduled start/stop
+      <span class="hint m-0" style="font-weight:400;">Asia/Colombo</span>
+    </h2>
+    <div id="schedule-manager"></div>
+  </section>
+
   <!-- ================================================================ Source & Stream Key Row -->
   <h2 class="floating-section-title">
     {{ icon("shuffle", "icon-sm") }}RTMP Ingest &amp; Active Feed
@@ -480,5 +493,7 @@
 {% block scripts %}
 <script type="application/json" id="studio-settings-data">{{ studio_settings | tojson }}</script>
 <script type="application/json" id="active-source-init">{{ active_source | tojson }}</script>
+<script type="application/json" id="schedule-sources-data">{{ sources | tojson }}</script>
+<script src="/static/js/schedule.js"></script>
 <script src="/static/js/studio.js"></script>
 {% endblock %}

@@ -138,6 +138,27 @@ _MIGRATIONS: list[tuple[str, str, str]] = [
     # from a genuinely verified session, instead of silently overwriting
     # `email` and reading as fine either way.
     ("accounts", "expected_email", "ALTER TABLE accounts ADD COLUMN expected_email TEXT"),
+    # Live Studio schedule card (start/end time, join-lead, repeat) - see
+    # app/scheduler.py. Superset of the original bare action/hour/minute/
+    # days_of_week row; those columns stay (unused by new code) rather than
+    # being dropped, matching this migration list's never-destructive rule.
+    ("schedules", "label", "ALTER TABLE schedules ADD COLUMN label TEXT"),
+    ("schedules", "repeat_mode", "ALTER TABLE schedules ADD COLUMN repeat_mode TEXT NOT NULL DEFAULT 'once'"),
+    ("schedules", "start_date", "ALTER TABLE schedules ADD COLUMN start_date TEXT"),
+    ("schedules", "custom_days", "ALTER TABLE schedules ADD COLUMN custom_days TEXT"),
+    ("schedules", "start_hour", "ALTER TABLE schedules ADD COLUMN start_hour INTEGER"),
+    ("schedules", "start_minute", "ALTER TABLE schedules ADD COLUMN start_minute INTEGER"),
+    ("schedules", "end_hour", "ALTER TABLE schedules ADD COLUMN end_hour INTEGER"),
+    ("schedules", "end_minute", "ALTER TABLE schedules ADD COLUMN end_minute INTEGER"),
+    ("schedules", "overnight", "ALTER TABLE schedules ADD COLUMN overnight INTEGER NOT NULL DEFAULT 0"),
+    ("schedules", "join_lead_minutes", "ALTER TABLE schedules ADD COLUMN join_lead_minutes INTEGER NOT NULL DEFAULT 5"),
+    ("schedules", "keep_meeting_open", "ALTER TABLE schedules ADD COLUMN keep_meeting_open INTEGER NOT NULL DEFAULT 0"),
+    ("schedules", "skip_next", "ALTER TABLE schedules ADD COLUMN skip_next INTEGER NOT NULL DEFAULT 0"),
+    ("schedules", "state", "ALTER TABLE schedules ADD COLUMN state TEXT NOT NULL DEFAULT 'idle'"),
+    ("schedules", "state_occurrence_date", "ALTER TABLE schedules ADD COLUMN state_occurrence_date TEXT"),
+    ("schedules", "state_detail", "ALTER TABLE schedules ADD COLUMN state_detail TEXT"),
+    ("schedules", "last_run_at", "ALTER TABLE schedules ADD COLUMN last_run_at REAL"),
+    ("schedules", "updated_at", "ALTER TABLE schedules ADD COLUMN updated_at REAL"),
 ]
 
 
