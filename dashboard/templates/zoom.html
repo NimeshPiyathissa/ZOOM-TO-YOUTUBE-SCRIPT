@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% from "_macros.html" import icon %}
 {% block title %}Zoom - Zoom Stream Dashboard{% endblock %}
-{% block extra_css %}<link rel="stylesheet" href="/static/css/rack.css"><link rel="stylesheet" href="/static/css/zoom.css">{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{{ static_url('css/rack.css') }}"><link rel="stylesheet" href="{{ static_url('css/zoom.css') }}">{% endblock %}
 {% block content %}
 
 <div class="zm-grid rack-grid">
@@ -295,5 +295,5 @@
 <script type="application/json" id="zm-data-meetings">{{ meetings | tojson }}</script>
 <script type="application/json" id="zm-data-active">{{ active_source_id | tojson }}</script>
 <script type="application/json" id="zm-data-rev">{{ sources_rev | tojson }}</script>
-<script type="module" src="/static/js/zoom.js"></script>
+<script type="module" src="{{ static_url('js/zoom.js') }}"></script>
 {% endblock %}

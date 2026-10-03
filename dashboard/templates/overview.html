@@ -192,5 +192,5 @@
 {% endblock %}
 {% block scripts %}
 <script type="application/json" id="units-data">{{ units | tojson }}</script>
-<script src="/static/js/overview.js"></script>
+<script src="{{ static_url('js/overview.js') }}"></script>
 {% endblock %}

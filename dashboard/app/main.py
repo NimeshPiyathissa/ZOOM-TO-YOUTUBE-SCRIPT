@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import datetime as dt
+import hashlib
 import json
 import logging
 import pathlib
@@ -35,9 +36,49 @@ from . import recording, settings_store, telegram
 BASE_DIR = pathlib.Path(__file__).resolve().parent.parent
 logger = logging.getLogger("zoom-stream.main")
 
+
+class _RevalidateStaticFiles(StaticFiles):
+    """Plain StaticFiles sends no Cache-Control at all, which left browsers
+    free to heuristically cache JS/CSS with no server directive - the exact
+    gap that let a browser keep running a stale, already-fixed vnc.js well
+    past the point a normal reload (not a hard-refresh bypassing cache)
+    should have picked up the new one. no-cache does NOT mean "don't cache"
+    - it means "cache it, but always ask the server first"; the ETag below
+    still makes that ask cheap (a bodyless 304) when nothing changed."""
+
+    def file_response(self, *args, **kwargs):
+        response = super().file_response(*args, **kwargs)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
 app = FastAPI(title="Zoom Stream Dashboard", docs_url=None, redoc_url=None, openapi_url=None)
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
-app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
+app.mount("/static", _RevalidateStaticFiles(directory=str(BASE_DIR / "static")), name="static")
+
+# Belt-and-suspenders on top of the Cache-Control fix above: {{ static_url(...) }}
+# appends a short content-hash query string, so even a cache that ignores
+# Cache-Control (a misbehaving proxy, an old browser, Chrome's occasional
+# heuristic-caching edge cases) still can't serve a deployed-over asset
+# under its old URL - the URL itself changes the moment the file does.
+# Hashed once per path per process lifetime: static files only change via
+# a deploy, and every deploy restarts dashboard.service.
+_static_hash_cache: dict[str, str] = {}
+
+
+def _static_url(path: str) -> str:
+    h = _static_hash_cache.get(path)
+    if h is None:
+        try:
+            data = (BASE_DIR / "static" / path).read_bytes()
+            h = hashlib.sha256(data).hexdigest()[:10]
+        except OSError:
+            h = "0"
+        _static_hash_cache[path] = h
+    return f"/static/{path}?v={h}"
+
+
+templates.env.globals["static_url"] = _static_url
 
 
 # ---------------------------------------------------------------- helpers

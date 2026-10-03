@@ -26,5 +26,5 @@
 {% endblock %}
 {% block scripts %}
 <script type="application/json" id="audit-rows-data">{{ rows | tojson }}</script>
-<script src="/static/js/audit.js"></script>
+<script src="{{ static_url('js/audit.js') }}"></script>
 {% endblock %}

@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% from "_macros.html" import icon %}
 {% block title %}Control panel - Zoom Stream Dashboard{% endblock %}
-{% block extra_css %}<link rel="stylesheet" href="/static/css/rack.css"><link rel="stylesheet" href="/static/css/remote.css">{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{{ static_url('css/rack.css') }}"><link rel="stylesheet" href="{{ static_url('css/remote.css') }}">{% endblock %}
 {% block content %}
 
 <div class="remote-grid rack-grid panel-grid">
@@ -399,6 +399,6 @@
 <script type="application/json" id="active-source-id">{{ active_source_id | tojson }}</script>
 <script type="application/json" id="sources-rev">{{ sources_rev | tojson }}</script>
 <script type="application/json" id="yt-links-data">{{ youtube_links | tojson }}</script>
-<script src="/static/js/remote.js"></script>
-<script type="module" src="/static/js/interact.js"></script>
+<script src="{{ static_url('js/remote.js') }}"></script>
+<script type="module" src="{{ static_url('js/interact.js') }}"></script>
 {% endblock %}

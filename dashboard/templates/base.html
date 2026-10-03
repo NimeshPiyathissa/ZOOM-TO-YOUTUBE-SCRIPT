@@ -6,13 +6,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>{% block title %}Zoom Stream Dashboard{% endblock %}</title>
 {% if csrf_token %}<meta name="csrf-token" content="{{ csrf_token }}">{% endif %}
-<link rel="stylesheet" href="/static/css/fonts.css">
-<link rel="stylesheet" href="/static/css/tokens.css">
-<link rel="stylesheet" href="/static/css/base.css">
-<link rel="stylesheet" href="/static/css/components.css">
-<link rel="stylesheet" href="/static/css/cards-3d.css">
-<link rel="stylesheet" href="/static/css/layout.css">
-<link rel="stylesheet" href="/static/css/passwall-glass.css">
+<link rel="stylesheet" href="{{ static_url('css/fonts.css') }}">
+<link rel="stylesheet" href="{{ static_url('css/tokens.css') }}">
+<link rel="stylesheet" href="{{ static_url('css/base.css') }}">
+<link rel="stylesheet" href="{{ static_url('css/components.css') }}">
+<link rel="stylesheet" href="{{ static_url('css/cards-3d.css') }}">
+<link rel="stylesheet" href="{{ static_url('css/layout.css') }}">
+<link rel="stylesheet" href="{{ static_url('css/passwall-glass.css') }}">
 {% block extra_css %}{% endblock %}
 <link rel="icon" href="data:,">
 </head>
@@ -110,10 +110,10 @@
 </div>
 {% endif %}
 <div id="toasts"></div>
-<script src="/static/app.js"></script>
+<script src="{{ static_url('app.js') }}"></script>
 {% block scripts %}{% endblock %}
 {% if username %}
-<script src="/static/js/base.js"></script>
+<script src="{{ static_url('js/base.js') }}"></script>
 {% endif %}
 </body>
 </html>

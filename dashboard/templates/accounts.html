@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% from "_macros.html" import icon %}
 {% block title %}Accounts - Zoom Stream Dashboard{% endblock %}
-{% block extra_css %}<link rel="stylesheet" href="/static/css/rack.css"><link rel="stylesheet" href="/static/css/remote.css"><link rel="stylesheet" href="/static/css/accounts.css">{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{{ static_url('css/rack.css') }}"><link rel="stylesheet" href="{{ static_url('css/remote.css') }}"><link rel="stylesheet" href="{{ static_url('css/accounts.css') }}">{% endblock %}
 {% block content %}
 
 <div class="ac-grid rack-grid">
@@ -145,5 +145,5 @@
 
 {% endblock %}
 {% block scripts %}
-<script type="module" src="/static/js/accounts.js"></script>
+<script type="module" src="{{ static_url('js/accounts.js') }}"></script>
 {% endblock %}

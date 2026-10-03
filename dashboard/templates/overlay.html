@@ -2,8 +2,8 @@
 {% from "_macros.html" import icon %}
 {% block title %}Text Overlays Studio – Zoom Stream Dashboard{% endblock %}
 {% block extra_css %}
-<link rel="stylesheet" href="/static/css/rack.css">
-<link rel="stylesheet" href="/static/css/overlay.css">
+<link rel="stylesheet" href="{{ static_url('css/rack.css') }}">
+<link rel="stylesheet" href="{{ static_url('css/overlay.css') }}">
 <!-- Google Fonts Preconnect & Dynamic Loader -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -472,5 +472,5 @@
 
 {% block scripts %}
 <script type="application/json" id="overlay-state-init">{{ overlay_state | tojson }}</script>
-<script src="/static/js/overlay.js"></script>
+<script src="{{ static_url('js/overlay.js') }}"></script>
 {% endblock %}
