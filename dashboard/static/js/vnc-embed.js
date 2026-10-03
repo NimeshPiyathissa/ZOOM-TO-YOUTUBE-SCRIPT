@@ -23,6 +23,39 @@ export function reconnectDelayMs(attempt, { baseMs = 1000, maxMs = 20000 } = {})
   return Math.min(baseMs * 2 ** Math.max(0, attempt - 1), maxMs);
 }
 
+// Reduce this VNC session's own bandwidth/CPU footprint while
+// ffmpeg-stream is actually live, so the preview can't compete with the
+// encoder for the same link/CPU - restores the caller's normal setting
+// the moment it isn't. Polls the already-cheap /api/state (fixed to run
+// off the event loop - see app/main.py's api_state) every 5s rather than
+// reacting to a push, since every page that opens a VNC session already
+// treats that endpoint as side-effect-free to hit repeatedly.
+const LIVE_QUALITY = 1;
+const LIVE_COMPRESSION = 6;
+
+function watchLiveBandwidth(rfb, normalQuality) {
+  let lastLive = null;
+  const tick = async () => {
+    let live = false;
+    try {
+      const res = await fetch("/api/state", { credentials: "same-origin" });
+      if (res.ok) {
+        const data = await res.json();
+        live = data?.stream?.phase === "LIVE";
+      }
+    } catch (err) { /* keep last known mode on a transient fetch failure */ return; }
+    if (live === lastLive) return;
+    lastLive = live;
+    try {
+      rfb.qualityLevel = live ? LIVE_QUALITY : normalQuality;
+      rfb.compressionLevel = live ? LIVE_COMPRESSION : 2;
+    } catch (err) { /* rfb already torn down */ }
+  };
+  tick();
+  const timer = setInterval(tick, 5000);
+  return () => clearInterval(timer);
+}
+
 export function promptText(message) {
   return new Promise((resolve) => {
     const backdrop = document.createElement("div");
@@ -101,11 +134,14 @@ export function connectVnc(target, { onDisconnect, onConnect, onStatus, getPassw
     // infinite auto-reconnect loop hammering the same bad password).
     if (onStatus) onStatus("securityfailure", reason);
   });
+  let stopBandwidthWatch = null;
   rfb.addEventListener("connect", () => {
     if (onStatus) onStatus("connected", "Connected");
     if (onConnect) onConnect();
+    stopBandwidthWatch = watchLiveBandwidth(rfb, qualityLevel !== undefined ? qualityLevel : 6);
   });
   rfb.addEventListener("disconnect", (e) => {
+    if (stopBandwidthWatch) { stopBandwidthWatch(); stopBandwidthWatch = null; }
     const clean = e.detail && e.detail.clean;
     if (!clean && typeof toast === "function") toast("VNC disconnected unexpectedly", "err");
     if (onStatus) onStatus("disconnected", clean ? "Disconnected" : "Connection lost unexpectedly", clean);

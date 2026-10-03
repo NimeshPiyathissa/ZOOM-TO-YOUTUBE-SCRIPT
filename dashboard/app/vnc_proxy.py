@@ -227,10 +227,23 @@ async def proxy(websocket: WebSocket) -> None:
                     else:
                         await websocket.send_text(message)
 
-            tasks = [asyncio.create_task(client_to_upstream()), asyncio.create_task(upstream_to_client())]
+            pump_sides = {"client_to_upstream": "browser", "upstream_to_client": "x11vnc/websockify"}
+            tasks = {
+                asyncio.create_task(client_to_upstream(), name="client_to_upstream"): "client_to_upstream",
+                asyncio.create_task(upstream_to_client(), name="upstream_to_client"): "upstream_to_client",
+            }
             done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
             for t in pending:
                 t.cancel()
+            # Which side ended the session, and why - distinguishing a
+            # browser-side drop from an x11vnc/websockify-side drop turns
+            # "VNC disconnected unexpectedly" from a dead end into something
+            # traceable on the Logs page.
+            for t in done:
+                exc = t.exception() if not t.cancelled() else None
+                if exc is not None:
+                    side = pump_sides.get(tasks.get(t), "unknown")
+                    log.warning("vnc proxy %s side ended: %r", side, exc)
     except Exception:
         # Never silent: a broken bridge used to look identical to a user
         # closing the page (incident 2026-09-19, "VNC disconnected

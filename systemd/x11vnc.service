@@ -10,7 +10,11 @@ StartLimitBurst=5
 Type=simple
 Environment=DISPLAY=:99
 Nice=10
-CPUWeight=20
+# Bumped from 20: gives x11vnc more of a look-in against ffmpeg-stream's
+# CPUWeight=800 while live, so screen polling/serving stays responsive
+# instead of visibly lagging under encoder load. Still far below the
+# encoder's share - this is headroom, not parity.
+CPUWeight=60
 ExecStart=%h/zoom-stream/scripts/start-vnc.sh
 Restart=on-failure
 RestartSec=5

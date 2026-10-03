@@ -370,24 +370,38 @@ def _truncate_url(url: str, head: int = 40, tail: int = 12) -> str:
     return f"{url[:head]}…{url[-tail:]}"
 
 
+async def _unit_show_safe(unit: str) -> dict:
+    try:
+        return await run_in_threadpool(control.unit_show, unit)
+    except control.ControlError as exc:
+        return {
+            "unit": unit, "active_state": "unknown", "sub_state": "",
+            "phase": control.PHASE_STOPPED, "main_pid": 0, "error": str(exc),
+        }
+
+
 @app.get("/api/state")
 async def api_state(request: Request):
     deps.require_session_api(request)
-    units = []
+    # This is the most-polled endpoint in the app (every open page, every 2s -
+    # see static/js/studio.js's statePollTimer) and this process also serves
+    # /vnc/ws (app/vnc_proxy.py) on the same single-threaded event loop.
+    # unit_show() shells out (sudo -u zoombot systemctl --user show ...) -
+    # real fork/exec/PAM/D-Bus latency that stretches under the CPU
+    # contention ffmpeg-stream's encoder creates at go-live. Looping these
+    # calls synchronously here (as this used to) blocked the event loop for
+    # the whole loop's duration on every poll, which is what starved the VNC
+    # proxy's byte-pump/ping-pong and produced the "Reconnecting ->
+    # disconnected" bug exactly when the stream started. Fetching them
+    # concurrently via run_in_threadpool keeps the loop free regardless of
+    # how slow an individual subprocess call gets.
+    units = await asyncio.gather(*(_unit_show_safe(unit) for unit in config.VISIBLE_UNITS))
     stream_show = None
-    for unit in config.VISIBLE_UNITS:
-        try:
-            show = control.unit_show(unit)
-        except control.ControlError as exc:
-            show = {
-                "unit": unit, "active_state": "unknown", "sub_state": "",
-                "phase": control.PHASE_STOPPED, "main_pid": 0, "error": str(exc),
-            }
-        units.append(show)
+    for show in units:
         # Fetched exactly once, reused for both the hero/top-badge summary
         # below and this same unit's row in `units` - see control.py's
         # module note on the disagreement bug this fixes.
-        if unit == "ffmpeg-stream":
+        if show["unit"] == "ffmpeg-stream":
             stream_show = show
 
     active_source = sources_mod.get_active_source()

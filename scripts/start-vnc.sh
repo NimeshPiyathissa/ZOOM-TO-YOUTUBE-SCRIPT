@@ -17,6 +17,7 @@ exec /usr/bin/x11vnc \
   -localhost \
   -rfbauth "$PASSWD_FILE" \
   -forever -shared \
+  -xrandr \
   -wait 100 \
   -desktop "zoom-stream-bot" \
   -quiet

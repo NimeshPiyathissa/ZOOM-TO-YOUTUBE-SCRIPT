@@ -9,7 +9,16 @@ Group=dashboard
 WorkingDirectory=/home/dashboard/app
 Environment=PYTHONUNBUFFERED=1
 ExecStart=/home/dashboard/venv/bin/uvicorn app.main:app \
-  --host 127.0.0.1 --port 8000 --workers 1
+  --host 127.0.0.1 --port 8000 --workers 1 \
+  --ws-ping-interval 20 --ws-ping-timeout 60
+# ws-ping-timeout raised from uvicorn's 20s default to 60s: the
+# browser-facing /vnc/ws hop (app/vnc_proxy.py) shares this single
+# event loop with the rest of the app, and a brief stall elsewhere
+# (see app/main.py's api_state fix) could otherwise still miss a pong
+# and drop a Remote GUI session that was never actually dead. Not
+# disabled outright (unlike the proxy's own upstream hop to websockify,
+# which is loopback-only) - this hop crosses the real internet and
+# still needs to detect a genuinely dead client.
 # Bound to localhost only - Caddy (systemd unit "caddy") terminates TLS
 # for https://<your-domain> and reverse-proxies to 127.0.0.1:8000 (see
 # dashboard/Caddyfile.example / docs/remote-access.md). No
