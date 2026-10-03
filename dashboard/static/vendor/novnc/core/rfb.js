@@ -7,6 +7,17 @@
  *
  */
 
+// LOCAL PATCH (2026-10-03, zoom-to-yt dashboard): the 'disconnect' event
+// below only ever exposed `clean`, which this app's vnc_proxy.py cannot
+// make trustworthy for a server-initiated close (see vnc.js's header
+// comment on `_rfbCleanDisconnect`) - the app needs the real WebSocket
+// close code/reason to tell "upstream lost, retry" apart from "auth
+// failed, stop retrying", and noVNC has no public API that exposes
+// either. _socketClose() now stashes `e.code`/`e.reason` and
+// _updateConnectionState()'s 'disconnected' case forwards them in the
+// dispatched event's `detail`. Search this file for "LOCAL PATCH" to find
+// both call sites if noVNC is ever upgraded in place.
+
 import { toUnsigned32bit, toSigned32bit } from './util/int.js';
 import * as Log from './util/logging.js';
 import { encodeUTF8, decodeUTF8 } from './util/strings.js';
@@ -647,6 +658,10 @@ export default class RFB extends EventTargetMixin {
 
     _socketClose(e) {
         Log.Debug("WebSocket on-close event");
+        // LOCAL PATCH (2026-10-03): stashed for _updateConnectionState()'s
+        // 'disconnected' case to forward to the app - see the file header.
+        this._rfbCloseCode = e.code;
+        this._rfbCloseReason = e.reason;
         let msg = "";
         if (e.code) {
             msg = "(code: " + e.code;
@@ -917,9 +932,13 @@ export default class RFB extends EventTargetMixin {
                 break;
 
             case 'disconnected':
+                // LOCAL PATCH (2026-10-03): code/reason added - see the
+                // file header.
                 this.dispatchEvent(new CustomEvent(
                     "disconnect", { detail:
-                                    { clean: this._rfbCleanDisconnect } }));
+                                    { clean: this._rfbCleanDisconnect,
+                                      code: this._rfbCloseCode,
+                                      reason: this._rfbCloseReason } }));
                 break;
         }
     }

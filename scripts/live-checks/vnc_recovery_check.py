@@ -88,4 +88,16 @@ async def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(asyncio.run(main()))
+    # Exit codes: 0 = ended Connected, 1 = ran fine but did NOT end
+    # Connected (a real observed failure - what this script exists to
+    # catch), 2 = missing env vars, 3 = the script itself crashed
+    # (Playwright/network error etc.) before it could finish watching -
+    # distinct from 1 so "the test failed" and "the test didn't run"
+    # don't get read as the same thing.
+    try:
+        raise SystemExit(asyncio.run(main()))
+    except SystemExit:
+        raise
+    except Exception as exc:
+        print(f"CRASHED: {exc!r}", file=sys.stderr)
+        raise SystemExit(3)

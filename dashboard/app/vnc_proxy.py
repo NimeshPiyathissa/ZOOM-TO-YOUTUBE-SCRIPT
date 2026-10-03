@@ -42,6 +42,16 @@ RFB_VERSION = b"RFB 003.008\n"
 SEC_NONE = 1
 SEC_VNC_AUTH = 2
 
+# Close codes the browser side (vnc.js/interact.js) reads to decide whether
+# to auto-reconnect, since noVNC's own `clean` flag can't be trusted for
+# this (see vnc.js's header comment). CLOSE_AUTH_FAILED is the only one
+# that must NOT trigger a retry loop - everything else is a transient
+# server-side condition the client should back off and retry through.
+CLOSE_AUTH_FAILED = 4003       # VNC auth/session translation failed
+CLOSE_UPSTREAM_LOST = 4010     # x11vnc/websockify connection dropped mid-session
+CLOSE_SERVER_SHUTDOWN = 1012   # dashboard.service stopping/restarting
+CLOSE_INTERNAL_ERROR = 1011    # unexpected proxy-side error
+
 
 class _WSByteReader:
     """Reads an exact number of bytes off a websocket, buffering across
@@ -165,6 +175,10 @@ async def proxy(websocket: WebSocket) -> None:
     subprotocol = "binary" if "binary" in offered else (offered[0] if offered else None)
     await websocket.accept(subprotocol=subprotocol)
     await _session_opened()
+    # Set by whichever branch below ends the session, read by the single
+    # websocket.close() in `finally` - see the CLOSE_* constants' header
+    # comment for why the code matters to the client.
+    close_code, close_reason = CLOSE_INTERNAL_ERROR, "proxy session ended"
     try:
         # ping_interval/ping_timeout default to 20s each in the `websockets`
         # library. This hop is loopback-only (127.0.0.1) with essentially
@@ -198,7 +212,7 @@ async def proxy(websocket: WebSocket) -> None:
                 await _authenticate_downstream(websocket, client_reader)
             except (AuthError, asyncio.TimeoutError) as exc:
                 log.warning("VNC auth translation failed: %s", exc)
-                await websocket.close(code=1011)
+                close_code, close_reason = CLOSE_AUTH_FAILED, "vnc auth failed"
                 return
             # Any browser bytes already buffered past the handshake
             # (ClientInit and beyond) go upstream before the pump starts.
@@ -238,20 +252,44 @@ async def proxy(websocket: WebSocket) -> None:
             # Which side ended the session, and why - distinguishing a
             # browser-side drop from an x11vnc/websockify-side drop turns
             # "VNC disconnected unexpectedly" from a dead end into something
-            # traceable on the Logs page.
+            # traceable on the Logs page, and also picks the close code the
+            # client uses to decide whether to retry. Keyed on which task
+            # is in `done` (upstream_to_client ending = the upstream went
+            # away), not on whether it raised - a server-side SIGTERM
+            # (e.g. `systemctl restart x11vnc`) closes the TCP connection
+            # cleanly, so websockify's side ends with no exception at all,
+            # not just the ConnectionClosedError a hard kill produces.
+            upstream_lost = False
             for t in done:
+                side = pump_sides.get(tasks.get(t), "unknown")
                 exc = t.exception() if not t.cancelled() else None
                 if exc is not None:
-                    side = pump_sides.get(tasks.get(t), "unknown")
                     log.warning("vnc proxy %s side ended: %r", side, exc)
+                elif tasks.get(t) == "upstream_to_client":
+                    log.info("vnc proxy %s side ended cleanly", side)
+                if tasks.get(t) == "upstream_to_client":
+                    upstream_lost = True
+            close_code, close_reason = (
+                (CLOSE_UPSTREAM_LOST, "upstream vnc connection lost") if upstream_lost
+                else (1000, "session ended")
+            )
+    except asyncio.CancelledError:
+        close_code, close_reason = CLOSE_SERVER_SHUTDOWN, "server shutting down"
+        raise
     except Exception:
         # Never silent: a broken bridge used to look identical to a user
         # closing the page (incident 2026-09-19, "VNC disconnected
         # unexpectedly" with nothing in any log).
         log.exception("vnc proxy session ended with an error")
+        close_code, close_reason = CLOSE_INTERNAL_ERROR, "internal proxy error"
     finally:
-        await _session_closed()
+        # Close the browser side FIRST, before the potentially slow
+        # rate-reset below - _session_closed() shells out to
+        # set-vnc-rate.sh (up to a 10s subprocess timeout), and running it
+        # ahead of the close used to leave the badge on "Connected" for
+        # however long that call took after x11vnc had already died.
         try:
-            await websocket.close()
+            await websocket.close(code=close_code, reason=close_reason)
         except Exception:
             pass
+        await _session_closed()

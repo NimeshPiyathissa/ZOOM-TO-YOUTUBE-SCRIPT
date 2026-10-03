@@ -2,9 +2,13 @@
 // global remote-desktop overlay (base.js), the Accounts sign-in flow
 // (accounts.js) and the interactive preview on /remote (interact.js).
 // Connects through this dashboard's own authenticated /vnc/ws proxy.
-// noVNC is vendored under /static/vendor/novnc (1.4.0, unmodified) so the
-// admin panel loads no third-party script origin at all - the CSP is
-// script-src 'self' only.
+// noVNC is vendored under /static/vendor/novnc (1.4.0) so the admin panel
+// loads no third-party script origin at all - the CSP is script-src
+// 'self' only. One local patch to core/rfb.js (search it for "LOCAL
+// PATCH"): the 'disconnect' event's `detail` also carries the real
+// WebSocket close code/reason now, since `clean` alone can't tell a
+// caller "upstream lost, retry" apart from "auth failed, stop" - see
+// vnc.js's header comment.
 //
 // No VNC password is asked of the viewer: the /vnc/ws proxy authenticates
 // to x11vnc server-side (app/vnc_proxy.py + app/vncauth.py) and offers the
@@ -22,6 +26,13 @@ import RFB from '/static/vendor/novnc/core/rfb.js';
 export function reconnectDelayMs(attempt, { baseMs = 1000, maxMs = 20000 } = {}) {
   return Math.min(baseMs * 2 ** Math.max(0, attempt - 1), maxMs);
 }
+
+// Mirrors vnc_proxy.py's CLOSE_AUTH_FAILED - the one server-initiated
+// close code that must NOT trigger a reconnect loop, since it means the
+// stored VNC password is wrong/misconfigured and every retry would fail
+// the exact same way. Every other close (upstream lost, server
+// restarting, internal error) is transient and should retry.
+export const CLOSE_AUTH_FAILED = 4003;
 
 // Reduce this VNC session's own bandwidth/CPU footprint while
 // ffmpeg-stream is actually live, so the preview can't compete with the
@@ -95,10 +106,11 @@ export function promptText(message) {
  *  path: WebSocket endpoint path (default "/vnc/ws").
  *  scaleViewport: boolean (default true).
  *  qualityLevel / showDotCursor: optional passthroughs to the RFB instance.
- *  onStatus(state, message): optional - the single place every caller gets
- *  told what's happening ("connecting", "connected", "disconnected" with a
- *  `clean` third arg, or "securityfailure"), so a caller that wants a
- *  status overlay (the
+ *  onStatus(state, message, clean, code, reason): optional - the single
+ *  place every caller gets told what's happening ("connecting",
+ *  "connected", "disconnected" with the WebSocket's real close `code`/
+ *  `reason` alongside noVNC's `clean` flag, or "securityfailure"), so a
+ *  caller that wants a status overlay (the
  *  Remote GUI page, the Accounts sign-in panel) can drive it from one
  *  source instead of re-deriving it from raw RFB events - this is what
  *  replaced vnc.js's own parallel copy of this event wiring (see its
@@ -143,9 +155,11 @@ export function connectVnc(target, { onDisconnect, onConnect, onStatus, getPassw
   rfb.addEventListener("disconnect", (e) => {
     if (stopBandwidthWatch) { stopBandwidthWatch(); stopBandwidthWatch = null; }
     const clean = e.detail && e.detail.clean;
+    const code = e.detail && e.detail.code;
+    const reason = e.detail && e.detail.reason;
     if (!clean && typeof toast === "function") toast("VNC disconnected unexpectedly", "err");
-    if (onStatus) onStatus("disconnected", clean ? "Disconnected" : "Connection lost unexpectedly", clean);
-    if (onDisconnect) onDisconnect(clean);
+    if (onStatus) onStatus("disconnected", clean ? "Disconnected" : "Connection lost unexpectedly", clean, code, reason);
+    if (onDisconnect) onDisconnect(clean, code, reason);
   });
   return rfb;
 }

@@ -24,7 +24,7 @@
 // confirmation when the stream is LIVE, auto-off when the tab is hidden.
 // The x11vnc poll rate is raised by the server only while a VNC session
 // exists (app/vnc_proxy.py), so a dead page can never leave it fast.
-import { connectVnc, promptText, reconnectDelayMs } from '/static/js/vnc-embed.js';
+import { connectVnc, promptText, reconnectDelayMs, CLOSE_AUTH_FAILED } from '/static/js/vnc-embed.js';
 
 const $ = (id) => document.getElementById(id);
 const box = $("panel-preview"), viewport = $("rd-viewport"), stage = $("rd-stage"), img = $("preview-img");
@@ -226,19 +226,28 @@ function connectInteract() {
   try {
     const rfb = connectVnc(stage, {
       getPassword,
-      onDisconnect: (clean) => {
+      onDisconnect: (clean, code) => {
         if (!state.active) return;   // turnOff() already cleaned up - not a real drop
         state.connected = false;
-        // Deliberately NOT branching on `clean` here - see vnc.js's
-        // onStatus handler for why: noVNC only reports a disconnect as
-        // unclean from inside its own _fail(), which exclusively fires
+        if (code === CLOSE_AUTH_FAILED) {
+          // Stored VNC password rejected by x11vnc - every retry would
+          // fail identically, so turn Interact off instead of looping.
+          turnOff("authentication failed");
+          return;
+        }
+        // Deliberately NOT branching on noVNC's `clean` flag here - see
+        // vnc.js's onStatus handler for why: it only reports a disconnect
+        // as unclean from inside its own _fail(), which exclusively fires
         // during the handshake/connecting phase. A server closing an
         // already-connected session (x11vnc restarting, the proxy losing
         // its upstream) always reports clean=true regardless of the real
         // close code, which made a mid-session server-side drop turn off
         // Interact and fall back to the passive preview silently instead
-        // of retrying. `state.active` above is already the reliable
-        // signal for every case where turning Interact off was on purpose.
+        // of retrying. `code` (vnc_proxy.py's CLOSE_* constants, forwarded
+        // by noVNC's local patch - see vnc-embed.js) is the trustworthy
+        // signal for the one case above that must not retry;
+        // `state.active` is the signal for every case where turning
+        // Interact off was on purpose.
         // Unexpected drop while still meant to be on: keep Interact "on"
         // visually and retry with backoff instead of silently falling back
         // to the passive preview - this used to require the operator to

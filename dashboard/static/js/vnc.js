@@ -4,7 +4,7 @@
 // Interact overlay and the global quick-peek overlay) - this file only owns the
 // page-level behaviour on top: the status overlay, auto-reconnect loop, fullscreen
 // toggle and quick actions.
-import { connectVnc, promptText, reconnectDelayMs } from '/static/js/vnc-embed.js';
+import { connectVnc, promptText, reconnectDelayMs, CLOSE_AUTH_FAILED } from '/static/js/vnc-embed.js';
 
 const $ = (id) => document.getElementById(id);
 const target = $("vnc-screen");
@@ -121,7 +121,7 @@ function connect() {
         vncPassword = pass;
         return pass;
       },
-      onStatus: (state, message, clean) => {
+      onStatus: (state, message, clean, code) => {
         if (myConnectionId !== connectionId) {
           // Stale event from an RFB instance connect() has since replaced
           // (see connectionId's header comment) - this is not the active
@@ -167,18 +167,28 @@ function connect() {
           // the generic disconnect message that immediately follows it.
           return;
         }
-        // Deliberately NOT branching on `clean` here. noVNC only ever
-        // marks a disconnect unclean (_rfbCleanDisconnect = false) from
-        // inside its own _fail(), which exclusively fires during the
+        if (code === CLOSE_AUTH_FAILED) {
+          // vnc_proxy.py couldn't authenticate to x11vnc with the stored
+          // password - every retry would fail identically, so this is
+          // terminal like securityfailure above, not a transient drop.
+          // Setting intentionalDisconnect also keeps visibilitychange's
+          // auto-reconnect from hammering the same bad password later.
+          intentionalDisconnect = true;
+          setStatus("disconnected", "VNC authentication failed", "The stored VNC password was rejected. Check Configuration.");
+          return;
+        }
+        // Deliberately NOT branching on noVNC's `clean` flag here. It
+        // only ever reports unclean (_rfbCleanDisconnect = false) from
+        // inside noVNC's own _fail(), which exclusively fires during the
         // handshake/connecting phase - a server closing an already-
         // CONNECTED session (x11vnc restarting, the proxy losing its
         // upstream) goes through _socketClose()'s plain 'connected' case
         // instead, which always reports clean=true regardless of the
-        // real WebSocket close code or reason. Trusting that flag here
-        // meant a mid-session server-side drop (e.g. "restart x11vnc")
-        // was read as an intentional disconnect and silently gave up
-        // instead of retrying - intentionalDisconnect above is already
-        // the reliable signal for every case where *we* chose to stop.
+        // real WebSocket close code or reason. The close `code` above
+        // (from vnc_proxy.py's CLOSE_* constants, forwarded by noVNC's
+        // local patch - see vnc-embed.js) is the trustworthy signal for
+        // the one case that must not retry; intentionalDisconnect is the
+        // signal for every case where *we* chose to stop.
         //
         // Auto-reconnect with backoff (1s, 2s, 4s... capped at 20s) -
         // retries forever rather than giving up, but doesn't hammer the
