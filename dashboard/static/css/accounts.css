@@ -32,7 +32,7 @@
    badge colour for the small icon/text pairing only, not the whole
    card, so a red/amber card border never competes with the one genuine
    "good to go" signal on the page. */
-.account-card[data-state="verified"] { border-color: rgba(52, 211, 153, 0.35); }
+.account-card[data-state="verified"] { border-color: color-mix(in srgb, var(--success) 35%, transparent); }
 
 .account-card-main { display: flex; flex-direction: column; gap: var(--space-1); }
 .account-card-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; }

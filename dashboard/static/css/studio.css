@@ -57,8 +57,8 @@
   width: 40px;
   height: 40px;
   border-radius: var(--radius-md);
-  background: rgba(220, 38, 38, 0.15);
-  color: #ef4444;
+  background: var(--live-tint);
+  color: var(--live);
   flex-shrink: 0;
 }
 
@@ -83,7 +83,7 @@
   padding: 6px 14px;
   border-radius: var(--radius-full);
   border: 1px solid var(--border);
-  background: var(--gray-0);
+  background: var(--bg);
   transition: all var(--duration-base) var(--ease-out);
 }
 
@@ -121,48 +121,48 @@
 
 /* Tally State: OFF-AIR (Matte Gray) */
 .studio-tally-strip[data-state="off-air"] {
-  background: #181b22;
-  border-color: #2e3540;
+  background: var(--bg-hover);
+  border-color: var(--border-strong);
 }
 .studio-tally-strip[data-state="off-air"] .tally-dot {
-  background: #64748b;
+  background: var(--text-faint);
 }
 .studio-tally-strip[data-state="off-air"] .tally-label {
-  color: #94a3b8;
+  color: var(--text-dim);
 }
 
 /* Tally State: STARTING (Pulsing Amber) */
 .studio-tally-strip[data-state="starting"] {
-  background: rgba(251, 191, 36, 0.12);
-  border-color: rgba(251, 191, 36, 0.4);
-  box-shadow: 0 0 12px rgba(251, 191, 36, 0.2);
+  background: var(--warning-tint);
+  border-color: var(--warning);
+  box-shadow: 0 0 12px var(--warning-tint);
 }
 .studio-tally-strip[data-state="starting"] .tally-dot {
-  background: #fbbf24;
-  box-shadow: 0 0 8px #fbbf24;
+  background: var(--warning);
+  box-shadow: 0 0 8px var(--warning-tint);
   animation: tally-pulse 1.2s infinite ease-in-out;
 }
 .studio-tally-strip[data-state="starting"] .tally-label {
-  color: #fbbf24;
+  color: var(--warning);
 }
 
 /* Tally State: ON-AIR (Illuminated Studio Red) */
 .studio-tally-strip[data-state="on-air"] {
-  background: rgba(220, 38, 38, 0.18);
-  border-color: rgba(239, 68, 68, 0.6);
-  box-shadow: 0 0 16px 2px rgba(220, 38, 38, 0.4);
+  background: var(--live-tint);
+  border-color: var(--live);
+  box-shadow: 0 0 16px 2px var(--live-tint);
 }
 .studio-tally-strip[data-state="on-air"] .tally-dot {
-  background: #ef4444;
-  box-shadow: 0 0 10px #ef4444;
+  background: var(--live);
+  box-shadow: 0 0 10px var(--live-tint);
   animation: tally-pulse 1s infinite ease-in-out;
 }
 .studio-tally-strip[data-state="on-air"] .tally-label {
-  color: #fca5a5;
+  color: var(--live);
 }
 .studio-tally-strip[data-state="on-air"] .tally-timecode {
-  color: #ffffff;
-  border-color: rgba(239, 68, 68, 0.4);
+  color: var(--text);
+  border-color: var(--live);
 }
 
 @keyframes tally-pulse {
@@ -195,27 +195,27 @@
 
 /* GO LIVE appearance */
 .btn-studio-action[data-action="go-live"] {
-  background: linear-gradient(180deg, #10b981, #059669);
-  color: #ffffff;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  box-shadow: 0 2px 10px rgba(16, 185, 129, 0.35);
+  background: var(--success);
+  color: var(--text-on-accent);
+  border: 1px solid var(--success);
+  box-shadow: 0 2px 10px var(--success-tint);
 }
 .btn-studio-action[data-action="go-live"]:hover {
-  background: linear-gradient(180deg, #34d399, #10b981);
-  box-shadow: 0 4px 16px rgba(16, 185, 129, 0.5);
+  background: color-mix(in srgb, var(--success) 85%, white 15%);
+  box-shadow: 0 4px 16px var(--success-tint);
   transform: translateY(-1px);
 }
 
 /* END STREAM appearance */
 .btn-studio-action[data-action="stop"] {
-  background: linear-gradient(180deg, #ef4444, #dc2626);
-  color: #ffffff;
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  box-shadow: 0 2px 12px rgba(220, 38, 38, 0.45);
+  background: var(--live);
+  color: var(--text-on-accent);
+  border: 1px solid var(--live);
+  box-shadow: 0 2px 12px var(--live-tint);
 }
 .btn-studio-action[data-action="stop"]:hover {
-  background: linear-gradient(180deg, #f87171, #ef4444);
-  box-shadow: 0 4px 18px rgba(220, 38, 38, 0.6);
+  background: color-mix(in srgb, var(--live) 85%, white 15%);
+  box-shadow: 0 4px 18px var(--live-tint);
   transform: translateY(-1px);
 }
 
@@ -237,7 +237,7 @@
 
 .telemetry-tile {
   padding: var(--space-3) var(--space-4);
-  background: var(--gray-0);
+  background: var(--bg);
   border: 1px solid var(--rm-edge);
   border-radius: var(--radius-md);
   display: flex;
@@ -259,9 +259,9 @@
   opacity: 0.5;
 }
 
-.telemetry-tile.is-healthy::before { background: #10b981; }
-.telemetry-tile.is-warn::before { background: #f59e0b; }
-.telemetry-tile.is-bad::before { background: #ef4444; }
+.telemetry-tile.is-healthy::before { background: var(--success); }
+.telemetry-tile.is-warn::before { background: var(--warning); }
+.telemetry-tile.is-bad::before { background: var(--live); }
 
 .telem-main {
   display: flex;
@@ -303,7 +303,7 @@
   justify-content: center;
   gap: var(--space-3);
   padding: var(--space-3) var(--space-4);
-  background: var(--gray-0);
+  background: var(--bg);
   border: 1px solid var(--rm-edge);
   border-radius: var(--radius-md);
 }
@@ -339,7 +339,7 @@
   flex-direction: column;
   gap: 3px;
   padding: 4px;
-  background: #0d1015;
+  background: var(--rm-ink, #0d1015);
   border-radius: var(--radius-sm);
   border: 1px solid rgba(255, 255, 255, 0.04);
 }
@@ -362,21 +362,21 @@
 
 /* LED Lit States */
 .led-bar.led-green.is-lit {
-  background: #10b981;
-  border-color: #34d399;
-  box-shadow: 0 0 6px rgba(16, 185, 129, 0.65);
+  background: var(--success);
+  border-color: var(--success);
+  box-shadow: 0 0 6px var(--success-tint);
 }
 
 .led-bar.led-amber.is-lit {
-  background: #f59e0b;
-  border-color: #fbbf24;
-  box-shadow: 0 0 7px rgba(245, 158, 11, 0.75);
+  background: var(--warning);
+  border-color: var(--warning);
+  box-shadow: 0 0 7px var(--warning-tint);
 }
 
 .led-bar.led-red.is-lit {
-  background: #ef4444;
-  border-color: #f87171;
-  box-shadow: 0 0 10px 1px rgba(239, 68, 68, 0.9);
+  background: var(--live);
+  border-color: var(--live);
+  box-shadow: 0 0 10px 1px var(--live-tint);
 }
 
 /* Scale Column in the Center */
@@ -396,9 +396,9 @@
   line-height: 15px;
   color: var(--text-faint);
 }
-.scale-mark.mark-clip { color: #f87171; font-weight: var(--weight-semibold); }
-.scale-mark.mark-amber { color: #fbbf24; }
-.scale-mark.mark-green { color: #34d399; }
+.scale-mark.mark-clip { color: var(--live); font-weight: var(--weight-semibold); }
+.scale-mark.mark-amber { color: var(--warning); }
+.scale-mark.mark-green { color: var(--success); }
 
 .audio-meta-row {
   display: flex;
@@ -466,14 +466,14 @@
 }
 
 .source-status-badge.source-zoom {
-  background: rgba(34, 211, 238, 0.14);
-  border-color: rgba(34, 211, 238, 0.4);
+  background: var(--accent-tint);
+  border-color: var(--accent-ring);
   color: var(--accent);
 }
 
 .source-status-badge.source-web {
-  background: rgba(251, 191, 36, 0.14);
-  border-color: rgba(251, 191, 36, 0.4);
+  background: var(--warning-tint);
+  border-color: var(--warning);
   color: var(--warning);
 }
 
@@ -583,7 +583,7 @@
 .chat-drawer-frame-wrap {
   flex: 1;
   position: relative;
-  background: #0f0f0f;
+  background: var(--canvas-black);
   display: flex;
   flex-direction: column;
 }
@@ -660,8 +660,8 @@
   width: 44px;
   height: 44px;
   border-radius: 50%;
-  background: rgba(251, 191, 36, 0.15);
-  color: #fbbf24;
+  background: var(--warning-tint);
+  color: var(--warning);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -669,13 +669,13 @@
 }
 
 .studio-modal-icon.icon-danger {
-  background: rgba(220, 38, 38, 0.18);
-  color: #ef4444;
+  background: var(--live-tint);
+  color: var(--live);
 }
 
 .studio-modal-icon.icon-go-live {
-  background: rgba(16, 185, 129, 0.18);
-  color: #10b981;
+  background: var(--success-tint);
+  color: var(--success);
 }
 
 .studio-modal-icon .icon {

@@ -24,8 +24,10 @@
   margin: 0 auto;
 }
 
+/* White is the only light-background theme - Black and Default are both
+   dark, so they just use the base (dark) values above unchanged. */
 @media (prefers-color-scheme: light) {
-  :root:not([data-theme="dark"]) .rack-grid {
+  :root:not([data-theme]) .rack-grid {
     --rm-ink: #0f1216;
     --rm-edge: rgba(16, 19, 24, 0.08);
     --rm-edge-strong: rgba(16, 19, 24, 0.14);
@@ -35,7 +37,7 @@
     --rm-glow-live: 0 0 14px 1px rgba(220, 38, 38, 0.45);
   }
 }
-:root[data-theme="light"] .rack-grid {
+:root[data-theme="white"] .rack-grid {
   --rm-ink: #0f1216;
   --rm-edge: rgba(16, 19, 24, 0.08);
   --rm-edge-strong: rgba(16, 19, 24, 0.14);
@@ -81,7 +83,7 @@ h3.rack-title, h3.remote-section-title { margin-top: var(--space-6); }
 .readout { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; letter-spacing: 0.02em; }
 
 /* Glass chip for anything sitting on black */
-.chip-glass { background: rgba(0, 0, 0, 0.5); color: #fff; border: 1px solid rgba(255, 255, 255, 0.18); backdrop-filter: blur(6px); }
+.chip-glass { background: rgba(0, 0, 0, 0.5); color: var(--text-on-accent); border: 1px solid rgba(255, 255, 255, 0.18); backdrop-filter: blur(6px); }
 
 /* No horizontal scroll on rack pages; value updates never reflow. */
 body:has(.rack-grid) { overflow-x: hidden; }

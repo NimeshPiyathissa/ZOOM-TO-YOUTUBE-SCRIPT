@@ -1,5 +1,15 @@
 /* ==========================================================================
    OBS-Style Text Overlay Studio Stylesheet
+
+   The 16:9 canvas stage (.canvas-stage-wrapper/.canvas-stage-16-9/grid
+   lines/safe area) simulates the actual broadcast frame, so - like the
+   VNC frame (base.css) - it stays a fixed dark canvas in every theme,
+   not themed chrome. Everything else (status badges, the font picker,
+   sliders, buttons) now reads the real tokens.css variables instead of
+   the standalone --color-* fallback palette this file used to carry
+   (those variables were never defined anywhere, so the hardcoded
+   fallback hex was always what rendered - this page ignored the site
+   theme entirely until now).
    ========================================================================== */
 
 .overlay-container {
@@ -40,8 +50,8 @@
   width: 42px;
   height: 42px;
   border-radius: 10px;
-  background: var(--color-primary-dim, rgba(59, 130, 246, 0.15));
-  color: var(--color-primary, #3b82f6);
+  background: var(--accent-tint);
+  color: var(--accent);
 }
 
 .overlay-title {
@@ -61,29 +71,29 @@
   font-weight: 700;
   letter-spacing: 0.05em;
   text-transform: uppercase;
-  background: var(--color-surface-sunken, #1e293b);
-  border: 1px solid var(--color-border, #334155);
+  background: var(--bg);
+  border: 1px solid var(--border);
 }
 
 .overlay-status-badge[data-visible="true"] {
-  background: rgba(34, 197, 94, 0.15);
-  border-color: rgba(34, 197, 94, 0.4);
-  color: #4ade80;
+  background: var(--success-tint);
+  border-color: var(--success);
+  color: var(--success);
 }
 
 .overlay-status-badge[data-visible="true"] .status-dot {
-  background: #22c55e;
-  box-shadow: 0 0 10px #22c55e;
+  background: var(--success);
+  box-shadow: 0 0 10px var(--success-tint);
 }
 
 .overlay-status-badge[data-visible="false"] {
-  background: rgba(239, 68, 68, 0.15);
-  border-color: rgba(239, 68, 68, 0.4);
-  color: #f87171;
+  background: var(--live-tint);
+  border-color: var(--live);
+  color: var(--live);
 }
 
 .overlay-status-badge[data-visible="false"] .status-dot {
-  background: #ef4444;
+  background: var(--live);
 }
 
 .status-dot {
@@ -102,41 +112,41 @@
   font-weight: 700;
   letter-spacing: 0.05em;
   text-transform: uppercase;
-  background: var(--color-surface-sunken, #1e293b);
-  border: 1px solid var(--color-border, #334155);
+  background: var(--bg);
+  border: 1px solid var(--border);
   transition: all 0.2s ease-in-out;
 }
 
 .overlay-hw-badge.status-active {
-  background: rgba(34, 197, 94, 0.15);
-  border-color: rgba(34, 197, 94, 0.4);
-  color: #4ade80;
+  background: var(--success-tint);
+  border-color: var(--success);
+  color: var(--success);
 }
 
 .overlay-hw-badge.status-active .status-dot {
-  background: #22c55e;
-  box-shadow: 0 0 10px #22c55e;
+  background: var(--success);
+  box-shadow: 0 0 10px var(--success-tint);
 }
 
 .overlay-hw-badge.status-waiting {
-  background: rgba(234, 179, 8, 0.15);
-  border-color: rgba(234, 179, 8, 0.4);
-  color: #facc15;
+  background: var(--warning-tint);
+  border-color: var(--warning);
+  color: var(--warning);
 }
 
 .overlay-hw-badge.status-waiting .status-dot {
-  background: #eab308;
-  box-shadow: 0 0 10px #eab308;
+  background: var(--warning);
+  box-shadow: 0 0 10px var(--warning-tint);
 }
 
 .overlay-hw-badge.status-hidden {
-  background: rgba(148, 163, 184, 0.15);
-  border-color: rgba(148, 163, 184, 0.4);
-  color: #cbd5e1;
+  background: var(--bg-hover);
+  border-color: var(--border-strong);
+  color: var(--text-faint);
 }
 
 .overlay-hw-badge.status-hidden .status-dot {
-  background: #94a3b8;
+  background: var(--text-faint);
 }
 
 .overlay-master-actions {
@@ -166,14 +176,14 @@
   gap: 1rem;
   font-family: var(--font-mono, monospace);
   font-size: 0.85rem;
-  background: var(--color-surface-sunken, #0f172a);
+  background: var(--bg);
   padding: 0.25rem 0.75rem;
   border-radius: 6px;
-  border: 1px solid var(--color-border, #334155);
+  border: 1px solid var(--border);
 }
 
 .canvas-coords-readout strong {
-  color: var(--color-primary, #3b82f6);
+  color: var(--accent);
 }
 
 .canvas-stage-wrapper {
@@ -182,11 +192,13 @@
   margin: 0 auto;
   border-radius: 8px;
   overflow: hidden;
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
-  border: 1px solid var(--color-border, #334155);
-  background: #000;
+  box-shadow: var(--shadow-lg);
+  border: 1px solid var(--border);
+  background: var(--canvas-black);
 }
 
+/* Broadcast-frame placeholder gradient - fixed, not themed (simulates
+   video content, same reasoning as the VNC canvas staying black). */
 .canvas-stage-16-9 {
   position: relative;
   width: 100%;
@@ -232,12 +244,12 @@
 
 .draggable-overlay-box:hover,
 .draggable-overlay-box:focus-visible {
-  box-shadow: 0 0 0 2px var(--color-primary, #3b82f6), 0 0 16px rgba(59, 130, 246, 0.4);
+  box-shadow: 0 0 0 2px var(--accent), 0 0 16px var(--accent-tint);
 }
 
 .draggable-overlay-box.is-dragging {
   cursor: grabbing;
-  box-shadow: 0 0 0 2px #22c55e, 0 0 20px rgba(34, 197, 94, 0.5);
+  box-shadow: 0 0 0 2px var(--success), 0 0 20px var(--success-tint);
 }
 
 .overlay-drag-handle {
@@ -247,8 +259,8 @@
   width: 24px;
   height: 24px;
   border-radius: 50%;
-  background: var(--color-primary, #3b82f6);
-  color: #fff;
+  background: var(--accent);
+  color: var(--text-on-accent);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -315,7 +327,7 @@
 .slider-readout {
   font-family: var(--font-mono, monospace);
   font-size: 0.8rem;
-  color: var(--color-text-muted, #94a3b8);
+  color: var(--text-dim);
 }
 
 .color-picker-group {
@@ -328,7 +340,7 @@
   width: 40px;
   height: 36px;
   padding: 0;
-  border: 1px solid var(--color-border, #334155);
+  border: 1px solid var(--border);
   border-radius: 6px;
   background: transparent;
   cursor: pointer;
@@ -340,10 +352,10 @@
 }
 
 .field-group-box {
-  border: 1px solid var(--color-border, #334155);
+  border: 1px solid var(--border);
   border-radius: 8px;
   padding: 0.85rem 1rem;
-  background: var(--color-surface-sunken, rgba(15, 23, 42, 0.4));
+  background: var(--bg);
 }
 
 .field-group-header {
@@ -376,10 +388,10 @@
   width: 100%;
   min-height: 48px;
   padding: 0.5rem 0.85rem;
-  background: var(--color-surface-sunken, #0f172a);
-  border: 1px solid var(--color-border, #334155);
+  background: var(--bg);
+  border: 1px solid var(--border);
   border-radius: 8px;
-  color: var(--color-text, #f8fafc);
+  color: var(--text);
   cursor: pointer;
   transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
   text-align: left;
@@ -388,9 +400,9 @@
 .font-picker-trigger:hover,
 .font-picker-trigger:focus-visible,
 .custom-font-picker.is-open .font-picker-trigger {
-  border-color: var(--color-primary, #3b82f6);
-  background: var(--color-surface, #1e293b);
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+  border-color: var(--accent);
+  background: var(--bg-elevated);
+  box-shadow: 0 0 0 3px var(--accent-tint);
   outline: none;
 }
 
@@ -405,7 +417,7 @@
 .font-trigger-name {
   font-size: 1.1rem;
   font-weight: 600;
-  color: #ffffff;
+  color: var(--text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -419,16 +431,16 @@
   border-radius: 4px;
   font-size: 0.8rem;
   font-weight: 500;
-  background: rgba(59, 130, 246, 0.15);
-  color: #60a5fa;
-  border: 1px solid rgba(59, 130, 246, 0.3);
+  background: var(--accent-tint);
+  color: var(--accent);
+  border: 1px solid var(--accent-ring);
   letter-spacing: 0.02em;
 }
 
 .font-trigger-chevron {
   display: flex;
   align-items: center;
-  color: var(--color-text-muted, #94a3b8);
+  color: var(--text-dim);
   transition: transform 0.2s ease;
   margin-left: 0.5rem;
 }
@@ -444,10 +456,10 @@
   left: 0;
   right: 0;
   z-index: 1050;
-  background: #0b132b;
-  border: 1px solid #334155;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
   border-radius: 10px;
-  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(255, 255, 255, 0.08);
+  box-shadow: var(--shadow-lg);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -475,13 +487,13 @@
   align-items: center;
   gap: 0.5rem;
   padding: 0.65rem 0.85rem;
-  background: #151e36;
-  border-bottom: 1px solid #283552;
+  background: var(--bg-hover);
+  border-bottom: 1px solid var(--border);
   position: relative;
 }
 
 .font-picker-search-box .search-icon {
-  color: #94a3b8;
+  color: var(--text-dim);
   display: flex;
   align-items: center;
 }
@@ -490,20 +502,20 @@
   flex: 1;
   background: transparent;
   border: none;
-  color: #f8fafc;
+  color: var(--text);
   font-size: 0.875rem;
   outline: none;
   width: 100%;
 }
 
 .font-picker-search-input::placeholder {
-  color: #64748b;
+  color: var(--text-faint);
 }
 
 .font-search-clear {
   background: none;
   border: none;
-  color: #94a3b8;
+  color: var(--text-dim);
   font-size: 1.25rem;
   cursor: pointer;
   padding: 0 0.25rem;
@@ -511,7 +523,7 @@
 }
 
 .font-search-clear:hover {
-  color: #f8fafc;
+  color: var(--text);
 }
 
 /* Scrollable Font List */
@@ -527,16 +539,16 @@
 }
 
 .font-picker-list::-webkit-scrollbar-track {
-  background: #0b132b;
+  background: var(--bg);
 }
 
 .font-picker-list::-webkit-scrollbar-thumb {
-  background: #334155;
+  background: var(--border-strong);
   border-radius: 3px;
 }
 
 .font-picker-list::-webkit-scrollbar-thumb:hover {
-  background: #475569;
+  background: var(--text-faint);
 }
 
 /* Category Group */
@@ -554,10 +566,10 @@
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: #94a3b8;
-  background: rgba(21, 30, 54, 0.85);
-  border-top: 1px solid rgba(51, 65, 85, 0.5);
-  border-bottom: 1px solid rgba(51, 65, 85, 0.5);
+  color: var(--text-dim);
+  background: var(--bg-elevated);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
   position: sticky;
   top: 0;
   z-index: 2;
@@ -584,13 +596,13 @@
 .font-picker-item:hover,
 .font-picker-item:focus-visible,
 .font-picker-item.is-focused {
-  background: rgba(59, 130, 246, 0.14);
-  border-left-color: var(--color-primary, #3b82f6);
+  background: var(--accent-tint);
+  border-left-color: var(--accent);
 }
 
 .font-picker-item.is-selected {
-  background: rgba(59, 130, 246, 0.22);
-  border-left-color: #60a5fa;
+  background: var(--accent-tint);
+  border-left-color: var(--accent);
 }
 
 .font-item-meta {
@@ -603,14 +615,14 @@
 
 .font-item-name {
   font-size: 1.05rem;
-  color: #f1f5f9;
+  color: var(--text);
   font-weight: 500;
   line-height: 1.25;
 }
 
 .font-item-category-tag {
   font-size: 0.68rem;
-  color: #64748b;
+  color: var(--text-faint);
 }
 
 /* Specimen Preview Badge */
@@ -620,8 +632,8 @@
   justify-content: center;
   padding: 0.25rem 0.65rem;
   border-radius: 6px;
-  background: #18223c;
-  border: 1px solid #2c3c60;
+  background: var(--bg);
+  border: 1px solid var(--border);
   min-width: 84px;
   text-align: center;
 }
@@ -629,20 +641,20 @@
 .specimen-badge {
   font-size: 1.15rem;
   line-height: 1;
-  color: #f8fafc;
+  color: var(--text);
   letter-spacing: 0.02em;
 }
 
 .specimen-sinhala {
   font-size: 1rem;
-  color: #38bdf8;
+  color: var(--accent);
 }
 
 /* Checkmark */
 .font-item-check {
   display: flex;
   align-items: center;
-  color: #60a5fa;
+  color: var(--accent);
   opacity: 0;
   width: 16px;
   flex-shrink: 0;
@@ -657,7 +669,7 @@
 .font-picker-empty {
   padding: 2rem 1rem;
   text-align: center;
-  color: #94a3b8;
+  color: var(--text-dim);
   font-size: 0.85rem;
   font-style: italic;
 }
@@ -674,8 +686,8 @@
   line-height: 1;
 }
 .wm-anchor-btn.is-active {
-  background: var(--accent, #22c55e);
-  color: #fff;
+  background: var(--accent);
+  color: var(--text-on-accent);
   border-color: transparent;
 }
 .wm-mode-btn.btn-primary {
