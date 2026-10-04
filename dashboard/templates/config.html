@@ -281,6 +281,45 @@
     </div>
   </div>
 
+  <!-- ================================================================ System -->
+  <div class="section-head mt-4">
+    <h2 class="floating-section-title" id="system">
+      {{ icon("power", "icon-sm") }}System
+    </h2>
+  </div>
+
+  <div class="card" id="system-restart-card">
+    <div class="card-header"><h3>Restart all services</h3></div>
+    <p class="hint mb-3">
+      Restarts the pipeline (display, audio, Zoom/browser source, remote desktop, encoder) in
+      dependency order, verifying each one comes back, then restarts the dashboard itself last.
+      The stream drops for the duration.
+    </p>
+    <div class="btn-row mb-3">
+      <button id="btn-restart-all" class="btn btn-primary">{{ icon("rotate-cw", "icon-sm") }}Restart all services</button>
+    </div>
+    <div id="restart-all-steps" class="step-list" hidden></div>
+  </div>
+
+  <div class="card" id="system-reboot-card">
+    <div class="card-header"><h3>Reboot server</h3></div>
+    <p class="hint mb-3">
+      Restarts the whole machine. The stream stops and the dashboard is offline for 1-2 minutes.
+      A stream is not auto-started afterward unless a schedule says so.
+    </p>
+    <div class="eyebrow mb-2">Readiness checks</div>
+    <div id="reboot-readiness" class="step-list mb-3">
+      <div class="step-row" data-status="pending">
+        <span class="step-row-icon"><span class="spinner"></span></span>
+        <div class="step-row-body"><div class="step-row-label">Checking…</div></div>
+      </div>
+    </div>
+    <div class="btn-row">
+      <button id="btn-reboot" class="btn btn-danger" disabled>{{ icon("power", "icon-sm") }}Reboot server</button>
+      <button id="btn-reboot-recheck" class="btn btn-secondary btn-sm">{{ icon("refresh-ccw-dot", "icon-sm") }}Re-check</button>
+    </div>
+  </div>
+
 </div>
 {% endblock %}
 {% block scripts %}

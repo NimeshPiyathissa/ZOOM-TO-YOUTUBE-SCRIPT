@@ -85,7 +85,7 @@ if (probeBtn) {
   };
 }
 
-document.getElementById("add-source").onclick = async (e) => {
+document.getElementById("btn-add-source")?.addEventListener("click", async (e) => {
   const name = document.getElementById("src-name").value;
   const url = srcUrl.value;
   let options = {};
@@ -102,10 +102,13 @@ document.getElementById("add-source").onclick = async (e) => {
       click_to_start: document.getElementById("src-webpage-click").checked,
     };
   } else {
+    // Mode/reconnect no longer have their own controls on this page (see
+    // the stream-key/settings note above) - sensible fixed defaults, same
+    // as this form's old DIRECT_MODE/DIRECT_RECONNECT defaults.
     options = {
-      mode: document.querySelector("#src-direct-mode-group .seg-btn.is-active")?.dataset.value || "reencode",
-      loop: document.getElementById("src-direct-loop").checked,
-      reconnect: document.getElementById("src-direct-reconnect").checked,
+      mode: "reencode",
+      loop: document.getElementById("src-direct-loop")?.checked ?? true,
+      reconnect: true,
     };
   }
   const account_id = document.getElementById("src-account").value || null;
@@ -115,7 +118,7 @@ document.getElementById("add-source").onclick = async (e) => {
       toast("Source added"); location.reload();
     } catch (err) { toast(err.message, "err"); }
   });
-};
+});
 
 document.querySelectorAll(".switch-source").forEach(btn => btn.addEventListener("click", async () => {
   let preview = {};
@@ -150,7 +153,7 @@ document.getElementById("btn-zoom-google-signin").onclick = async (e) => {
     } catch (err) { toast(err.message, "err"); }
   });
 };
-document.getElementById("btn-zoom-confirm-signin").onclick = async () => {
+document.getElementById("btn-zoom-confirm").onclick = async () => {
   const label = document.getElementById("zoom-account-label").value.trim();
   if (!label) { toast("Enter a label first", "err"); return; }
   try {
@@ -168,17 +171,29 @@ document.getElementById("btn-zoom-signout").onclick = async (e) => {
   });
 };
 
-// ---------------------------------------------------------------- stream key / settings (unchanged)
+// ---------------------------------------------------------------- stream key / settings
+//
+// Dead references as of this writing: resolution/FPS/bitrate preset
+// editing and VNC password rotation have no surviving HTML on this page
+// (removed at some point without updating this file - every handler
+// below used to attach unconditionally and threw on the very first
+// missing element, silently breaking everything wired up after it,
+// including Add source and the Part 4 restart-all/reboot controls
+// lower in this file). Stream-key editing now lives on /studio
+// (#sk-input, see static/js/studio.js) - these ids are kept here, null-
+// guarded, in case the fields come back; not rebuilt as part of the
+// restart-controls work.
 
-document.getElementById("toggle-stream-key").onclick = (e) => {
+document.getElementById("toggle-stream-key")?.addEventListener("click", (e) => {
   const input = document.getElementById("cfg-stream-key");
+  if (!input) return;
   const showing = input.type === "text";
   input.type = showing ? "password" : "text";
   e.currentTarget.innerHTML = icon(showing ? "eye" : "eye-off", "icon-sm");
-};
+});
 
-document.getElementById("save-stream-key").onclick = async (e) => {
-  const key = document.getElementById("cfg-stream-key").value;
+document.getElementById("save-stream-key")?.addEventListener("click", async (e) => {
+  const key = document.getElementById("cfg-stream-key")?.value;
   if (!key) { toast("Enter a new key first", "err"); return; }
   await withLoading(e.currentTarget, async () => {
     try {
@@ -187,35 +202,36 @@ document.getElementById("save-stream-key").onclick = async (e) => {
       await afterSave(res);
     } catch (err) { toast(err.message, "err"); }
   });
-};
+});
 
 initSegmented(document.getElementById("preset-group"), (name) => {
   const p = PRESETS[name];
-  document.getElementById("cfg-res").value = p.RESOLUTION;
-  document.getElementById("cfg-fps").value = p.FPS;
-  { const s = document.getElementById("cfg-preset"); if (s) s.value = p.X264_PRESET || "veryfast"; }
-  document.getElementById("cfg-vbitrate").value = p.VIDEO_BITRATE;
-  document.getElementById("cfg-vbitrate-range").value = p.VIDEO_BITRATE;
-  document.getElementById("cfg-abitrate").value = p.AUDIO_BITRATE;
-  document.getElementById("cfg-abitrate-range").value = p.AUDIO_BITRATE;
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+  set("cfg-res", p.RESOLUTION);
+  set("cfg-fps", p.FPS);
+  set("cfg-preset", p.X264_PRESET || "veryfast");
+  set("cfg-vbitrate", p.VIDEO_BITRATE);
+  set("cfg-vbitrate-range", p.VIDEO_BITRATE);
+  set("cfg-abitrate", p.AUDIO_BITRATE);
+  set("cfg-abitrate-range", p.AUDIO_BITRATE);
 });
 syncRangeNumber(document.getElementById("cfg-vbitrate-range"), document.getElementById("cfg-vbitrate"));
 syncRangeNumber(document.getElementById("cfg-abitrate-range"), document.getElementById("cfg-abitrate"));
 
-document.getElementById("save-stream-settings").onclick = async (e) => {
+document.getElementById("save-stream-settings")?.addEventListener("click", async (e) => {
   await withLoading(e.currentTarget, async () => {
     try {
       const res = await apiFetch("/api/config", { method: "POST", body: JSON.stringify({
-        RESOLUTION: document.getElementById("cfg-res").value.trim(),
-        FPS: document.getElementById("cfg-fps").value,
-        X264_PRESET: document.getElementById("cfg-preset").value,
-        VIDEO_BITRATE: document.getElementById("cfg-vbitrate").value,
-        AUDIO_BITRATE: document.getElementById("cfg-abitrate").value,
+        RESOLUTION: document.getElementById("cfg-res")?.value.trim(),
+        FPS: document.getElementById("cfg-fps")?.value,
+        X264_PRESET: document.getElementById("cfg-preset")?.value,
+        VIDEO_BITRATE: document.getElementById("cfg-vbitrate")?.value,
+        AUDIO_BITRATE: document.getElementById("cfg-abitrate")?.value,
       })});
       await afterSave(res);
     } catch (err) { toast(err.message, "err"); }
   });
-};
+});
 
 async function afterSave(res) {
   if (!res.units_to_restart || res.units_to_restart.length === 0) { toast("Saved (no restart needed)"); return; }
@@ -228,8 +244,8 @@ async function afterSave(res) {
   } catch (err) { toast(err.message, "err"); }
 }
 
-document.getElementById("save-vnc-pass").onclick = async (e) => {
-  const pw = document.getElementById("cfg-vnc-pass").value;
+document.getElementById("save-vnc-pass")?.addEventListener("click", async (e) => {
+  const pw = document.getElementById("cfg-vnc-pass")?.value || "";
   if (pw.length < 4) { toast("Password too short", "err"); return; }
   await withLoading(e.currentTarget, async () => {
     try {
@@ -238,7 +254,7 @@ document.getElementById("save-vnc-pass").onclick = async (e) => {
       toast("VNC password rotated and x11vnc restarted");
     } catch (err) { toast(err.message, "err"); }
   });
-};
+});
 
 document.getElementById("save-settings")?.addEventListener("click", async (e) => {
   const body = { auto_recovery: document.getElementById("cfg-auto-recovery")?.checked };
@@ -352,3 +368,157 @@ if (btnCleanRecordings) {
   });
 }
 
+
+// ---------------------------------------------------------------- System: restart-all / reboot (Part 4)
+
+const STEP_ICON = { pending: "clock", running: "loader-circle", ok: "circle-check", failed: "circle-slash" };
+
+function _stepRowHtml(label, status, detail) {
+  const iconHtml = status === "running" ? '<span class="spinner"></span>' : icon(STEP_ICON[status] || "clock");
+  return `<div class="step-row" data-status="${status}">
+    <span class="step-row-icon">${iconHtml}</span>
+    <div class="step-row-body">
+      <div class="step-row-label">${label}</div>
+      ${detail ? `<div class="step-row-detail">${detail}</div>` : ""}
+    </div>
+  </div>`;
+}
+
+function renderSteps(container, rows) {
+  if (!container) return;
+  container.innerHTML = rows.map((r) => _stepRowHtml(r.label, r.status, r.detail)).join("");
+}
+
+function showWaitOverlay(title, desc) {
+  const el = document.createElement("div");
+  el.className = "wait-overlay";
+  el.innerHTML = `
+    <span class="spinner"></span>
+    <div class="wait-overlay-title">${title}</div>
+    <div class="wait-overlay-desc">${desc}</div>
+    <div class="wait-overlay-elapsed tnum" id="wait-overlay-elapsed">0s elapsed</div>`;
+  document.body.appendChild(el);
+  const started = Date.now();
+  const elapsedEl = el.querySelector("#wait-overlay-elapsed");
+  const tick = setInterval(() => {
+    elapsedEl.textContent = `${Math.round((Date.now() - started) / 1000)}s elapsed`;
+  }, 1000);
+  return {
+    el,
+    setDesc(text) { el.querySelector(".wait-overlay-desc").textContent = text; },
+    remove() { clearInterval(tick); el.remove(); },
+  };
+}
+
+async function waitForServerThenReload(overlay, { intervalMs = 1500, maxMs = 5 * 60 * 1000 } = {}) {
+  const start = Date.now();
+  while (Date.now() - start < maxMs) {
+    await new Promise((r) => setTimeout(r, intervalMs));
+    try {
+      const res = await fetch("/api/state", { credentials: "same-origin" });
+      if (res.ok || res.status === 401) {
+        overlay.setDesc("Back online - reloading…");
+        setTimeout(() => window.location.reload(), 400);
+        return;
+      }
+    } catch (err) { /* still down - keep polling */ }
+  }
+  overlay.setDesc("Still not responding after 5 minutes - check the server directly.");
+}
+
+// ---- Restart all services ----
+
+const restartAllBtn = document.getElementById("btn-restart-all");
+const restartStepsEl = document.getElementById("restart-all-steps");
+
+async function startRestartAll(confirmLive) {
+  return apiFetch("/api/system/restart-all", {
+    method: "POST",
+    body: JSON.stringify(confirmLive ? { confirm_live: true } : {}),
+  });
+}
+
+async function pollRestartProgress() {
+  let dashboardRestarting = false;
+  while (true) {
+    let data;
+    try { data = await apiFetch("/api/system/restart-progress"); }
+    catch (err) { await new Promise((r) => setTimeout(r, 1000)); continue; }
+    const rows = data.steps.map((s) => ({
+      label: s.unit === "dashboard" ? "Dashboard (this page)" : s.unit,
+      status: s.status, detail: s.detail,
+    }));
+    renderSteps(restartStepsEl, rows);
+    const dashStep = data.steps.find((s) => s.unit === "dashboard");
+    if (dashStep && dashStep.status === "running" && !dashboardRestarting) {
+      dashboardRestarting = true;
+      const overlay = showWaitOverlay("Restarting the dashboard…", "The pipeline is back - the dashboard itself is restarting now. This is usually a few seconds.");
+      await waitForServerThenReload(overlay, { intervalMs: 800, maxMs: 60000 });
+      return;
+    }
+    if (!data.running) return;
+    await new Promise((r) => setTimeout(r, 750));
+  }
+}
+
+if (restartAllBtn) {
+  restartAllBtn.addEventListener("click", async () => {
+    let liveStream = false;
+    try {
+      const state = await apiFetch("/api/state");
+      liveStream = state.stream && state.stream.phase === "LIVE";
+    } catch (err) { /* ignore - restart-all itself will still re-check server-side */ }
+    const msg = liveStream
+      ? "The stream is currently LIVE. Restarting now will drop it. Restart anyway?"
+      : "Restart the whole pipeline and the dashboard itself? This takes under a minute.";
+    if (!(await confirmDialog(msg, { danger: true, confirmText: "Restart all" }))) return;
+    restartAllBtn.disabled = true;
+    restartStepsEl.hidden = false;
+    try {
+      await startRestartAll(liveStream);
+      await pollRestartProgress();
+    } catch (err) {
+      toast("Could not start restart: " + err.message, "err");
+      restartAllBtn.disabled = false;
+    }
+  });
+}
+
+// ---- Reboot server ----
+
+const rebootBtn = document.getElementById("btn-reboot");
+const rebootRecheckBtn = document.getElementById("btn-reboot-recheck");
+const rebootReadinessEl = document.getElementById("reboot-readiness");
+
+async function refreshReadiness() {
+  renderSteps(rebootReadinessEl, [{ label: "Checking…", status: "running" }]);
+  try {
+    const data = await apiFetch("/api/system/readiness");
+    renderSteps(rebootReadinessEl, data.checks.map((c) => ({ label: c.check, status: c.ok ? "ok" : "failed", detail: c.detail })));
+    rebootBtn.disabled = !data.ok;
+  } catch (err) {
+    renderSteps(rebootReadinessEl, [{ label: "Could not run checks", status: "failed", detail: err.message }]);
+    rebootBtn.disabled = true;
+  }
+}
+
+if (rebootReadinessEl) {
+  refreshReadiness();
+  rebootRecheckBtn.addEventListener("click", refreshReadiness);
+  rebootBtn.addEventListener("click", async () => {
+    const ok = await confirmDialog(
+      "This restarts the whole server. The stream will stop and the dashboard will be offline for 1-2 minutes. Type REBOOT to confirm.",
+      { danger: true, confirmText: "Reboot server", requireText: "REBOOT" },
+    );
+    if (!ok) return;
+    try {
+      await apiFetch("/api/reboot", { method: "POST", body: JSON.stringify({ confirm: "REBOOT" }) });
+    } catch (err) {
+      toast("Reboot refused: " + err.message, "err");
+      refreshReadiness();
+      return;
+    }
+    const overlay = showWaitOverlay("Rebooting the server…", "The stream has stopped and the dashboard is offline. This usually takes 1-2 minutes - this page will reload on its own once it's back.");
+    await waitForServerThenReload(overlay, { intervalMs: 2000, maxMs: 5 * 60 * 1000 });
+  });
+}

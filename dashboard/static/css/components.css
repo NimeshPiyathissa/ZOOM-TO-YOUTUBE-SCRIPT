@@ -596,3 +596,35 @@ td.actions-cell { text-align: right; white-space: nowrap; }
   0%, 100% { opacity: 1; transform: scale(1); }
   50% { opacity: 0.35; transform: scale(0.85); }
 }
+
+/* ---------------------------------------------------------------- step list
+   Settings -> System: restart-all progress, reboot readiness checks. */
+.step-list { display: flex; flex-direction: column; }
+.step-row {
+  display: flex; align-items: flex-start; gap: var(--space-3);
+  padding: var(--space-2) 0; border-bottom: 1px solid var(--border);
+}
+.step-row:last-child { border-bottom: none; }
+.step-row-icon { flex: none; width: 18px; height: 18px; margin-top: 1px; display: flex; align-items: center; justify-content: center; }
+.step-row-icon .icon { width: 16px; height: 16px; }
+.step-row[data-status="pending"] .step-row-icon { color: var(--text-faint); }
+.step-row[data-status="running"] .step-row-icon { color: var(--accent); }
+.step-row[data-status="ok"] .step-row-icon { color: var(--success); }
+.step-row[data-status="failed"] .step-row-icon { color: var(--live); }
+.step-row-body { min-width: 0; flex: 1; }
+.step-row-label { font-size: var(--text-sm); font-weight: var(--weight-medium); color: var(--text); }
+.step-row-detail { font-size: var(--text-xs); color: var(--text-dim); margin-top: 1px; }
+.step-row[data-status="failed"] .step-row-detail { color: var(--live); }
+
+/* ---------------------------------------------------------------- waiting-for-server overlay
+   Full-screen block used after triggering a restart/reboot that will
+   briefly (or not so briefly) take the dashboard itself offline. */
+.wait-overlay {
+  position: fixed; inset: 0; z-index: var(--z-modal); background: var(--bg);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: var(--space-4); text-align: center; padding: var(--space-4);
+}
+.wait-overlay .spinner { width: 28px; height: 28px; border-width: 3px; }
+.wait-overlay-title { font-size: var(--text-lg); font-weight: var(--weight-semibold); }
+.wait-overlay-desc { font-size: var(--text-sm); color: var(--text-dim); max-width: 420px; }
+.wait-overlay-elapsed { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--text-faint); }

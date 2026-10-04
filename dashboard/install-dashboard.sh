@@ -100,7 +100,7 @@ echo "==> [6/8] Narrow sudoers rule (dashboard -> zoombot, specific commands onl
 # sudoers-syntax concern - the actual argv systemctl receives (built in
 # app/control.py) is the plain, unescaped comma-separated value, and sudo
 # matches it correctly against this escaped pattern.
-SHOW_PROPS="ActiveState\,SubState\,Result\,NRestarts\,ActiveEnterTimestamp\,ExecMainStartTimestamp\,ExecMainStatus\,MainPID\,ExecMainCode"
+SHOW_PROPS="ActiveState\,SubState\,Result\,NRestarts\,ActiveEnterTimestamp\,ExecMainStartTimestamp\,ExecMainStatus\,MainPID\,ExecMainCode\,UnitFileState"
 UNITS="xvfb openbox audio-setup zoom browser-source x11vnc novnc-proxy ffmpeg-stream"
 SUDOERS_TMP="$(mktemp)"
 {
@@ -132,6 +132,13 @@ SUDOERS_TMP="$(mktemp)"
   echo "${DASH_USER} ALL=(zoombot) NOPASSWD: /usr/bin/test -e *"
   echo ""
   echo "${DASH_USER} ALL=(root) NOPASSWD: /usr/sbin/reboot"
+  # Part 4: "Restart all services" restarts dashboard.service itself last;
+  # the reboot-readiness check reads zoombot's lingering state (root-only -
+  # loginctl show-user on another user's session needs it) and dashboard/
+  # caddy's own enabled state (no sudo needed for that part - systemctl
+  # is-enabled is a plain read of /etc/systemd/system symlinks).
+  echo "${DASH_USER} ALL=(root) NOPASSWD: /usr/bin/systemctl restart dashboard.service"
+  echo "${DASH_USER} ALL=(root) NOPASSWD: /usr/bin/loginctl show-user zoombot --property=Linger"
   echo ""
   echo "# Touch remote / media control"
   echo "${DASH_USER} ALL=(zoombot) NOPASSWD: ${STREAM_APP_DIR}/scripts/set-stream-audio.sh *"

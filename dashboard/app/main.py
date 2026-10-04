@@ -8,6 +8,7 @@ import logging
 import pathlib
 import re
 import subprocess
+import threading
 import time
 
 from fastapi import FastAPI, Request, Response, HTTPException, WebSocket
@@ -928,12 +929,55 @@ async def api_test_recording_download(request: Request):
 async def api_reboot(request: Request):
     session = deps.require_session_api(request)
     deps.require_csrf(request, session)
+    deps.require_rate_limit(session, "reboot", max_calls=2, window_seconds=300)
     body = await request.json()
     if body.get("confirm") != "REBOOT":
         raise HTTPException(status_code=400, detail="confirmation token required")
+    # Re-checked server-side, not just UI-gated: the "Reboot" button being
+    # enabled only reflects what readiness looked like when the Settings
+    # page last polled it - something could have changed in between.
+    checks = await run_in_threadpool(control.reboot_readiness)
+    if not all(c["ok"] for c in checks):
+        return JSONResponse({"error": "Pre-reboot checks failed", "checks": checks}, status_code=409)
     db.audit(session["username"], "reboot_vps", ip=deps.client_ip(request))
     await run_in_threadpool(control.reboot_vps)
     return {"ok": True}
+
+
+@app.get("/api/system/readiness")
+async def api_system_readiness(request: Request):
+    deps.require_session_api(request)
+    checks = await run_in_threadpool(control.reboot_readiness)
+    return {"checks": checks, "ok": all(c["ok"] for c in checks)}
+
+
+@app.post("/api/system/restart-all")
+async def api_system_restart_all(request: Request):
+    session = deps.require_session_api(request)
+    deps.require_csrf(request, session)
+    deps.require_rate_limit(session, "system_restart_all", max_calls=2, window_seconds=60)
+    if control.restart_progress()["running"]:
+        raise HTTPException(status_code=409, detail="A restart is already in progress")
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    stream_info = await run_in_threadpool(control.unit_show, "ffmpeg-stream")
+    if stream_info["phase"] == control.PHASE_LIVE and not body.get("confirm_live"):
+        raise HTTPException(status_code=409, detail="Stream is live - confirm to restart anyway")
+    db.audit(session["username"], "system_restart_all", ip=deps.client_ip(request))
+    # Fire-and-forget: full_restart() ends by restarting dashboard.service
+    # itself, which tears this process down - there is no response to wait
+    # for by that point, so the frontend polls /api/system/restart-progress
+    # and then /api/state instead of awaiting this request's own body.
+    threading.Thread(target=control.full_restart, daemon=True).start()
+    return {"ok": True, "started": True}
+
+
+@app.get("/api/system/restart-progress")
+async def api_system_restart_progress(request: Request):
+    deps.require_session_api(request)
+    return control.restart_progress()
 
 
 # ---------------------------------------------------------------- api: config

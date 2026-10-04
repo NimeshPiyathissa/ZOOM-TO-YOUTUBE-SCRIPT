@@ -281,6 +281,7 @@ function initMenus() {
 // ---------------------------------------------------------------- segmented control
 
 function initSegmented(container, onSelect) {
+  if (!container) return;
   container.querySelectorAll(".seg-btn").forEach((b) => b.setAttribute("aria-pressed", String(b.classList.contains("is-active"))));
   container.addEventListener("click", (e) => {
     const btn = e.target.closest(".seg-btn");
@@ -295,6 +296,7 @@ function initSegmented(container, onSelect) {
 // ---------------------------------------------------------------- range <-> number sync
 
 function syncRangeNumber(rangeEl, numberEl, outputEl) {
+  if (!rangeEl || !numberEl) return;
   const set = (v) => {
     rangeEl.value = v; numberEl.value = v;
     if (outputEl) outputEl.textContent = v;
