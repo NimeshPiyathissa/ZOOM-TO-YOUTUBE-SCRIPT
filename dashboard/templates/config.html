@@ -5,6 +5,24 @@
 
 <div class="config-container">
 
+  <!-- ================================================================ Appearance -->
+  <h2 class="floating-section-title" id="appearance">
+    {{ icon("sparkles", "icon-sm") }}Appearance
+  </h2>
+  <div class="card">
+    <div class="list-row">
+      <div class="list-row-info">
+        <span class="list-row-title">Theme</span>
+        <span class="list-row-subtitle">White and Black follow a cool/navy palette; Default is the original forest/glass look.</span>
+      </div>
+      <div class="segmented" role="group" aria-label="Theme">
+        <button type="button" class="seg-btn" data-theme-choice="white">{{ icon("sun", "icon-sm") }}White</button>
+        <button type="button" class="seg-btn" data-theme-choice="black">{{ icon("moon", "icon-sm") }}Black</button>
+        <button type="button" class="seg-btn" data-theme-choice="default">{{ icon("sparkles", "icon-sm") }}Default</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ================================================================ Basic settings -->
   <h2 class="floating-section-title">
     {{ icon("sliders-horizontal", "icon-sm") }}Basic settings

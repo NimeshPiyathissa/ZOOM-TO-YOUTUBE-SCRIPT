@@ -47,7 +47,7 @@
 .btn-primary { background: var(--accent-solid); border-color: var(--accent-solid); color: var(--text-on-accent); font-weight: var(--weight-semibold); }
 .btn-primary:hover { background: var(--accent-solid-hover); border-color: var(--accent-solid-hover); }
 
-.btn-danger { background: var(--live-solid); border-color: var(--live-solid); color: #fff; font-weight: var(--weight-semibold); }
+.btn-danger { background: var(--live-solid); border-color: var(--live-solid); color: var(--text-on-accent); font-weight: var(--weight-semibold); }
 .btn-danger:hover { background: var(--live-solid-hover); border-color: var(--live-solid-hover); }
 
 .btn-icon { width: var(--btn-h); padding: 0; flex: none; }
@@ -61,7 +61,7 @@
   width: 15px; height: 15px;
   border-radius: 50%;
   border: 2px solid rgba(255, 255, 255, 0.35);
-  border-top-color: #fff;
+  border-top-color: var(--text-on-accent);
   animation: spin 0.7s linear infinite;
 }
 .btn-secondary.is-loading::after, .btn-ghost.is-loading::after {
@@ -174,7 +174,7 @@ select.input {
 }
 .switch .track::after {
   content: ""; position: absolute; top: 2px; left: 2px; width: 20px; height: 20px;
-  border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  border-radius: 50%; background: var(--text-on-accent); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
   transition: transform var(--duration-fast) var(--ease-out);
 }
 .switch input:checked + .track { background: var(--accent-solid); }
@@ -240,10 +240,24 @@ input[type="range"].slider::-moz-range-thumb {
 .card {
   background: var(--bg-panel);
   border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
   box-shadow: var(--shadow-sm);
 }
+/* Flat card, same visual as .card - kept as its own class name since
+   several templates apply it standalone (no .card alongside it). Used
+   to be a pointer-tilt "premium 3D" treatment (cards-3d.css); retired
+   in favor of the reference's flat hairline-border look everywhere,
+   which also drops a per-frame transform listener the encoder didn't
+   need competing for CPU with. */
+.card-3d {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+  box-shadow: var(--shadow-sm);
+}
+
 .card-header {
   display: flex; align-items: center; justify-content: space-between; gap: var(--space-2);
   margin-bottom: var(--space-3);
@@ -275,7 +289,7 @@ input[type="range"].slider::-moz-range-thumb {
 
 .cpu-cores { width: 100%; height: 28px; display: block; }
 .cpu-cores .cpu-bar-bg { fill: var(--bg-hover); }
-.cpu-cores .cpu-bar-fill { fill: var(--accent-solid); }
+.cpu-cores .cpu-bar-fill { fill: var(--accent); }
 
 /* ---------------------------------------------------------------- service rows */
 
@@ -349,6 +363,7 @@ td.actions-cell { text-align: right; white-space: nowrap; }
 }
 .menu-item:hover, .menu-item:focus-visible { background: var(--bg-hover); }
 .menu-item.danger { color: var(--live); }
+.menu-item.is-active { color: var(--accent); font-weight: var(--weight-semibold); }
 
 /* ---------------------------------------------------------------- toasts */
 
@@ -372,7 +387,7 @@ td.actions-cell { text-align: right; white-space: nowrap; }
 /* ---------------------------------------------------------------- modal */
 
 .modal-backdrop {
-  position: fixed; inset: 0; background: rgba(8, 10, 14, 0.6); backdrop-filter: blur(2px);
+  position: fixed; inset: 0; background: var(--scrim); backdrop-filter: blur(2px);
   display: flex; align-items: center; justify-content: center; z-index: var(--z-modal); padding: var(--space-4);
   animation: fade-in var(--duration-base) var(--ease-out);
 }
@@ -428,7 +443,7 @@ td.actions-cell { text-align: right; white-space: nowrap; }
 .log-toolbar .input { width: auto; flex: 1; min-width: 140px; }
 
 .log-viewer {
-  background: var(--gray-0, #0b0d11); color: #d4d8e0; border: 1px solid var(--border);
+  background: var(--term-bg); color: var(--term-text); border: 1px solid var(--border);
   border-radius: var(--radius-md); padding: var(--space-3) 0;
   height: 60vh; overflow-y: auto; font-family: var(--font-mono); font-size: var(--text-xs);
 }
@@ -436,16 +451,16 @@ td.actions-cell { text-align: right; white-space: nowrap; }
   display: flex; gap: var(--space-3); padding: 1px var(--space-3);
   white-space: pre-wrap; word-break: break-word; line-height: var(--leading-relaxed);
 }
-.log-line .ln { color: #4a5262; flex: none; user-select: none; text-align: right; min-width: 3.5em; font-variant-numeric: tabular-nums; }
+.log-line .ln { color: var(--term-line-no); flex: none; user-select: none; text-align: right; min-width: 3.5em; font-variant-numeric: tabular-nums; }
 .log-line .msg { flex: 1; }
-.log-line.err .msg { color: #ff8a8a; }
-.log-line.warn .msg { color: #ffcf7a; }
+.log-line.err .msg { color: var(--term-err); }
+.log-line.warn .msg { color: var(--term-warn); }
 .log-line mark { background: var(--accent-tint); color: var(--accent); border-radius: 2px; }
 
 /* ---------------------------------------------------------------- preview / login / misc */
 
 .preview-wrap {
-  border-radius: var(--radius-md); overflow: hidden; border: 1px solid var(--border); background: #000;
+  border-radius: var(--radius-md); overflow: hidden; border: 1px solid var(--border); background: var(--canvas-black);
   aspect-ratio: 16/9; display: flex; align-items: center; justify-content: center;
 }
 .preview-wrap img { width: 100%; height: 100%; object-fit: contain; }
@@ -453,8 +468,13 @@ td.actions-cell { text-align: right; white-space: nowrap; }
 .login-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: var(--space-4); }
 .login-card { width: 100%; max-width: 380px; background: var(--bg-panel); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: var(--space-8); box-shadow: var(--shadow-lg); }
 .login-card h1 { font-size: var(--text-lg); margin-bottom: var(--space-6); text-align: center; }
-.login-brand { display: flex; align-items: center; justify-content: center; gap: var(--space-2); margin-bottom: var(--space-4); color: var(--accent); }
+.login-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--space-4); }
+.login-top .theme-switch { margin-left: auto; }
+.login-brand { display: flex; align-items: center; justify-content: center; gap: var(--space-2); color: var(--accent); }
 .error-box { background: var(--live-tint); color: var(--live); padding: var(--space-2) var(--space-3); border-radius: var(--radius-sm); font-size: var(--text-sm); margin-bottom: var(--space-4); }
+/* Login's password field: input + reveal toggle side by side, toggle
+   sized to the input's own height rather than the default --btn-h. */
+.login-card .input-group .btn-icon { --btn-h: 36px; }
 
 /* 56px minimum touch target (Part 3/4 touch UI) - a one-line extension
    of the --btn-h button system rather than a fork of it. Global, since
@@ -462,3 +482,117 @@ td.actions-cell { text-align: right; white-space: nowrap; }
    page. */
 .btn-touch { --btn-h: 56px; padding: 0 var(--space-6); font-size: var(--text-base); font-weight: var(--weight-semibold); }
 .btn-touch.btn-icon { width: var(--btn-h); padding: 0; }
+
+/* ---------------------------------------------------------------- section labels
+   A standalone category heading above a group of cards - sits directly
+   on the page background (not inside a card), so its color is checked
+   against --bg on its own in the contrast script. (.category-header,
+   .studio-section-title, .overlay-section-title: same role, other
+   pages' markup predates this file's naming.) */
+.floating-section-title,
+.category-header,
+.studio-section-title,
+.overlay-section-title {
+  font-size: var(--text-sm); font-weight: var(--weight-semibold);
+  text-transform: uppercase; letter-spacing: var(--tracking-wide);
+  color: var(--text-dim);
+  margin: var(--space-6) 0 var(--space-2) 2px;
+  display: flex; align-items: center; gap: var(--space-2);
+}
+.floating-section-title:first-child,
+.category-header:first-child { margin-top: 0; }
+.floating-section-title .icon,
+.category-header .icon { color: var(--accent); opacity: 0.95; }
+
+/* ---------------------------------------------------------------- list rows
+   A labelled row with a trailing action - quick-nav links, settings
+   rows, account rows. (.glass-row, .setting-row, .card-item-row: same
+   role, other pages' markup predates this file's naming.) */
+.list-row, .glass-row, .setting-row, .card-item-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: var(--space-3) 0; border-bottom: 1px solid var(--border); gap: var(--space-4);
+}
+.list-row:last-child, .glass-row:last-child, .setting-row:last-child, .card-item-row:last-child { border-bottom: none; padding-bottom: 0; }
+.list-row:first-child, .glass-row:first-child, .setting-row:first-child, .card-item-row:first-child { padding-top: 0; }
+.list-row-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.list-row-title, .glass-row-title, .setting-label { font-size: var(--text-sm); font-weight: var(--weight-medium); color: var(--text); display: block; }
+.list-row-subtitle, .glass-row-subtitle, .setting-desc { font-size: var(--text-xs); color: var(--text-dim); display: block; margin-top: 2px; }
+
+/* ---------------------------------------------------------------- stat cards
+   Reference pattern: small muted label, large bold number, one muted
+   caption line, a thin colored bar along the bottom edge. Layered onto
+   the existing .stat-tile rather than forking it - .stat-bar is opt-in. */
+.stat-card { position: relative; overflow: hidden; padding-bottom: var(--space-4); }
+.stat-bar {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 3px;
+  background: var(--accent); border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+}
+.stat-bar.success { background: var(--success); }
+.stat-bar.warning { background: var(--warning); }
+.stat-bar.danger { background: var(--danger); }
+
+/* ---------------------------------------------------------------- chips
+   Filter chip: a pill with a colored status dot, distinct from .badge
+   (status readout) - chips are selectable/toggleable filters. */
+.chip {
+  display: inline-flex; align-items: center; gap: var(--space-2);
+  padding: 6px var(--space-3) 6px 10px; border-radius: var(--radius-full);
+  background: var(--bg-elevated); border: 1px solid var(--border);
+  color: var(--text-dim); font-size: var(--text-xs); font-weight: var(--weight-medium);
+  cursor: pointer; white-space: nowrap; appearance: none; font: inherit;
+  transition: background var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
+}
+.chip .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--text-faint); }
+.chip:hover { border-color: var(--border-strong); color: var(--text); }
+.chip.is-active { background: var(--accent-tint); border-color: var(--accent-ring); color: var(--text); }
+.chip.is-active .dot { background: var(--accent); }
+.chip-row { display: flex; gap: var(--space-2); flex-wrap: wrap; align-items: center; }
+
+/* ---------------------------------------------------------------- insight strip
+   A single highlighted takeaway line under a stat row. */
+.insight-strip {
+  display: flex; align-items: center; gap: var(--space-2);
+  background: var(--accent-tint); color: var(--text);
+  border-radius: var(--radius-md); padding: var(--space-3) var(--space-4);
+  font-size: var(--text-sm);
+}
+.insight-strip .icon { color: var(--accent); flex: none; }
+.insight-strip strong { font-weight: var(--weight-semibold); }
+
+/* ---------------------------------------------------------------- bars (horizontal, with legend)
+   Rounded-end bars, right-aligned tabular values - used for simple
+   comparative readouts (e.g. per-core / per-item breakdowns). */
+.bars { display: flex; flex-direction: column; gap: var(--space-3); }
+.bar-row { display: flex; align-items: center; gap: var(--space-3); }
+.bar-row .bar-label { flex: none; width: 96px; font-size: var(--text-xs); color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bar-row .bar-track { flex: 1; height: 8px; border-radius: var(--radius-full); background: var(--bg-hover); overflow: hidden; }
+.bar-row .bar-fill { height: 100%; border-radius: var(--radius-full); background: var(--accent); transition: width var(--duration-base) var(--ease-out); }
+.bar-row .bar-fill.success { background: var(--success); }
+.bar-row .bar-fill.warning { background: var(--warning); }
+.bar-row .bar-value { flex: none; width: 3.5em; text-align: right; font-size: var(--text-xs); color: var(--text-dim); }
+.bar-legend { display: flex; gap: var(--space-4); flex-wrap: wrap; font-size: var(--text-xs); color: var(--text-dim); }
+.bar-legend-item { display: inline-flex; align-items: center; gap: var(--space-2); }
+.bar-legend-item .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+
+/* ---------------------------------------------------------------- recording controls
+   Dedicated colors (not just --danger) so the pulsing glow reads as
+   "recording", not "error" - still theme tokens, not hex literals. */
+.btn-rec { background: var(--bg-elevated); border: 1px solid var(--border); color: var(--text); }
+.btn-rec:hover { background: var(--bg-hover); border-color: var(--border-strong); }
+.btn-rec-active {
+  background: var(--live-tint); border: 1px solid var(--live-solid); color: var(--live);
+  box-shadow: 0 0 14px var(--live-tint);
+}
+.btn-rec-active:hover { box-shadow: 0 0 18px var(--live-tint); }
+.rec-duration-pill {
+  display: inline-flex; align-items: center; gap: var(--space-2);
+  padding: 6px 14px; background: var(--live-tint); border: 1px solid var(--live-solid); color: var(--live);
+  border-radius: var(--radius-full); font-family: var(--font-mono); font-size: 0.8125rem;
+  font-weight: var(--weight-bold); letter-spacing: var(--tracking-wide);
+  box-shadow: 0 0 16px var(--live-tint); vertical-align: middle; line-height: 1;
+}
+.rec-pulse-dot { display: inline-block; font-size: 0.8rem; animation: rec-pulse-glow 1.5s infinite ease-in-out; }
+@keyframes rec-pulse-glow {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.35; transform: scale(0.85); }
+}

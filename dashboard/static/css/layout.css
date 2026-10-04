@@ -76,28 +76,23 @@
 .nav-item:active { transform: scale(0.98); }
 .nav-item:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
+/* Active item: a solid filled pill (reference pattern), not a tinted
+   row with a side bar - same shape in every theme, each theme supplies
+   its own --nav-active-bg/--nav-active-text (deep navy for White/Black,
+   teal for Default, see tokens.css). A quick fade+scale-in on paint
+   (transform+opacity only) since this is a multi-page app - there's no
+   continuous element to slide between two routes the way a client-
+   routed app could animate. */
 .nav-item.active {
-  color: var(--accent);
-  background: var(--glass-tint-active);
-  box-shadow: inset 0 0 0 1px var(--accent-ring);
+  color: var(--nav-active-text);
+  background: var(--nav-active-bg);
+  font-weight: var(--weight-semibold);
+  animation: nav-active-in var(--duration-base) var(--ease-out) backwards;
 }
-/* Active indicator - a positioned pseudo-element on the active row
-   itself, not a separately-animated sibling element to lay out. This
-   is a multi-page app (full navigation per route, not a SPA), so there
-   is no continuous element to slide between two positions across a
-   route change the way a client-routed app could - the honest
-   equivalent here is a quick grow-in on paint, transform+opacity only. */
-.nav-item.active::before {
-  content: ""; position: absolute; left: -6px; top: 50%;
-  width: 3px; height: 16px; border-radius: var(--radius-full);
-  background: linear-gradient(180deg, var(--accent), var(--accent-solid));
-  transform-origin: center;
-  animation: nav-indicator-in var(--duration-base) var(--ease-out) backwards;
-}
-.app-shell.is-collapsed .nav-item.active::before { left: -2px; }
-@keyframes nav-indicator-in {
-  from { opacity: 0; transform: translateY(-50%) scaleY(0); }
-  to { opacity: 1; transform: translateY(-50%) scaleY(1); }
+.nav-item.active:hover { background: var(--nav-active-bg); color: var(--nav-active-text); }
+@keyframes nav-active-in {
+  from { opacity: 0; transform: scale(0.97); }
+  to { opacity: 1; transform: scale(1); }
 }
 
 .app-shell.is-collapsed .nav-item span.label,
@@ -144,9 +139,8 @@
 .sidebar-toggle { display: none; }
 
 @media (prefers-reduced-motion: reduce) {
-  .sidebar, .nav-item, .nav-item.active::before, .sidebar-backdrop { transition: none !important; }
-  .nav-item, .app-shell.is-drawer-open .nav-item { animation: none !important; opacity: 1 !important; transform: none !important; }
-  .nav-item.active::before { animation: none !important; opacity: 1 !important; transform: translateY(-50%) scaleY(1) !important; }
+  .sidebar, .nav-item, .nav-item.active, .sidebar-backdrop { transition: none !important; }
+  .nav-item, .nav-item.active, .app-shell.is-drawer-open .nav-item { animation: none !important; opacity: 1 !important; transform: none !important; }
 }
 
 /* ---------------------------------------------------------------- page content */
@@ -251,7 +245,7 @@ main.page {
   @keyframes nav-item-in { from { opacity: 0; transform: translateX(-8px); } to { opacity: 1; transform: none; } }
 
   .sidebar-backdrop {
-    display: block; position: fixed; inset: 0; background: rgba(8, 10, 14, 0.5);
+    display: block; position: fixed; inset: 0; background: var(--scrim);
     z-index: calc(var(--z-sticky) - 1); opacity: 0; pointer-events: none;
     transition: opacity var(--duration-base) var(--ease-out);
   }
@@ -288,7 +282,7 @@ main.page {
 
 /* ---------------------------------------------------------------- remote-desktop overlay (Part 4) */
 
-.vnc-overlay { position: fixed; inset: 0; z-index: var(--z-modal); background: #000; display: flex; flex-direction: column; }
+.vnc-overlay { position: fixed; inset: 0; z-index: var(--z-modal); background: var(--canvas-black); display: flex; flex-direction: column; }
 .vnc-overlay[hidden] { display: none; }
 .vnc-overlay-bar {
   display: flex; align-items: center; gap: var(--space-3);
@@ -299,3 +293,82 @@ main.page {
 .vnc-overlay-title { display: inline-flex; align-items: center; gap: var(--space-2); font-weight: var(--weight-semibold); flex: 1; min-width: 0; }
 .vnc-overlay-screen { flex: 1; min-height: 0; }
 .vnc-overlay-screen > * { width: 100%; height: 100%; }
+
+/* ---------------------------------------------------------------- Default theme: background photo
+   The one place a theme reaches outside the token set - a fixed photo
+   behind the glass nav/cards, dimmed enough that text placed directly
+   on the canvas (not inside a card) still reads at AA against the
+   wash alone (checked in scripts/check-contrast.py as a stand-in for
+   "worst case brightness under the photo"). White/Black have no
+   equivalent rule; they're flat token colors only. */
+:root[data-theme="default"] body {
+  background: linear-gradient(rgba(8, 11, 16, 0.86), rgba(8, 11, 16, 0.92)), url('/static/img/bg_nature.jpg') no-repeat center center fixed;
+  background-size: cover;
+  background-attachment: fixed;
+}
+
+/* ---------------------------------------------------------------- page containers (other pages' own
+   wrapper divs around {% block content %} - same box model as main.page,
+   kept so nesting either one is harmless) */
+.dash-container, .main-container, .overlay-container, .studio-container,
+.config-container, .remote-grid {
+  max-width: var(--content-max-w); width: 100%; margin: 0 auto; box-sizing: border-box;
+}
+
+/* ---------------------------------------------------------------- dashboard grid (Overview) */
+.dash-grid {
+  display: grid; grid-template-columns: 1fr; gap: var(--space-5); width: 100%;
+}
+@media (min-width: 640px) { .dash-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (min-width: 1024px) { .dash-grid { grid-template-columns: repeat(12, 1fr); } }
+
+.grid-col-full, .dash-services-wrap { grid-column: 1 / -1; }
+
+.hero-3d {
+  grid-column: 1 / -1; display: grid; grid-template-columns: 1fr; gap: var(--space-5);
+}
+@media (min-width: 768px) {
+  .hero-3d { grid-template-columns: minmax(0, 1fr) minmax(280px, 380px); align-items: center; }
+}
+.hero-3d-main { min-width: 0; }
+.hero-3d-source {
+  display: flex; align-items: center; gap: var(--space-2);
+  margin-top: var(--space-2); color: var(--text-dim); font-size: var(--text-sm); min-width: 0;
+}
+.hero-3d-source .src-url { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hero-3d-source .copy-url-btn { flex: none; }
+.hero-3d-preview {
+  position: relative; border-radius: var(--radius-md); overflow: hidden;
+  aspect-ratio: 16 / 9; background: var(--canvas-black); border: 1px solid var(--border);
+}
+.hero-3d-preview img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+.hero-3d.state-LIVE { box-shadow: var(--shadow-sm), 0 0 0 1px var(--accent-ring); }
+.hero-3d.state-ERROR { box-shadow: var(--shadow-sm), 0 0 0 1px var(--live); }
+.hero-3d.state-STARTING, .hero-3d.state-RECONNECTING { box-shadow: var(--shadow-sm), 0 0 0 1px var(--warning); }
+
+.dash-health { grid-column: 1 / -1; }
+@media (min-width: 640px) { .dash-health { grid-column: span 1; } }
+@media (min-width: 1024px) { .dash-health { grid-column: span 4; } }
+
+.health-card-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--space-3); }
+.health-card-head h3 { font-size: var(--text-base); margin: 0; }
+
+.service-grid { display: grid; gap: var(--space-3); grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
+.service-card-3d { padding: var(--space-4); }
+.service-card-3d .service-card-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); margin-bottom: var(--space-2); }
+.service-card-3d .service-card-name { font-weight: var(--weight-medium); font-size: var(--text-sm); }
+.service-card-3d .service-card-meta { display: flex; gap: var(--space-4); font-size: var(--text-xs); color: var(--text-dim); margin-bottom: var(--space-3); }
+.service-card-3d .service-card-actions { display: flex; gap: var(--space-1); }
+
+/* Quick-nav / studio split rows (Overview, Studio, Overlay) */
+.quick-nav-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: var(--space-4); width: 100%;
+}
+.studio-row-split { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--space-5); width: 100%; }
+@media (max-width: 900px) { .studio-row-split { grid-template-columns: 1fr; } }
+
+@media (max-width: 640px) {
+  .dash-grid { grid-template-columns: 1fr; }
+  .dash-health { grid-column: 1 / -1; }
+}

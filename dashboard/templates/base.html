@@ -1,6 +1,6 @@
 {% from "_macros.html" import icon %}
 <!doctype html>
-<html lang="en">
+<html lang="en"{% if theme %} data-theme="{{ theme }}"{% endif %}>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -10,9 +10,7 @@
 <link rel="stylesheet" href="{{ static_url('css/tokens.css') }}">
 <link rel="stylesheet" href="{{ static_url('css/base.css') }}">
 <link rel="stylesheet" href="{{ static_url('css/components.css') }}">
-<link rel="stylesheet" href="{{ static_url('css/cards-3d.css') }}">
 <link rel="stylesheet" href="{{ static_url('css/layout.css') }}">
-<link rel="stylesheet" href="{{ static_url('css/passwall-glass.css') }}">
 {% block extra_css %}{% endblock %}
 <link rel="icon" href="data:,">
 </head>
@@ -73,7 +71,14 @@
         <button id="topbar-go-live" class="btn btn-primary btn-sm">{{ icon("play", "icon-sm") | safe }}Go Live</button>
         <button id="topbar-stop" class="btn btn-danger btn-sm" hidden>{{ icon("square", "icon-sm") | safe }}Stop</button>
         <button id="topbar-desktop" class="btn btn-ghost btn-icon" aria-label="Open remote desktop" data-tooltip="Remote desktop">{{ icon("monitor") | safe }}</button>
-        <button id="theme-toggle" class="btn btn-ghost btn-icon" aria-label="Toggle theme" data-tooltip="Toggle theme"></button>
+        <div class="menu-wrap theme-switch">
+          <button class="btn btn-ghost btn-icon menu-trigger theme-switch-trigger" aria-label="Change theme" data-tooltip="Theme"></button>
+          <div class="menu" role="menu" inert>
+            <button class="menu-item" type="button" role="menuitem" data-theme-choice="white">{{ icon("sun", "icon-sm") | safe }}White</button>
+            <button class="menu-item" type="button" role="menuitem" data-theme-choice="black">{{ icon("moon", "icon-sm") | safe }}Black</button>
+            <button class="menu-item" type="button" role="menuitem" data-theme-choice="default">{{ icon("sparkles", "icon-sm") | safe }}Default</button>
+          </div>
+        </div>
         <div class="menu-wrap">
           <button class="btn btn-ghost btn-icon menu-trigger" aria-label="Account menu" data-tooltip="Account">{{ icon("user") | safe }}</button>
           <div class="menu" role="menu" inert>

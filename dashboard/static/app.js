@@ -117,25 +117,49 @@ function confirmDialog(message, { danger = false, confirmText = "Confirm", requi
 }
 
 // ---------------------------------------------------------------- theme
+//
+// Three themes (white/black/default). The server is the source of
+// truth for "no flash": it reads a zsdash_theme cookie (and, for a
+// logged-in user, their saved DB preference) and renders
+// <html data-theme="..."> directly in the initial response - see
+// app/main.py's theme context processor. This script only handles
+// live switching (every .theme-switch on the page, topbar + login)
+// and mirrors the choice into localStorage as the "in the browser"
+// copy the task asked for; it never needs to fight page-load FOUC.
+
+const THEME_ICON = { white: "sun", black: "moon", default: "sparkles" };
+
+function _currentTheme() {
+  return document.documentElement.getAttribute("data-theme") ||
+    (window.matchMedia("(prefers-color-scheme: dark)").matches ? "black" : "white");
+}
+
+function _paintThemeSwitches(theme) {
+  document.querySelectorAll(".theme-switch-trigger").forEach((trigger) => {
+    trigger.innerHTML = icon(THEME_ICON[theme] || "sun");
+  });
+  document.querySelectorAll("[data-theme-choice]").forEach((item) => {
+    item.classList.toggle("is-active", item.dataset.themeChoice === theme);
+  });
+}
+
+async function _applyTheme(theme) {
+  document.documentElement.setAttribute("data-theme", theme);
+  _paintThemeSwitches(theme);
+  try { localStorage.setItem("zsdash-theme", theme); } catch (e) {}
+  try { await apiFetch("/api/theme", { method: "POST", body: JSON.stringify({ theme }) }); }
+  catch (err) { toast("Could not save theme: " + err.message, "err"); }
+}
 
 function initTheme() {
-  const btn = document.getElementById("theme-toggle");
-  if (!btn) return;
-  function paint(theme) {
-    const isDark = theme ? theme === "dark" : !window.matchMedia("(prefers-color-scheme: light)").matches;
-    btn.innerHTML = icon(isDark ? "moon" : "sun");
-  }
-  let stored = null;
-  try { stored = localStorage.getItem("zsdash-theme"); } catch (e) {}
-  if (stored) document.documentElement.setAttribute("data-theme", stored);
-  paint(stored);
-  btn.addEventListener("click", () => {
-    const current = document.documentElement.getAttribute("data-theme") ||
-      (window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
-    const next = current === "dark" ? "light" : "dark";
-    document.documentElement.setAttribute("data-theme", next);
-    try { localStorage.setItem("zsdash-theme", next); } catch (e) {}
-    paint(next);
+  if (!document.querySelector("[data-theme-choice]")) return;
+  _paintThemeSwitches(_currentTheme());
+  document.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-theme-choice]");
+    if (!btn) return;
+    const wrap = btn.closest(".menu-wrap");
+    if (wrap) wrap.classList.remove("is-open");
+    _applyTheme(btn.dataset.themeChoice);
   });
 }
 

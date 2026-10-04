@@ -53,7 +53,14 @@ class _RevalidateStaticFiles(StaticFiles):
 
 
 app = FastAPI(title="Zoom Stream Dashboard", docs_url=None, redoc_url=None, openapi_url=None)
-templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
+templates = Jinja2Templates(
+    directory=str(BASE_DIR / "templates"),
+    # Injected into every TemplateResponse context automatically (login
+    # included - it has no session yet) so base.html can set
+    # <html data-theme="..."> in the initial response with zero flash,
+    # without touching the ~80 existing per-route template-context dicts.
+    context_processors=[lambda request: {"theme": _resolve_theme(request)}],
+)
 app.mount("/static", _RevalidateStaticFiles(directory=str(BASE_DIR / "static")), name="static")
 
 # Belt-and-suspenders on top of the Cache-Control fix above: {{ static_url(...) }}
@@ -99,6 +106,36 @@ def _set_session_cookie(response: Response, request: Request, session_id: str) -
 
 def _clear_session_cookie(response: Response) -> None:
     response.delete_cookie(config.COOKIE_NAME, path="/")
+
+
+_THEME_COOKIE = "zsdash_theme"
+_VALID_THEMES = ("white", "black", "default")
+
+
+def _resolve_theme(request: Request) -> str | None:
+    """None means "no explicit choice yet" - base.html omits data-theme
+    entirely and tokens.css's prefers-color-scheme block picks White or
+    Black for the device. A cookie (set the moment anyone, logged in or
+    not, picks a theme) always wins when present; it's also how the
+    login page itself stays themed. Falls back to a logged-in user's
+    saved DB preference when the cookie is missing (a new browser)."""
+    cookie_theme = request.cookies.get(_THEME_COOKIE)
+    if cookie_theme in _VALID_THEMES:
+        return cookie_theme
+    session = deps.get_session(request)
+    if session:
+        with db.get_conn() as conn:
+            row = conn.execute("SELECT theme FROM users WHERE id=?", (session["user_id"],)).fetchone()
+        if row and row["theme"] in _VALID_THEMES:
+            return row["theme"]
+    return None
+
+
+def _set_theme_cookie(response: Response, request: Request, theme: str) -> None:
+    response.set_cookie(
+        _THEME_COOKIE, theme, max_age=365 * 24 * 3600,
+        httponly=True, samesite="strict", secure=_is_https(request), path="/",
+    )
 
 
 def _require_page(request: Request):
@@ -182,6 +219,11 @@ async def login_submit(request: Request):
     db.audit(username, "login_success", ip=ip)
     resp = RedirectResponse("/", status_code=303)
     _set_session_cookie(resp, request, session_id)
+    # If this browser has no theme cookie yet but the account has a saved
+    # preference (set from a different browser), apply it immediately
+    # rather than waiting for one extra render to notice.
+    if not request.cookies.get(_THEME_COOKIE) and row["theme"] in _VALID_THEMES:
+        _set_theme_cookie(resp, request, row["theme"])
     return resp
 
 
@@ -192,6 +234,27 @@ async def logout(request: Request):
         security.destroy_session(session_id)
     resp = RedirectResponse("/login", status_code=303)
     _clear_session_cookie(resp)
+    return resp
+
+
+@app.post("/api/theme")
+async def set_theme(request: Request):
+    """Works whether or not the caller is logged in - the login page has
+    its own theme switcher and there's no session yet to attach a
+    preference to, so it only ever sets the cookie in that case. CSRF is
+    only checked once a session exists (same rule /login itself follows:
+    nothing to check against before one exists)."""
+    body = await request.json()
+    theme = str(body.get("theme", "")).strip().lower()
+    if theme not in _VALID_THEMES:
+        raise HTTPException(status_code=400, detail="Invalid theme")
+    session = deps.get_session(request)
+    if session:
+        deps.require_csrf(request, session)
+        with db.get_conn() as conn:
+            conn.execute("UPDATE users SET theme=? WHERE id=?", (theme, session["user_id"]))
+    resp = JSONResponse({"ok": True, "theme": theme})
+    _set_theme_cookie(resp, request, theme)
     return resp
 
 

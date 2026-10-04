@@ -52,7 +52,7 @@ document.getElementById("hero-source-copy").addEventListener("click", async () =
 // CSS still keys off a small closed set of state-* / dot-* class names
 // (state-LIVE, state-ERROR, ...) - FAILED reuses the existing ERROR
 // visuals (same meaning, renamed), the others (STOPPED/STARTING/
-// RECONNECTING) each have their own rule in layout.css / cards-3d.css.
+// RECONNECTING) each have their own rule in layout.css.
 function _cssStateFor(phase) {
   return phase === "FAILED" ? "ERROR" : phase;
 }
@@ -72,10 +72,6 @@ function renderState(stream) {
   dot.classList.remove("skeleton");
   text.classList.remove("skeleton");
   heroState.className = "hero-state state-" + cssState;
-  // classList.remove/add (not a className overwrite) so a mid-hover
-  // is-hovered/is-tracking class from initCard3DTilt() isn't wiped out
-  // by every 3s poll - that would snap the tilt/glow off while the
-  // pointer is still sitting on the card.
   Array.from(heroCard.classList).filter((c) => c.startsWith("state-")).forEach((c) => heroCard.classList.remove(c));
   heroCard.classList.add("state-" + cssState);
   dot.className = "dot-lg dot-" + cssState;
@@ -260,55 +256,9 @@ async function pollPreview() {
   }
 }
 
-// ---------------------------------------------------------------- premium 3D card interaction
-//
-// Pointer-driven tilt + light sheen, desktop-only: gated on (hover:
-// hover) and (pointer: fine) so touch devices never attach these
-// listeners at all, and on prefers-reduced-motion. Only transform/
-// box-shadow change (both GPU-friendly), driven through CSS custom
-// properties so cards-3d.css owns the actual visual values.
-
-function initCard3DTilt() {
-  const canTilt = window.matchMedia("(hover: hover) and (pointer: fine)").matches
-    && !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  if (!canTilt) return;
-
-  const MAX_TILT_DEG = 5;
-  document.querySelectorAll(".card-3d").forEach((card) => {
-    function onMove(e) {
-      const rect = card.getBoundingClientRect();
-      const px = (e.clientX - rect.left) / rect.width;
-      const py = (e.clientY - rect.top) / rect.height;
-      const tiltY = (px - 0.5) * 2 * MAX_TILT_DEG;
-      const tiltX = (0.5 - py) * 2 * MAX_TILT_DEG;
-      card.style.setProperty("--tilt-x", `${tiltX.toFixed(2)}deg`);
-      card.style.setProperty("--tilt-y", `${tiltY.toFixed(2)}deg`);
-      card.style.setProperty("--mx", `${(px * 100).toFixed(1)}%`);
-      card.style.setProperty("--my", `${(py * 100).toFixed(1)}%`);
-    }
-    card.addEventListener("pointerenter", (e) => {
-      if (e.pointerType !== "mouse") return;
-      card.classList.add("is-tracking", "is-hovered");
-      card.style.setProperty("--lift", "-4px");
-    });
-    card.addEventListener("pointermove", (e) => { if (e.pointerType === "mouse") onMove(e); });
-    card.addEventListener("pointerleave", (e) => {
-      if (e.pointerType !== "mouse") return;
-      card.classList.remove("is-tracking", "is-hovered");
-      card.style.setProperty("--tilt-x", "0deg");
-      card.style.setProperty("--tilt-y", "0deg");
-      card.style.setProperty("--lift", "0px");
-      card.style.removeProperty("--press-scale");
-    });
-    card.addEventListener("pointerdown", (e) => { if (e.pointerType === "mouse") card.style.setProperty("--press-scale", "0.985"); });
-    card.addEventListener("pointerup", (e) => { if (e.pointerType === "mouse") card.style.setProperty("--press-scale", "1"); });
-  });
-}
-
 pollState();
 pollPreview();
 renderAccount();
-initCard3DTilt();
 setInterval(pollState, 3000);
 setInterval(pollPreview, 3000);
 setInterval(renderAccount, 30000);

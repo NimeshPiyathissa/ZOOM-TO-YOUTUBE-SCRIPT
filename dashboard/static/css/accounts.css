@@ -74,17 +74,6 @@
 .account-result { min-height: 1.2em; }
 
 .account-card-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-3); }
-/* Touch targets: .btn-touch already sets --btn-h:56px (components.css),
-   but passwall-glass.css force-overrides every .btn-touch on the whole
-   app to min-height:40px via !important. Restoring the real 56px here,
-   scoped to this page's own action rows only - no other page's buttons
-   are touched by this rule. */
-.account-card-actions .btn-touch,
-.ac-add-option .btn-touch,
-.signin-steps ~ .btn-row .btn-touch {
-  min-height: 56px !important;
-  height: var(--btn-h, 56px) !important;
-}
 
 .ac-more .menu { min-width: 220px; }
 .ac-danger { color: var(--live); }

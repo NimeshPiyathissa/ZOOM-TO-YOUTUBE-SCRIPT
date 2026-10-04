@@ -159,6 +159,11 @@ _MIGRATIONS: list[tuple[str, str, str]] = [
     ("schedules", "state_detail", "ALTER TABLE schedules ADD COLUMN state_detail TEXT"),
     ("schedules", "last_run_at", "ALTER TABLE schedules ADD COLUMN last_run_at REAL"),
     ("schedules", "updated_at", "ALTER TABLE schedules ADD COLUMN updated_at REAL"),
+    # Three-theme redesign: per-user saved theme choice ("white" | "black" |
+    # "default"), NULL until the user ever explicitly picks one - see
+    # app/main.py's theme resolution, which falls back to the zsdash_theme
+    # cookie and then to the device's prefers-color-scheme.
+    ("users", "theme", "ALTER TABLE users ADD COLUMN theme TEXT"),
 ]
 
 

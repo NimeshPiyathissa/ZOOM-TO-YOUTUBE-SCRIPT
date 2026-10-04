@@ -3,11 +3,20 @@
    dashboard is defined here as a CSS custom property. Nothing else
    in the codebase should hard-code a hex value, px size, or ms
    duration - change the look by changing a token.
+
+   Three themes, one semantic token set: White (light), Black (dark),
+   Default (the original forest/glass look). Pages/components only
+   ever read the semantic names below (--bg, --surface, --text, ...);
+   each [data-theme="..."] block redefines values, never structure.
+   First visit (no saved preference anywhere) has no [data-theme]
+   attribute at all and follows the device's prefers-color-scheme
+   between White and Black - Default is only ever reached by an
+   explicit choice.
    ============================================================ */
 
 :root {
   /* ---- typography ---- */
-  --font-sans: "Inter var", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-sans: "Plus Jakarta Sans var", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-mono: "JetBrains Mono var", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
   --text-xs: 12px;
@@ -21,6 +30,7 @@
   --weight-normal: 400;
   --weight-medium: 500;
   --weight-semibold: 600;
+  --weight-bold: 700;
 
   --leading-tight: 1.2;
   --leading-normal: 1.45;
@@ -42,14 +52,15 @@
   --space-12: 48px;
   --space-16: 64px;
 
-  /* ---- radii ---- */
+  /* ---- radii (reference scale: cards ~14-16px) ---- */
   --radius-sm: 8px;
   --radius-md: 12px;
   --radius-lg: 16px;
   --radius-xl: 20px;
   --radius-full: 999px;
 
-  /* ---- motion ---- */
+  /* ---- motion: transform/opacity only, kept short - the encoder has
+     CPU priority over the UI's own decoration ---- */
   --duration-fast: 150ms;
   --duration-base: 200ms;
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
@@ -58,7 +69,7 @@
   --sidebar-w: 240px;
   --sidebar-w-collapsed: 68px;
   --topbar-h: 56px;
-  --content-max-w: 1320px;
+  --content-max-w: 1360px;
 
   /* ---- z-index ---- */
   --z-sticky: 10;
@@ -66,144 +77,253 @@
   --z-toast: 100;
   --z-modal: 200;
 
-  /* ================= color: dark theme (default) ================= */
-  --gray-0: #0b0d11;
-  --bg: #101318;
-  --bg-panel: #15181e;
-  --bg-elevated: #1b1f27;
-  --bg-hover: #1e222a;
-  --border: #262b34;
-  --border-strong: #333a46;
+  /* ---- true-black exceptions: a video/VNC canvas is a device-black
+     surface, not a themed one - this is the one token every theme
+     shares unchanged ---- */
+  --canvas-black: #000000;
 
-  --text: #e9ebf0;
-  --text-dim: #9aa1b0;
-  --text-faint: #6b7280;
+  /* ---- log/terminal surface: deliberately theme-invariant (always a
+     dark monospace panel, like every other terminal/log UI) rather
+     than flipping white in the White theme - checked for AA on its
+     own in scripts/check-contrast.* ---- */
+  --term-bg: #0b0d11;
+  --term-text: #d7dbe3;
+  --term-line-no: #6b7484;
+  --term-err: #ff8a8a;
+  --term-warn: #ffcf7a;
+
+  /* ---- scrim: modal/drawer backdrop dimming, same across themes ---- */
+  --scrim: rgba(8, 10, 14, 0.6);
+}
+
+/* ================================================================
+   White - cool off-white, pure white cards, deep navy for primary
+   text and the active/selected state.
+   ================================================================ */
+:root[data-theme="white"],
+:root:not([data-theme]) {
+  --bg: #eef1f8;
+  --surface: #ffffff;
+  --surface-2: #ffffff;
+  --bg-panel: var(--surface);
+  --bg-elevated: var(--surface-2);
+  --bg-hover: #e7eaf3;
+  --border: #e0e4ee;
+  --border-strong: #c7cde0;
+
+  --text: #15213f;
+  --text-dim: #4d5a7c;
+  --text-faint: #828db0;
   --text-on-accent: #ffffff;
 
-  --accent: #22d3ee;
-  --accent-solid: #0e7490;
-  --accent-solid-hover: #109cb0;
-  --accent-tint: rgba(34, 211, 238, 0.14);
-  --accent-ring: rgba(34, 211, 238, 0.45);
+  --accent: #30509e;
+  --accent-solid: #1a2748;
+  --accent-solid-hover: #233357;
+  --accent-tint: rgba(48, 80, 158, 0.1);
+  --accent-ring: rgba(48, 80, 158, 0.65);
 
-  --live: #ff6b6b;
-  --live-solid: #c92a2a;
-  --live-solid-hover: #a61e1e;
-  --live-tint: rgba(255, 107, 107, 0.14);
+  --live: #c4273c;
+  --live-solid: #b91c2e;
+  --live-solid-hover: #9f1526;
+  --live-tint: rgba(196, 39, 60, 0.1);
+  --danger: var(--live);
+  --danger-solid: var(--live-solid);
 
-  --success: #34d399;
-  --success-tint: rgba(52, 211, 153, 0.14);
-  --warning: #fbbf24;
-  --warning-tint: rgba(251, 191, 36, 0.14);
-  --info: #60a5fa;
-  --info-tint: rgba(96, 165, 250, 0.14);
+  --success: #0f6b40;
+  --success-tint: rgba(15, 107, 64, 0.1);
+  --warning: #9a5b00;
+  --warning-tint: rgba(154, 91, 0, 0.1);
+  --info: #2056c9;
+  --info-tint: rgba(32, 86, 201, 0.1);
 
-  --shadow-sm: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow-md: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 4px 16px rgba(0, 0, 0, 0.45);
-  --shadow-lg: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 16px 48px rgba(0, 0, 0, 0.55);
+  --shadow-sm: 0 1px 2px rgba(21, 33, 63, 0.05);
+  --shadow-md: 0 6px 20px rgba(21, 33, 63, 0.08);
+  --shadow-lg: 0 20px 48px rgba(21, 33, 63, 0.16);
 
-  /* ---- liquid glass (nav only - see layout.css) ---- */
+  --nav-active-bg: var(--accent-solid);
+  --nav-active-text: #ffffff;
+
   --glass-blur: 20px;
-  --glass-sat: 160%;
-  --glass-tint: rgba(255, 255, 255, 0.045);
-  --glass-tint-active: rgba(34, 211, 238, 0.10);
-  --glass-border: rgba(255, 255, 255, 0.09);
-  --glass-edge-highlight: rgba(255, 255, 255, 0.32);
-  --glass-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 8px 32px rgba(0, 0, 0, 0.45), 0 2px 8px rgba(0, 0, 0, 0.3);
-
-  color-scheme: dark;
-}
-
-@media (prefers-color-scheme: light) {
-  :root:not([data-theme="dark"]) {
-    --bg: #f6f7f9;
-    --bg-panel: #ffffff;
-    --bg-elevated: #ffffff;
-    --bg-hover: #f0f1f4;
-    --border: #e4e7ec;
-    --border-strong: #d0d5dd;
-
-    --text: #12141a;
-    --text-dim: #5b6270;
-    --text-faint: #8b93a1;
-    --text-on-accent: #ffffff;
-
-    --accent: #0b7285;
-    --accent-solid: #0e7490;
-    --accent-solid-hover: #0c8599;
-    --accent-tint: rgba(11, 114, 133, 0.1);
-    --accent-ring: rgba(11, 114, 133, 0.35);
-
-    --live: #dc2626;
-    --live-solid: #c92a2a;
-    --live-solid-hover: #a61e1e;
-    --live-tint: rgba(220, 38, 38, 0.1);
-
-    --success: #047857;
-    --success-tint: rgba(4, 120, 87, 0.1);
-    --warning: #b45309;
-    --warning-tint: rgba(180, 83, 9, 0.1);
-    --info: #2563eb;
-    --info-tint: rgba(37, 99, 235, 0.1);
-
-    --shadow-sm: 0 1px 2px rgba(16, 19, 24, 0.04);
-    --shadow-md: 0 4px 16px rgba(16, 19, 24, 0.08);
-    --shadow-lg: 0 16px 48px rgba(16, 19, 24, 0.14);
-
-    --glass-tint: rgba(255, 255, 255, 0.55);
-    --glass-tint-active: rgba(11, 114, 133, 0.10);
-    --glass-border: rgba(16, 20, 28, 0.08);
-    --glass-edge-highlight: rgba(255, 255, 255, 0.85);
-    --glass-shadow: 0 1px 0 rgba(255, 255, 255, 0.6) inset, 0 8px 32px rgba(16, 19, 24, 0.10), 0 2px 8px rgba(16, 19, 24, 0.06);
-
-    color-scheme: light;
-  }
-}
-
-:root[data-theme="light"] {
-  --bg: #f6f7f9;
-  --bg-panel: #ffffff;
-  --bg-elevated: #ffffff;
-  --bg-hover: #f0f1f4;
-  --border: #e4e7ec;
-  --border-strong: #d0d5dd;
-
-  --text: #12141a;
-  --text-dim: #5b6270;
-  --text-faint: #8b93a1;
-  --text-on-accent: #ffffff;
-
-  --accent: #0b7285;
-  --accent-solid: #0e7490;
-  --accent-solid-hover: #0c8599;
-  --accent-tint: rgba(11, 114, 133, 0.1);
-  --accent-ring: rgba(11, 114, 133, 0.35);
-
-  --live: #dc2626;
-  --live-solid: #c92a2a;
-  --live-solid-hover: #a61e1e;
-  --live-tint: rgba(220, 38, 38, 0.1);
-
-  --success: #047857;
-  --success-tint: rgba(4, 120, 87, 0.1);
-  --warning: #b45309;
-  --warning-tint: rgba(180, 83, 9, 0.1);
-  --info: #2563eb;
-  --info-tint: rgba(37, 99, 235, 0.1);
-
-  --shadow-sm: 0 1px 2px rgba(16, 19, 24, 0.04);
-  --shadow-md: 0 4px 16px rgba(16, 19, 24, 0.08);
-  --shadow-lg: 0 16px 48px rgba(16, 19, 24, 0.14);
-
-  --glass-tint: rgba(255, 255, 255, 0.55);
-  --glass-tint-active: rgba(11, 114, 133, 0.10);
-  --glass-border: rgba(16, 20, 28, 0.08);
-  --glass-edge-highlight: rgba(255, 255, 255, 0.85);
-  --glass-shadow: 0 1px 0 rgba(255, 255, 255, 0.6) inset, 0 8px 32px rgba(16, 19, 24, 0.10), 0 2px 8px rgba(16, 19, 24, 0.06);
+  --glass-sat: 140%;
+  --glass-tint: rgba(255, 255, 255, 0.7);
+  --glass-tint-active: var(--accent-tint);
+  --glass-border: rgba(21, 33, 63, 0.08);
+  --glass-edge-highlight: rgba(255, 255, 255, 0.9);
+  --glass-shadow: 0 1px 0 rgba(255, 255, 255, 0.6) inset, 0 8px 32px rgba(21, 33, 63, 0.08);
 
   color-scheme: light;
 }
 
-:root[data-theme="dark"] {
+/* ================================================================
+   Black - near-black cool background, raised dark surfaces (not pure
+   #000 on #000), light text, same accent family as White.
+   ================================================================ */
+:root[data-theme="black"] {
+  --bg: #0a0c10;
+  --surface: #14171e;
+  --surface-2: #1a1e26;
+  --bg-panel: var(--surface);
+  --bg-elevated: var(--surface-2);
+  --bg-hover: #1f2430;
+  --border: #262c38;
+  --border-strong: #363e4e;
+
+  --text: #e9ecf4;
+  --text-dim: #9aa4bd;
+  --text-faint: #6b7489;
+  --text-on-accent: #ffffff;
+
+  --accent: #8aa0e8;
+  --accent-solid: #39579f;
+  --accent-solid-hover: #4868b7;
+  --accent-tint: rgba(138, 160, 232, 0.16);
+  --accent-ring: rgba(138, 160, 232, 0.6);
+
+  --live: #ff7a7a;
+  --live-solid: #d33c3c;
+  --live-solid-hover: #e24b4b;
+  --live-tint: rgba(255, 122, 122, 0.16);
+  --danger: var(--live);
+  --danger-solid: var(--live-solid);
+
+  --success: #3ddc97;
+  --success-tint: rgba(61, 220, 151, 0.16);
+  --warning: #f3b84c;
+  --warning-tint: rgba(243, 184, 76, 0.16);
+  --info: #70a6ff;
+  --info-tint: rgba(112, 166, 255, 0.16);
+
+  --shadow-sm: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 1px 2px rgba(0, 0, 0, 0.45);
+  --shadow-md: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 6px 20px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 20px 48px rgba(0, 0, 0, 0.6);
+
+  --nav-active-bg: var(--accent-solid);
+  --nav-active-text: #ffffff;
+
+  --glass-blur: 20px;
+  --glass-sat: 160%;
+  --glass-tint: rgba(255, 255, 255, 0.045);
+  --glass-tint-active: var(--accent-tint);
+  --glass-border: rgba(255, 255, 255, 0.09);
+  --glass-edge-highlight: rgba(255, 255, 255, 0.32);
+  --glass-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 8px 32px rgba(0, 0, 0, 0.45);
+
   color-scheme: dark;
+}
+
+/* ================================================================
+   Default - the original forest/glass look: dark slate panels over a
+   fixed background photo (see layout.css for the image rule, scoped
+   to this theme only), teal/cyan accent.
+   ================================================================ */
+:root[data-theme="default"] {
+  --bg: #0e1319;
+  --surface: #171e27;
+  --surface-2: #1d2531;
+  --bg-panel: var(--surface);
+  --bg-elevated: var(--surface-2);
+  --bg-hover: #212a37;
+  --border: #283240;
+  --border-strong: #3a4557;
+
+  --text: #eef1f5;
+  --text-dim: #a7b0c2;
+  --text-faint: #7b869c;
+  --text-on-accent: #ffffff;
+
+  --accent: #22d3ee;
+  --accent-solid: #0e7490;
+  --accent-solid-hover: #119cb4;
+  --accent-tint: rgba(34, 211, 238, 0.16);
+  --accent-ring: rgba(34, 211, 238, 0.5);
+
+  --live: #ff6b6b;
+  --live-solid: #c92a2a;
+  --live-solid-hover: #de3737;
+  --live-tint: rgba(255, 107, 107, 0.16);
+  --danger: var(--live);
+  --danger-solid: var(--live-solid);
+
+  --success: #34d399;
+  --success-tint: rgba(52, 211, 153, 0.16);
+  --warning: #fbbf24;
+  --warning-tint: rgba(251, 191, 36, 0.16);
+  --info: #60a5fa;
+  --info-tint: rgba(96, 165, 250, 0.16);
+
+  --shadow-sm: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 6px 20px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 20px 48px rgba(0, 0, 0, 0.55);
+
+  --nav-active-bg: var(--accent-solid);
+  --nav-active-text: #ffffff;
+
+  --glass-blur: 20px;
+  --glass-sat: 160%;
+  --glass-tint: rgba(255, 255, 255, 0.07);
+  --glass-tint-active: var(--accent-tint);
+  --glass-border: rgba(255, 255, 255, 0.1);
+  --glass-edge-highlight: rgba(255, 255, 255, 0.34);
+  --glass-shadow: 0 1px 0 rgba(255, 255, 255, 0.05) inset, 0 8px 32px rgba(0, 0, 0, 0.5);
+
+  color-scheme: dark;
+}
+
+/* First-visit device-preference fallback: identical values to the
+   explicit blocks above, scoped so they only apply before any theme
+   has ever been chosen (no [data-theme] attribute present at all -
+   see app/main.py's theme resolution and app.js). */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --bg: #0a0c10;
+    --surface: #14171e;
+    --surface-2: #1a1e26;
+    --bg-panel: var(--surface);
+    --bg-elevated: var(--surface-2);
+    --bg-hover: #1f2430;
+    --border: #262c38;
+    --border-strong: #363e4e;
+
+    --text: #e9ecf4;
+    --text-dim: #9aa4bd;
+    --text-faint: #6b7489;
+    --text-on-accent: #ffffff;
+
+    --accent: #8aa0e8;
+    --accent-solid: #39579f;
+    --accent-solid-hover: #4868b7;
+    --accent-tint: rgba(138, 160, 232, 0.16);
+    --accent-ring: rgba(138, 160, 232, 0.5);
+
+    --live: #ff7a7a;
+    --live-solid: #d33c3c;
+    --live-solid-hover: #e24b4b;
+    --live-tint: rgba(255, 122, 122, 0.16);
+    --danger: var(--live);
+    --danger-solid: var(--live-solid);
+
+    --success: #3ddc97;
+    --success-tint: rgba(61, 220, 151, 0.16);
+    --warning: #f3b84c;
+    --warning-tint: rgba(243, 184, 76, 0.16);
+    --info: #70a6ff;
+    --info-tint: rgba(112, 166, 255, 0.16);
+
+    --shadow-sm: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 1px 2px rgba(0, 0, 0, 0.45);
+    --shadow-md: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 6px 20px rgba(0, 0, 0, 0.5);
+    --shadow-lg: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 20px 48px rgba(0, 0, 0, 0.6);
+
+    --nav-active-bg: var(--accent-solid);
+    --nav-active-text: #ffffff;
+
+    --glass-blur: 20px;
+    --glass-sat: 160%;
+    --glass-tint: rgba(255, 255, 255, 0.045);
+    --glass-tint-active: var(--accent-tint);
+    --glass-border: rgba(255, 255, 255, 0.09);
+    --glass-edge-highlight: rgba(255, 255, 255, 0.32);
+    --glass-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 8px 32px rgba(0, 0, 0, 0.45);
+
+    color-scheme: dark;
+  }
 }
