@@ -104,9 +104,9 @@ if [[ "${ACTION}" == "uninstall" ]]; then
   if id "${SVC_USER}" &>/dev/null; then
     SVC_UID="$(id -u "${SVC_USER}")"
     sudo -u "${SVC_USER}" XDG_RUNTIME_DIR="/run/user/${SVC_UID}" systemctl --user stop \
-      ffmpeg-stream x11vnc zoom browser-source audio-setup openbox xvfb novnc-proxy 2>/dev/null || true
+      ffmpeg-stream x11vnc zoom browser-source audio-setup openbox xvfb novnc-proxy zoom-vacuum.timer 2>/dev/null || true
     sudo -u "${SVC_USER}" XDG_RUNTIME_DIR="/run/user/${SVC_UID}" systemctl --user disable \
-      ffmpeg-stream x11vnc zoom browser-source audio-setup openbox xvfb novnc-proxy 2>/dev/null || true
+      ffmpeg-stream x11vnc zoom browser-source audio-setup openbox xvfb novnc-proxy zoom-vacuum.timer 2>/dev/null || true
   fi
   systemctl stop dashboard.service 2>/dev/null || true
   systemctl disable dashboard.service 2>/dev/null || true
@@ -229,7 +229,7 @@ fi
 
 next_step "Installing systemd --user units"
 mkdir -p "${SVC_HOME}/.config/systemd/user"
-for unit_file in "${SRC_DIR}"/systemd/*.service; do
+for unit_file in "${SRC_DIR}"/systemd/*.service "${SRC_DIR}"/systemd/*.timer; do
   [[ "$(basename "${unit_file}")" == "dashboard.service" ]] && continue
   cp "${unit_file}" "${SVC_HOME}/.config/systemd/user/"
 done
@@ -244,9 +244,12 @@ run_user_systemctl() {
   sudo -u "${SVC_USER}" XDG_RUNTIME_DIR="/run/user/${SVC_UID}" systemctl --user "$@"
 }
 run_user_systemctl daemon-reload
-for unit_file in "${SRC_DIR}"/systemd/*.service; do
+for unit_file in "${SRC_DIR}"/systemd/*.service "${SRC_DIR}"/systemd/*.timer; do
   name="$(basename "${unit_file}")"
   [[ "${name}" == "dashboard.service" ]] && continue
+  # zoom-vacuum.service is a oneshot with no [Install] section - it's
+  # triggered only by zoom-vacuum.timer, enabling it directly fails.
+  [[ "${name}" == "zoom-vacuum.service" ]] && continue
   run_user_systemctl enable "${name}"
 done
 echo "    Pipeline units installed and enabled (not started yet)."

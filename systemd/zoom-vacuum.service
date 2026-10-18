@@ -1,0 +1,8 @@
+[Unit]
+Description=Zoom Stream Daily Disk Vacuum and Maintenance
+After=network.target
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/home/zoombot/zoom-stream/scripts/auto-vacuum.sh
