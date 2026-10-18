@@ -285,6 +285,11 @@ run_user_systemctl start novnc-proxy
 echo "    Display, audio capture, and Remote GUI (x11vnc/noVNC) are up."
 echo "    zoom/browser-source/ffmpeg-stream stay stopped until a source is configured."
 
+# "systemctl --user enable" alone only takes effect on the next login/boot
+# of this user's manager - without an explicit start here, the timer would
+# silently do nothing until a reboot happened to occur.
+run_user_systemctl start zoom-vacuum.timer
+
 echo ""
 echo "Install complete. See the summary above for the dashboard URL and next steps."
 echo "The Remote GUI is already connectable - configure a source and hit Go Live when ready."
