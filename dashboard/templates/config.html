@@ -9,7 +9,7 @@
   <h2 class="floating-section-title" id="appearance">
     {{ icon("sparkles", "icon-sm") }}Appearance
   </h2>
-  <div class="card">
+  <div class="card card-glass">
     <div class="list-row">
       <div class="list-row-info">
         <span class="list-row-title">Theme</span>
@@ -29,7 +29,7 @@
   </h2>
 
   <!-- Zoom Account & Identity Card -->
-  <div class="card" id="zoom-account">
+  <div class="card card-glass" id="zoom-account">
     <div class="health-card-head mb-2">
       <h3 class="glass-row-title">{{ icon("user", "icon-sm") }}Zoom Account &amp; Identity</h3>
     </div>
@@ -65,7 +65,7 @@
     </h2>
   </div>
 
-  <div class="card">
+  <div class="card card-glass">
     {% if sources %}
     <div class="table-wrap">
       <table id="sources-table">
@@ -165,7 +165,7 @@
     </h2>
   </div>
 
-  <div class="card">
+  <div class="card card-glass">
     <div class="field max-w-lg">
       <label class="label" for="cfg-yt-key">YouTube stream key</label>
       <div class="input-action-group">
@@ -191,7 +191,7 @@
     </h2>
   </div>
 
-  <div class="card" id="telegram-suite-card">
+  <div class="card card-glass" id="telegram-suite-card">
     <p class="hint mb-4">
       Configure Telegram alerts, channel broadcasts, and high-speed MTProto Telethon cloud uploader (supporting up to 4GB files with Telegram Premium).
     </p>
@@ -288,7 +288,7 @@
     </h2>
   </div>
 
-  <div class="card" id="system-restart-card">
+  <div class="card card-glass" id="system-restart-card">
     <div class="card-header"><h3>Restart all services</h3></div>
     <p class="hint mb-3">
       Restarts the pipeline (display, audio, Zoom/browser source, remote desktop, encoder) in
@@ -301,7 +301,7 @@
     <div id="restart-all-steps" class="step-list" hidden></div>
   </div>
 
-  <div class="card" id="system-reboot-card">
+  <div class="card card-glass" id="system-reboot-card">
     <div class="card-header"><h3>Reboot server</h3></div>
     <p class="hint mb-3">
       Restarts the whole machine. The stream stops and the dashboard is offline for 1-2 minutes.
