@@ -120,9 +120,19 @@ function renderRestartRate(count) {
   el.className = "badge restart-rate-badge " + (alarming ? "badge-failed is-alarm" : "badge-inactive");
   label.textContent = `${count} restart${count === 1 ? "" : "s"} / 5 min`;
   el.setAttribute("aria-label", `${count} restarts in the last 5 minutes` + (alarming ? " - crash looping" : ""));
+
+  // Wide stats-row mirror of the same count (hero badge above stays the
+  // primary, always-visible indicator - this is additional, not a
+  // replacement).
+  const wideText = document.getElementById("restart-rate-wide-text");
+  if (wideText) wideText.textContent = count == null ? "—" : count;
+  const wideTile = document.getElementById("restart-rate-wide-tile");
+  if (wideTile) wideTile.classList.toggle("is-alarm", alarming);
 }
 
 function renderActiveSource(source) {
+  const chipSource = document.getElementById("hero-chip-source");
+  if (chipSource) chipSource.textContent = source ? source.name : "—";
   const wrap = document.getElementById("hero-source");
   if (!source) { wrap.hidden = true; return; }
   wrap.hidden = false;
@@ -157,8 +167,22 @@ const FFMPEG_EMPTY_TEXT = {
   FAILED: "The encoder has failed. See above for details.",
 };
 
+function renderHeroChips(ff, hasData) {
+  const chips = document.getElementById("hero-chips");
+  if (!chips) return;
+  chips.hidden = !hasData;
+  if (!hasData) return;
+  const bitrate = document.getElementById("hero-chip-bitrate");
+  const fps = document.getElementById("hero-chip-fps");
+  const dropped = document.getElementById("hero-chip-dropped");
+  if (bitrate) bitrate.textContent = Math.round(ff.bitrate_kbps) + " kbps";
+  if (fps) fps.textContent = ff.fps + " fps";
+  if (dropped) dropped.textContent = ff.drop + " dropped";
+}
+
 function renderFfmpeg(ff, phase, sourceType, sourceHealth) {
   const hasData = !!ff;
+  renderHeroChips(ff, hasData);
   document.getElementById("ffmpeg-empty").hidden = hasData;
   document.getElementById("ffmpeg-empty").querySelector(".empty-sub").textContent =
     FFMPEG_EMPTY_TEXT[phase] || FFMPEG_EMPTY_TEXT.STOPPED;
@@ -215,6 +239,13 @@ function renderSystem(sys) {
   document.getElementById("load-sub").textContent = `load ${sys.load.join(" / ")}`;
   renderSparkline(document.getElementById("spark-mem"), pushSparkline("mem", sys.mem_percent));
   if (sys.upload_kbps != null) renderSparkline(document.getElementById("spark-net"), pushSparkline("net", sys.upload_kbps));
+
+  const cpuBar = document.getElementById("stat-bar-cpu");
+  if (cpuBar) cpuBar.style.width = Math.min(100, sys.cpu_avg) + "%";
+  const memBar = document.getElementById("stat-bar-mem");
+  if (memBar) memBar.style.width = Math.min(100, sys.mem_percent) + "%";
+  const diskBar = document.getElementById("stat-bar-disk");
+  if (diskBar) diskBar.style.width = Math.min(100, sys.disk_percent) + "%";
 }
 
 async function renderAccount() {

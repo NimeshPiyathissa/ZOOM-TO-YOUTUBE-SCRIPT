@@ -5,18 +5,11 @@
 
 <div class="dash-grid">
 
-  <!-- ================================================================ Live Broadcast Controls -->
-  <div class="grid-col-full">
-    <h2 class="floating-section-title">
-      {{ icon("play-circle", "icon-sm") }}Live Broadcast Controls
-    </h2>
-  </div>
-
   <div class="card card-3d hero-3d hero-glass state-STOPPED" id="hero-card">
     <div class="hero-3d-main">
-      <div class="hero-state" id="hero-state">
+      <div class="hero-top-row">
         <span class="dot-lg dot-STOPPED skeleton" id="hero-dot"></span>
-        <div>
+        <div class="hero-state" id="hero-state">
           <div class="state-text skeleton" id="hero-text">Loading</div>
           <div class="hint" id="hero-sub">Checking stream status&hellip;</div>
         </div>
@@ -25,6 +18,14 @@
           {{ icon("rotate-cw", "icon-sm") }}<span id="restart-rate-text"></span>
         </span>
       </div>
+
+      <div class="hero-chip-row" id="hero-chips" hidden>
+        <span class="hero-chip" id="hero-chip-bitrate">&mdash; kbps</span>
+        <span class="hero-chip" id="hero-chip-fps">&mdash; fps</span>
+        <span class="hero-chip" id="hero-chip-dropped">&mdash; dropped</span>
+        <span class="hero-chip" id="hero-chip-source">&mdash;</span>
+      </div>
+
       <div class="hero-3d-source" id="hero-source" hidden>
         <span id="hero-source-icon"></span>
         <span id="hero-source-name" class="mono"></span>
@@ -32,12 +33,12 @@
         <button type="button" class="btn btn-ghost btn-icon btn-sm copy-url-btn" id="hero-source-copy" aria-label="Copy source URL" data-tooltip="Copy URL">{{ icon("link", "icon-sm") }}</button>
       </div>
       <div class="btn-row mt-4">
-        <button id="btn-go-live" class="btn btn-primary btn-lg">{{ icon("play", "icon-sm") }}Go Live</button>
-        <button id="btn-stop-stream" class="btn btn-danger btn-lg">{{ icon("square", "icon-sm") }}Stop</button>
-        <button id="btn-overview-record" class="btn btn-rec btn-lg" type="button"><span id="overview-rec-icon" class="rec-icon">⏺</span><span id="overview-rec-text">Start Recording</span></button>
+        <button id="btn-go-live" class="btn btn-primary btn-lg pill">{{ icon("play", "icon-sm") }}Go Live</button>
+        <button id="btn-stop-stream" class="btn btn-danger btn-lg pill">{{ icon("square", "icon-sm") }}Stop</button>
+        <button id="btn-overview-record" class="btn btn-rec btn-lg pill" type="button"><span id="overview-rec-icon" class="rec-icon">⏺</span><span id="overview-rec-text">Start Recording</span></button>
         <span id="overview-rec-pill" class="rec-duration-pill" style="display: none;"><span class="rec-pulse-dot">🔴</span> REC <span id="overview-rec-timer">00:00:00</span></span>
-        <button id="btn-restart-stream" class="btn btn-secondary btn-lg" data-tooltip="Restart the encoder">{{ icon("rotate-cw", "icon-sm") }}Restart</button>
-        <a href="/studio" class="btn btn-secondary btn-lg">{{ icon("youtube", "icon-sm") }}Live Studio</a>
+        <button id="btn-restart-stream" class="btn btn-secondary btn-lg pill" data-tooltip="Restart the encoder">{{ icon("rotate-cw", "icon-sm") }}Restart</button>
+        <a href="/studio" class="btn btn-secondary btn-lg pill">{{ icon("youtube", "icon-sm") }}Live Studio</a>
       </div>
     </div>
     <div class="hero-3d-preview">
@@ -56,13 +57,6 @@
       <div class="hint mt-1 mono" id="error-banner-detail"></div>
       <div class="hint mt-1"><a href="/logs">Check the logs</a> for the full history.</div>
     </div>
-  </div>
-
-  <!-- ================================================================ Manage Overlays & Streams -->
-  <div class="grid-col-full">
-    <h2 class="floating-section-title">
-      {{ icon("layers", "icon-sm") }}Manage Overlays &amp; Streams
-    </h2>
   </div>
 
   <div class="card grid-col-full">
@@ -99,92 +93,82 @@
     </div>
   </div>
 
-  <!-- ================================================================ Basic settings -->
-  <div class="grid-col-full">
-    <h2 class="floating-section-title">
-      {{ icon("sliders-horizontal", "icon-sm") }}Basic settings
-    </h2>
-  </div>
-
-  <!-- Col 1: Stream Health (span 6 - the richest of the three, gets the room) -->
-  <div class="card card-3d dash-health span-wide">
-    <div class="health-card-head">
-      <h3 class="glass-row-title">{{ icon("activity", "icon-sm") }}Stream health</h3>
-      <span class="hint tnum" id="ffmpeg-updated" hidden></span>
+  <div class="grid-col-full overview-stats-grid">
+    <div class="stat-tile-glass">
+      <span class="eyebrow">CPU avg</span>
+      <span class="stat-value tnum" id="cpu-avg">-<span class="stat-unit">%</span></span>
+      <div class="stat-progress"><div class="stat-progress-fill" id="stat-bar-cpu"></div></div>
+      <svg class="cpu-cores" id="cpu-cores"></svg>
+      <div class="hint mt-2" id="net-big-wrap">{{ icon("activity", "icon-sm") }} <span class="tnum" id="net-big">-</span> &middot; <span class="tnum" id="load-sub">-</span></div>
+      <svg class="sparkline" id="spark-net"></svg>
     </div>
-    <div id="ffmpeg-stats">
-      <div class="empty-state" id="ffmpeg-empty">
-        {{ icon("activity") }}
-        <div class="empty-sub">No data yet &mdash; the stream isn't running.</div>
+    <div class="stat-tile-glass">
+      <span class="eyebrow">Memory</span>
+      <span class="stat-value tnum" id="mem-big">-</span>
+      <span class="stat-sub tnum" id="mem-sub">-</span>
+      <div class="stat-progress"><div class="stat-progress-fill" id="stat-bar-mem"></div></div>
+      <svg class="sparkline" id="spark-mem"></svg>
+    </div>
+    <div class="stat-tile-glass">
+      <span class="eyebrow">Disk</span>
+      <span class="stat-value tnum" id="disk-big">-</span>
+      <span class="stat-sub tnum" id="disk-sub">-</span>
+      <div class="stat-progress"><div class="stat-progress-fill" id="stat-bar-disk"></div></div>
+    </div>
+    <div class="stat-tile-glass">
+      <span class="eyebrow">Account</span>
+      <div class="secret-row mt-2 mb-0">
+        {{ icon("at-sign") }}
+        <span class="hint m-0" id="account-status">loading&hellip;</span>
       </div>
-      <div class="grid grid-cols-3" id="ffmpeg-grid" hidden>
-        <div class="stat-tile">
-          <span class="eyebrow">FPS</span>
-          <span class="stat-value tnum" id="stat-fps">-</span>
-          <svg class="sparkline" id="spark-fps"></svg>
+      <div class="btn-row mt-3">
+        <a href="/settings#zoom-account" class="btn btn-secondary btn-sm">{{ icon("log-in", "icon-sm") }}Manage sign-in</a>
+        <a href="/vnc" class="btn btn-secondary btn-sm">{{ icon("monitor", "icon-sm") }}Remote GUI</a>
+      </div>
+    </div>
+
+    <div class="stat-tile-glass span2">
+      <div class="health-card-head">
+        <h3 class="glass-row-title">{{ icon("activity", "icon-sm") }}Stream health</h3>
+        <span class="hint tnum" id="ffmpeg-updated" hidden></span>
+      </div>
+      <div id="ffmpeg-stats">
+        <div class="empty-state" id="ffmpeg-empty">
+          {{ icon("activity") }}
+          <div class="empty-sub">No data yet &mdash; the stream isn't running.</div>
         </div>
-        <div class="stat-tile">
-          <span class="eyebrow">Speed</span>
-          <span class="stat-value tnum" id="stat-speed">-</span>
-          <svg class="sparkline" id="spark-speed"></svg>
+        <div class="grid grid-cols-3" id="ffmpeg-grid" hidden>
+          <div class="stat-tile">
+            <span class="eyebrow">FPS</span>
+            <span class="stat-value tnum" id="stat-fps">-</span>
+            <svg class="sparkline" id="spark-fps"></svg>
+          </div>
+          <div class="stat-tile">
+            <span class="eyebrow">Speed</span>
+            <span class="stat-value tnum" id="stat-speed">-</span>
+            <svg class="sparkline" id="spark-speed"></svg>
+          </div>
+          <div class="stat-tile">
+            <span class="eyebrow">Bitrate</span>
+            <span class="stat-value tnum" id="stat-bitrate">-</span>
+            <svg class="sparkline" id="spark-bitrate"></svg>
+          </div>
         </div>
-        <div class="stat-tile">
-          <span class="eyebrow">Bitrate</span>
-          <span class="stat-value tnum" id="stat-bitrate">-</span>
-          <svg class="sparkline" id="spark-bitrate"></svg>
+        <div class="hint mt-2" id="ffmpeg-detail" hidden></div>
+        <div class="banner banner-warning mt-3" id="ffmpeg-warning" hidden>
+          {{ icon("alert-triangle") }}<div>Speed below 1.0x &mdash; the encoder may be dropping frames.</div>
         </div>
+        <div class="hint mt-3" id="webpage-health" hidden></div>
       </div>
-      <div class="hint mt-2" id="ffmpeg-detail" hidden></div>
-      <div class="banner banner-warning mt-3" id="ffmpeg-warning" hidden>
-        {{ icon("alert-triangle") }}<div>Speed below 1.0x &mdash; the encoder may be dropping frames.</div>
-      </div>
-      <div class="hint mt-3" id="webpage-health" hidden></div>
+    </div>
+
+    <div class="stat-tile-glass span2" id="restart-rate-wide-tile">
+      <span class="eyebrow">Restart rate <span class="hint m-0">last 5 min</span></span>
+      <span class="stat-value tnum" id="restart-rate-wide-text">0</span>
+      <span class="stat-sub">restarts</span>
     </div>
   </div>
 
-  <!-- Col 2: System Resources (span 3) -->
-  <div class="card card-3d dash-health span-narrow">
-    <div class="health-card-head"><h3 class="glass-row-title">{{ icon("cpu", "icon-sm") }}System</h3></div>
-    <div class="grid grid-cols-2">
-      <div class="stat-tile">
-        <span class="eyebrow">CPU avg</span>
-        <span class="stat-value tnum" id="cpu-avg">-<span class="stat-unit">%</span></span>
-        <svg class="cpu-cores" id="cpu-cores"></svg>
-      </div>
-      <div class="stat-tile">
-        <span class="eyebrow">Memory</span>
-        <span class="stat-value tnum" id="mem-big">-</span>
-        <span class="stat-sub tnum" id="mem-sub">-</span>
-        <svg class="sparkline" id="spark-mem"></svg>
-      </div>
-      <div class="stat-tile">
-        <span class="eyebrow">Disk</span>
-        <span class="stat-value tnum" id="disk-big">-</span>
-        <span class="stat-sub tnum" id="disk-sub">-</span>
-      </div>
-      <div class="stat-tile">
-        <span class="eyebrow">Network / load</span>
-        <span class="stat-value tnum" id="net-big">-</span>
-        <span class="stat-sub tnum" id="load-sub">-</span>
-        <svg class="sparkline" id="spark-net"></svg>
-      </div>
-    </div>
-  </div>
-
-  <!-- Col 3: Zoom Account & Configuration (span 3) -->
-  <div class="card card-3d dash-health span-narrow">
-    <div class="health-card-head"><h3 class="glass-row-title">{{ icon("user", "icon-sm") }}Account</h3></div>
-    <div class="secret-row mb-2">
-      {{ icon("at-sign") }}
-      <span class="hint m-0" id="account-status">loading&hellip;</span>
-    </div>
-    <div class="btn-row mt-3">
-      <a href="/settings#zoom-account" class="btn btn-secondary btn-sm">{{ icon("log-in", "icon-sm") }}Manage sign-in</a>
-      <a href="/vnc" class="btn btn-secondary btn-sm">{{ icon("monitor", "icon-sm") }}Remote GUI</a>
-    </div>
-  </div>
-
-  <!-- Services list spanning full width -->
   <div class="card card-3d dash-services-wrap">
     <div class="health-card-head mb-3"><h3 class="glass-row-title">{{ icon("server", "icon-sm") }}Services</h3></div>
     <div class="service-grid" id="unit-list"></div>
