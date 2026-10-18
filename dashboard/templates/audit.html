@@ -5,10 +5,10 @@
 
 <div class="section mt-0">
   <div class="section-head">
-    <h2>Audit log</h2>
+    <h2>Audit log<span class="count-chip">{{ rows | length }}</span></h2>
     <span class="hint m-0">Most recent 200 events</span>
   </div>
-  <div class="card">
+  <div class="card card-glass">
     <div id="audit-empty" class="empty-state" hidden>
       {{ icon("list-checks") }}
       <div class="empty-title">No audit entries yet</div>

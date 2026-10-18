@@ -4,8 +4,8 @@
 {% block content %}
 
 <div class="section mt-0">
-  <div class="section-head"><h2>Recent errors across all services</h2></div>
-  <div class="card" id="errors-panel">
+  <div class="section-head"><h2>Recent errors across all services{% if errors %}<span class="count-chip">{{ errors | length }}</span>{% endif %}</h2></div>
+  <div class="card card-glass" id="errors-panel">
     {% if errors %}
       <div class="table-wrap">
         <table><thead><tr><th>Service</th><th>Message</th></tr></thead><tbody>
@@ -19,7 +19,7 @@
 </div>
 
 <div class="section">
-  <div class="section-head"><h2>Live logs</h2></div>
+  <div class="section-head"><h2>Live logs<span class="count-chip">{{ units | length }}</span></h2></div>
   <div class="tabs" id="log-tabs" role="tablist">
     {% for u in units %}<button class="tab-btn" role="tab" data-unit="{{ u }}">{{ u }}</button>{% endfor %}
   </div>
