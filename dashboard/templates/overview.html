@@ -12,7 +12,7 @@
     </h2>
   </div>
 
-  <div class="card card-3d hero-3d state-STOPPED" id="hero-card">
+  <div class="card card-3d hero-3d hero-glass state-STOPPED" id="hero-card">
     <div class="hero-3d-main">
       <div class="hero-state" id="hero-state">
         <span class="dot-lg dot-STOPPED skeleton" id="hero-dot"></span>
@@ -68,6 +68,7 @@
   <div class="card grid-col-full">
     <div class="quick-nav-grid">
       <div class="glass-row">
+        <span class="glass-row-icon">{{ icon("type", "icon-sm") }}</span>
         <div class="glass-row-info">
           <span class="glass-row-title">OBS Text Overlay Studio</span>
           <span class="glass-row-subtitle">On-air lower-thirds, headline banners &amp; slates</span>
@@ -76,6 +77,7 @@
       </div>
 
       <div class="glass-row">
+        <span class="glass-row-icon">{{ icon("youtube", "icon-sm") }}</span>
         <div class="glass-row-info">
           <span class="glass-row-title">YouTube Live Studio Room</span>
           <span class="glass-row-subtitle">Broadcast tally, telemetry, audio ladder &amp; chat</span>
@@ -84,6 +86,7 @@
       </div>
 
       <div class="glass-row">
+        <span class="glass-row-icon">{{ icon("shuffle", "icon-sm") }}</span>
         <div class="glass-row-info">
           <span class="glass-row-title">Source Manager &amp; Kiosk</span>
           <span class="glass-row-subtitle">Switch between Zoom meetings, Web pages &amp; Streams</span>
@@ -103,8 +106,8 @@
     </h2>
   </div>
 
-  <!-- Col 1: Stream Health (span 4) -->
-  <div class="card card-3d dash-health">
+  <!-- Col 1: Stream Health (span 6 - the richest of the three, gets the room) -->
+  <div class="card card-3d dash-health span-wide">
     <div class="health-card-head">
       <h3 class="glass-row-title">{{ icon("activity", "icon-sm") }}Stream health</h3>
       <span class="hint tnum" id="ffmpeg-updated" hidden></span>
@@ -139,8 +142,8 @@
     </div>
   </div>
 
-  <!-- Col 2: System Resources (span 4) -->
-  <div class="card card-3d dash-health">
+  <!-- Col 2: System Resources (span 3) -->
+  <div class="card card-3d dash-health span-narrow">
     <div class="health-card-head"><h3 class="glass-row-title">{{ icon("cpu", "icon-sm") }}System</h3></div>
     <div class="grid grid-cols-2">
       <div class="stat-tile">
@@ -168,8 +171,8 @@
     </div>
   </div>
 
-  <!-- Col 3: Zoom Account & Configuration (span 4) -->
-  <div class="card card-3d dash-health">
+  <!-- Col 3: Zoom Account & Configuration (span 3) -->
+  <div class="card card-3d dash-health span-narrow">
     <div class="health-card-head"><h3 class="glass-row-title">{{ icon("user", "icon-sm") }}Account</h3></div>
     <div class="secret-row mb-2">
       {{ icon("at-sign") }}

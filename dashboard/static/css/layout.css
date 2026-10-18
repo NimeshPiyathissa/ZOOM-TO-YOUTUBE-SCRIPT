@@ -150,6 +150,16 @@
 .topbar-actions { display: flex; align-items: center; gap: var(--space-2); flex: none; }
 .sidebar-toggle { display: none; }
 
+/* Account button reads as a small gradient avatar instead of a plain
+   ghost icon button - built from the same accent tokens every other
+   gradient in this redesign uses, no new color, no new element. */
+.account-avatar {
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent), var(--accent-solid));
+  color: var(--text-on-accent); border-color: transparent;
+}
+.account-avatar:hover { background: linear-gradient(135deg, var(--accent), var(--accent-solid-hover)); color: var(--text-on-accent); }
+
 @media (prefers-reduced-motion: reduce) {
   .sidebar, .nav-item, .nav-item.active, .sidebar-backdrop { transition: none !important; }
   .nav-item, .nav-item.active, .app-shell.is-drawer-open .nav-item { animation: none !important; opacity: 1 !important; transform: none !important; }
@@ -362,9 +372,44 @@ main.page {
 .hero-3d.state-ERROR { box-shadow: var(--shadow-sm), 0 0 0 1px var(--live); }
 .hero-3d.state-STARTING, .hero-3d.state-RECONNECTING { box-shadow: var(--shadow-sm), 0 0 0 1px var(--warning); }
 
+/* Glass hero (Overview): opt-in on top of .card.card-3d.hero-3d - a
+   radial glow behind the status, glass background instead of a flat
+   panel. The page's single most important surface gets more presence
+   than a generic card. */
+.hero-glass {
+  background: var(--glass-tint); border-color: var(--glass-border); box-shadow: var(--glass-shadow);
+  position: relative; overflow: hidden;
+}
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  .hero-glass {
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  }
+}
+.hero-glass::after {
+  content: ""; position: absolute; top: -50%; right: -15%; width: 55%; height: 170%;
+  background: radial-gradient(circle, var(--live-tint), transparent 70%);
+  pointer-events: none; opacity: 0; transition: opacity var(--duration-slow) var(--ease-out);
+}
+.hero-glass.state-LIVE::after { opacity: 1; }
+.hero-glass .hero-3d-main, .hero-glass .hero-3d-preview { position: relative; z-index: 1; }
+.hero-glass .hero-3d-preview { border-color: var(--glass-border); }
+/* Status dot gets a visible ring sized to match the hero's bigger
+   presence - .dot-LIVE's existing pulse-ring keyframe (components.css)
+   is reused as-is, just made larger here. */
+.hero-glass .dot-lg { width: 16px; height: 16px; }
+.hero-glass .state-text { font-size: var(--text-2xl); }
+
 .dash-health { grid-column: 1 / -1; }
 @media (min-width: 640px) { .dash-health { grid-column: span 1; } }
 @media (min-width: 1024px) { .dash-health { grid-column: span 4; } }
+/* Opt-in proportions for a richer, unequal stats row (Overview):
+   Stream health gets double width since it carries the most data
+   (three sparklines) - System/Account stay narrower. */
+@media (min-width: 1024px) {
+  .dash-health.span-wide { grid-column: span 6; }
+  .dash-health.span-narrow { grid-column: span 3; }
+}
 
 .health-card-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--space-3); }
 .health-card-head h3 { font-size: var(--text-base); margin: 0; }
@@ -378,7 +423,41 @@ main.page {
 
 /* Quick-nav / studio split rows (Overview, Studio, Overlay) */
 .quick-nav-grid {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: var(--space-4); width: 100%;
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: var(--space-4); width: 100%;
+}
+/* Inside a quick-nav grid, a .glass-row becomes a proper glass tile
+   (vertical card: icon, title, description, action pinned to the
+   bottom) instead of the plain underlined row it is everywhere else -
+   same shared .glass-row markup/CSS (components.css) untouched for its
+   other uses (settings rows, account rows), this is scoped to the grid
+   context only. */
+.quick-nav-grid .glass-row {
+  flex-direction: column; align-items: flex-start; gap: var(--space-3);
+  padding: var(--space-5); border-bottom: none; border-radius: var(--radius-lg);
+  border: 1px solid var(--glass-border); background: var(--glass-tint); box-shadow: var(--glass-shadow);
+  position: relative; overflow: hidden;
+  transition: transform var(--duration-base) var(--ease-out), box-shadow var(--duration-base) var(--ease-out);
+}
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  .quick-nav-grid .glass-row {
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  }
+}
+.quick-nav-grid .glass-row::before {
+  content: ""; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+  background: linear-gradient(90deg, var(--accent-solid), var(--accent)); opacity: 0.9;
+}
+.quick-nav-grid .glass-row:hover { transform: translateY(-2px); box-shadow: var(--shadow-lg); }
+.quick-nav-grid .glass-row-icon {
+  width: 36px; height: 36px; border-radius: var(--radius-md); flex: none;
+  background: var(--accent-tint); color: var(--accent); display: flex; align-items: center; justify-content: center;
+}
+.quick-nav-grid .glass-row .btn,
+.quick-nav-grid .glass-row .btn-row { margin-top: auto; width: 100%; }
+.quick-nav-grid .glass-row .btn-row { display: flex; }
+@media (prefers-reduced-motion: reduce) {
+  .quick-nav-grid .glass-row:hover { transform: none; }
 }
 .studio-row-split { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--space-5); width: 100%; }
 @media (max-width: 900px) { .studio-row-split { grid-template-columns: 1fr; } }
