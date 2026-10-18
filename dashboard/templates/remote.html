@@ -7,7 +7,7 @@
 <div class="remote-grid rack-grid panel-grid">
 
   <!-- Program: live preview of :99 + state, elapsed, and the status rail -->
-  <section class="card panel-program" aria-labelledby="panel-program-h">
+  <section class="card card-glass panel-program" aria-labelledby="panel-program-h">
     <div class="program-head">
       <h2 id="panel-program-h" class="remote-section-title">{{ icon("monitor", "icon-sm") }}Program</h2>
       <span class="program-id" aria-hidden="true">DISPLAY :99</span>
@@ -107,7 +107,7 @@
     </div>
   </section>
 
-  <section class="card panel-rail" aria-labelledby="panel-rail-h" aria-live="polite">
+  <section class="card card-glass panel-rail" aria-labelledby="panel-rail-h" aria-live="polite">
     <h2 id="panel-rail-h" class="remote-section-title">{{ icon("activity", "icon-sm") }}Status <span class="hint m-0 tnum" id="rail-updated"></span></h2>
     <div class="rail-grid">
       <div class="rail-tile"><span class="eyebrow">Speed</span><span class="stat-value tnum" id="rail-speed">—</span></div>
@@ -124,7 +124,7 @@
     <div class="banner banner-error mt-2" id="rail-failed" hidden>{{ icon("alert-triangle") }}<div><div id="rail-failed-msg"></div><div class="hint mt-1 mono" id="rail-failed-err"></div></div></div>
   </section>
 
-  <section class="card panel-sources" aria-labelledby="remote-sources-h">
+  <section class="card card-glass panel-sources" aria-labelledby="remote-sources-h">
     <h2 id="remote-sources-h" class="remote-section-title">{{ icon("shuffle", "icon-sm") }}Sources</h2>
     <div class="source-tiles" id="source-tiles" role="list" aria-label="Saved sources">
       {% for s in sources %}
@@ -142,7 +142,7 @@
   </section>
 
   <!-- ============================================================ YouTube deck (web source context) -->
-  <section class="card panel-context yt-deck" id="ctx-webpage" hidden aria-labelledby="ctx-webpage-h">
+  <section class="card card-glass panel-context yt-deck" id="ctx-webpage" hidden aria-labelledby="ctx-webpage-h">
     <h2 id="ctx-webpage-h" class="remote-section-title">{{ icon("globe", "icon-sm") }}YouTube / web page <span class="hint m-0" id="ctx-webpage-name"></span>
       <span class="rack-title-end">
         <label class="yt-playas" for="ctx-account">{{ icon("user", "icon-sm") }}<span>Play as</span>
@@ -285,7 +285,7 @@
     </div>
   </section>
 
-  <section class="card panel-context" id="ctx-zoom" hidden aria-labelledby="ctx-zoom-h">
+  <section class="card card-glass panel-context" id="ctx-zoom" hidden aria-labelledby="ctx-zoom-h">
     <h2 id="ctx-zoom-h" class="remote-section-title">{{ icon("video", "icon-sm") }}Zoom <span class="hint m-0" id="ctx-zoom-name"></span>
       <span class="rack-title-end"><a href="/zoom" class="btn btn-ghost btn-sm">{{ icon("external-link", "icon-sm") }}Zoom page</a></span></h2>
 
@@ -335,7 +335,7 @@
     <div class="hint mt-2" id="zoom-readback"></div>
   </section>
 
-  <section class="card panel-context" id="ctx-direct" hidden aria-labelledby="ctx-direct-h">
+  <section class="card card-glass panel-context" id="ctx-direct" hidden aria-labelledby="ctx-direct-h">
     <h2 id="ctx-direct-h" class="remote-section-title">{{ icon("cast", "icon-sm") }}Direct media <span class="hint m-0" id="ctx-direct-name"></span></h2>
     <div class="mono text-dim" id="direct-url"></div>
     <div class="hint mt-1" id="direct-options"></div>
@@ -347,7 +347,7 @@
   </section>
 
   <!-- Mixer strip: two genuinely different controls, kept visually distinct -->
-  <section class="card panel-mixer" aria-labelledby="remote-audio-h">
+  <section class="card card-glass panel-mixer" aria-labelledby="remote-audio-h">
     <h2 id="remote-audio-h" class="remote-section-title">{{ icon("volume-2", "icon-sm") }}Audio mixer</h2>
     <div class="mixer-channel audio-stream">
       <div class="mixer-head">
