@@ -145,6 +145,10 @@ SUDOERS_TMP="$(mktemp)"
   echo "${DASH_USER} ALL=(zoombot) NOPASSWD: /usr/bin/xsetroot -solid *"
   echo "${DASH_USER} ALL=(zoombot) NOPASSWD: ${STREAM_APP_DIR}/scripts/chrome-account.sh *"
   echo "${DASH_USER} ALL=(zoombot) NOPASSWD: ${STREAM_APP_DIR}/scripts/zoom-shortcut.sh *"
+  # "Meeting only (full frame)" toggle (Fit half) - added straight to
+  # production's sudoers earlier and never backported here until now;
+  # see app/control.py's zoom_set_meeting_only().
+  echo "${DASH_USER} ALL=(zoombot) NOPASSWD: ${STREAM_APP_DIR}/scripts/zoom-meeting-only.sh *"
   echo "${DASH_USER} ALL=(zoombot) NOPASSWD: /usr/bin/python3 ${STREAM_APP_DIR}/scripts/zoom-atspi.py *"
   echo "${DASH_USER} ALL=(zoombot) NOPASSWD: /usr/bin/python3 ${STREAM_APP_DIR}/scripts/zoom-status.py"
   echo "${DASH_USER} ALL=(zoombot) NOPASSWD: /usr/bin/python3 ${STREAM_APP_DIR}/scripts/audio-level.py *"
