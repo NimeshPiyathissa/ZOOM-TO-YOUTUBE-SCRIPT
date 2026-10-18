@@ -44,11 +44,42 @@
 .btn-ghost { background: transparent; border-color: transparent; color: var(--text-dim); }
 .btn-ghost:hover { background: var(--bg-hover); color: var(--text); }
 
-.btn-primary { background: var(--accent-solid); border-color: var(--accent-solid); color: var(--text-on-accent); font-weight: var(--weight-semibold); }
-.btn-primary:hover { background: var(--accent-solid-hover); border-color: var(--accent-solid-hover); }
+/* Subtle depth instead of a flat fill: a two-stop gradient between the
+   theme's own existing accent-solid/accent-solid-hover (no new colors),
+   plus a resting shadow and a small hover lift. transform/box-shadow
+   only, so this stays on the GPU-composited path the encoder doesn't
+   compete with. */
+.btn-primary {
+  background: linear-gradient(180deg, var(--accent-solid-hover), var(--accent-solid));
+  border-color: var(--accent-solid); color: var(--text-on-accent); font-weight: var(--weight-semibold);
+  box-shadow: var(--shadow-xs);
+}
+.btn-primary:hover {
+  background: linear-gradient(180deg, var(--accent-solid-hover), var(--accent-solid-hover));
+  border-color: var(--accent-solid-hover);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+.btn-primary:active { transform: translateY(0); box-shadow: var(--shadow-xs); }
+@media (prefers-reduced-motion: reduce) {
+  .btn-primary:hover { transform: none; }
+}
 
-.btn-danger { background: var(--live-solid); border-color: var(--live-solid); color: var(--text-on-accent); font-weight: var(--weight-semibold); }
-.btn-danger:hover { background: var(--live-solid-hover); border-color: var(--live-solid-hover); }
+.btn-danger {
+  background: linear-gradient(180deg, var(--live-solid-hover), var(--live-solid));
+  border-color: var(--live-solid); color: var(--text-on-accent); font-weight: var(--weight-semibold);
+  box-shadow: var(--shadow-xs);
+}
+.btn-danger:hover {
+  background: linear-gradient(180deg, var(--live-solid-hover), var(--live-solid-hover));
+  border-color: var(--live-solid-hover);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+.btn-danger:active { transform: translateY(0); box-shadow: var(--shadow-xs); }
+@media (prefers-reduced-motion: reduce) {
+  .btn-danger:hover { transform: none; }
+}
 
 .btn-icon { width: var(--btn-h); padding: 0; flex: none; }
 
@@ -279,7 +310,7 @@ input[type="range"].slider::-moz-range-thumb {
 
 .stat-tile { display: flex; flex-direction: column; gap: var(--space-2); }
 .stat-tile .stat-value {
-  font-size: var(--text-xl); font-weight: var(--weight-semibold); letter-spacing: var(--tracking-tight);
+  font-size: var(--text-xl); font-weight: var(--weight-bold); letter-spacing: var(--tracking-tight);
   font-variant-numeric: tabular-nums; font-feature-settings: "tnum";
 }
 .stat-tile .stat-sub { font-size: var(--text-xs); color: var(--text-dim); }
@@ -466,7 +497,18 @@ td.actions-cell { text-align: right; white-space: nowrap; }
 .preview-wrap img { width: 100%; height: 100%; object-fit: contain; }
 
 .login-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: var(--space-4); }
-.login-card { width: 100%; max-width: 380px; background: var(--bg-panel); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: var(--space-8); box-shadow: var(--shadow-lg); }
+.login-card {
+  width: 100%; max-width: 380px; background: var(--bg-panel); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: var(--space-8); box-shadow: var(--shadow-lg);
+  position: relative; overflow: hidden;
+}
+/* A thin accent-gradient cap, the one deliberately decorative touch on
+   the card most people see first - reuses the theme's own accent
+   tokens, no new color. */
+.login-card::before {
+  content: ""; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+  background: linear-gradient(90deg, var(--accent-solid), var(--accent));
+}
 .login-card h1 { font-size: var(--text-lg); margin-bottom: var(--space-6); text-align: center; }
 .login-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--space-4); }
 .login-top .theme-switch { margin-left: auto; }

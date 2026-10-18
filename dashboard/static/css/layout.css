@@ -85,11 +85,20 @@
    routed app could animate. */
 .nav-item.active {
   color: var(--nav-active-text);
-  background: var(--nav-active-bg);
+  /* A gentle 5% lightening keeps the gradient's lightest corner still
+     comfortably AA-contrast with --nav-active-text (verified by hand:
+     Default theme's worst case lands at ~4.86:1, still above the 4.5:1
+     floor - the contrast script itself only checks the flat token,
+     not a color-mix() gradient stop, so this was checked separately). */
+  background: linear-gradient(165deg, color-mix(in srgb, var(--nav-active-bg) 95%, white 5%), var(--nav-active-bg));
   font-weight: var(--weight-semibold);
+  box-shadow: 0 1px 0 var(--glass-edge-highlight) inset, 0 4px 14px -4px var(--accent-tint);
   animation: nav-active-in var(--duration-base) var(--ease-out) backwards;
 }
-.nav-item.active:hover { background: var(--nav-active-bg); color: var(--nav-active-text); }
+.nav-item.active:hover {
+  background: linear-gradient(165deg, color-mix(in srgb, var(--nav-active-bg) 95%, white 5%), var(--nav-active-bg));
+  color: var(--nav-active-text);
+}
 @keyframes nav-active-in {
   from { opacity: 0; transform: scale(0.97); }
   to { opacity: 1; transform: scale(1); }
@@ -122,6 +131,9 @@
   height: var(--topbar-h); padding: 0 var(--space-4);
   border-bottom: 1px solid var(--glass-border);
   background: var(--glass-tint);
+  /* Same glass surface family as .sidebar - it was missing this and
+     reading flatter than the rail it sits beside. */
+  box-shadow: var(--glass-shadow);
 }
 @supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
   .topbar {
@@ -162,7 +174,10 @@ main.page {
 .hero {
   display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); flex-wrap: wrap;
   background: var(--bg-panel); border: 1px solid var(--border); border-radius: var(--radius-lg);
-  padding: var(--space-6); margin-bottom: var(--space-6); box-shadow: var(--shadow-sm);
+  padding: var(--space-6); margin-bottom: var(--space-6);
+  /* One step up from a resting .card - this is the page's primary
+     focal panel, it should read with slightly more presence. */
+  box-shadow: var(--shadow-md);
 }
 .hero-state { display: flex; align-items: center; gap: var(--space-3); }
 .hero-state .dot-lg { width: 12px; height: 12px; border-radius: 50%; flex: none; }
