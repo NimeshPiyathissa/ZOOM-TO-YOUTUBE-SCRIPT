@@ -48,14 +48,17 @@ function toast(message, type = "ok") {
   const el = document.createElement("div");
   el.className = `toast ${type}`;
   el.setAttribute("role", "status");
-  const iconName = type === "err" ? "alert-circle" : "check-circle-2";
+  const iconName = type === "err" ? "alert-circle" : type === "warn" ? "alert-triangle" : type === "info" ? "info" : "check-circle-2";
   el.innerHTML = `${icon(iconName)}<span>${message}</span>`;
   wrap.appendChild(el);
-  setTimeout(() => {
+  const dismiss = () => {
+    if (el.classList.contains("leaving")) return;
     el.classList.add("leaving");
     el.addEventListener("animationend", () => el.remove(), { once: true });
     setTimeout(() => el.remove(), 400);
-  }, 5000);
+  };
+  el.addEventListener("click", dismiss);
+  setTimeout(dismiss, type === "err" ? 7000 : 5000);
 }
 
 // ---------------------------------------------------------------- focus trap
@@ -92,6 +95,7 @@ function confirmDialog(message, { danger = false, confirmText = "Confirm", requi
     backdrop.className = "modal-backdrop";
     backdrop.innerHTML = `
       <div class="modal" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+        <div class="modal-icon icon-well ${danger ? "is-live" : ""}">${icon(danger ? "alert-triangle" : "info")}</div>
         <h3 id="confirm-title">${danger ? "Are you sure?" : "Confirm"}</h3>
         <p>${message}</p>
         ${requireText ? `<div class="field"><label class="label" for="confirm-input">Type "${requireText}" to confirm</label><input class="input" type="text" id="confirm-input"></div>` : ""}
@@ -102,7 +106,14 @@ function confirmDialog(message, { danger = false, confirmText = "Confirm", requi
       </div>`;
     document.body.appendChild(backdrop);
     let release;
-    const cleanup = (result) => { release(); backdrop.remove(); resolve(result); };
+    const cleanup = (result) => {
+      release();
+      backdrop.classList.add("is-closing");
+      const done = () => backdrop.remove();
+      backdrop.addEventListener("animationend", done, { once: true });
+      setTimeout(done, 250);
+      resolve(result);
+    };
     release = trapFocus(backdrop, () => cleanup(false));
     backdrop.querySelector("#confirm-cancel").onclick = () => cleanup(false);
     backdrop.querySelector("#confirm-ok").onclick = () => {
@@ -118,47 +129,78 @@ function confirmDialog(message, { danger = false, confirmText = "Confirm", requi
 
 // ---------------------------------------------------------------- theme
 //
-// Three themes (white/black/default). The server is the source of
-// truth for "no flash": it reads a zsdash_theme cookie (and, for a
-// logged-in user, their saved DB preference) and renders
-// <html data-theme="..."> directly in the initial response - see
-// app/main.py's theme context processor. This script only handles
-// live switching (every .theme-switch on the page, topbar + login)
-// and mirrors the choice into localStorage as the "in the browser"
-// copy the task asked for; it never needs to fight page-load FOUC.
+// Light (white) / Dark (black), plus "System", which follows the OS. The
+// server renders an explicit choice as <html data-theme> from the
+// zsdash_theme cookie (no flash); "System" is a browser-local mode
+// (localStorage zsdash-theme-mode) resolved by the inline bootstrap in
+// base.html's <head> before first paint. The legacy "default" value the
+// backend still accepts renders as Dark (tokens.css).
+//
+// Switching crossfades the whole page via the View Transitions API
+// where available (a single GPU snapshot crossfade - nothing re-animates
+// per element), and falls back to an instant swap elsewhere.
 
-const THEME_ICON = { white: "sun", black: "moon", default: "sparkles" };
+const THEME_ICON = { system: "monitor", white: "sun", black: "moon", default: "moon" };
 
-function _currentTheme() {
-  return document.documentElement.getAttribute("data-theme") ||
-    (window.matchMedia("(prefers-color-scheme: dark)").matches ? "black" : "white");
+function _themeMode() {
+  if (document.documentElement.getAttribute("data-theme-mode") === "system") return "system";
+  const t = document.documentElement.getAttribute("data-theme");
+  return t === "default" ? "black" : (t || "system");
 }
 
-function _paintThemeSwitches(theme) {
+function _paintThemeSwitches(mode) {
+  const resolved = document.documentElement.getAttribute("data-theme");
   document.querySelectorAll(".theme-switch-trigger").forEach((trigger) => {
-    trigger.innerHTML = icon(THEME_ICON[theme] || "sun");
+    trigger.innerHTML = icon(mode === "system" ? THEME_ICON[resolved] || "monitor" : THEME_ICON[mode] || "sun");
   });
   document.querySelectorAll("[data-theme-choice]").forEach((item) => {
-    item.classList.toggle("is-active", item.dataset.themeChoice === theme);
+    const on = item.dataset.themeChoice === mode;
+    item.classList.toggle("is-active", on);
+    item.setAttribute("aria-checked", String(on));
   });
 }
 
-async function _applyTheme(theme) {
-  document.documentElement.setAttribute("data-theme", theme);
-  _paintThemeSwitches(theme);
-  try { localStorage.setItem("zsdash-theme", theme); } catch (e) {}
-  try { await apiFetch("/api/theme", { method: "POST", body: JSON.stringify({ theme }) }); }
+function _withThemeTransition(fn) {
+  const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (document.startViewTransition && !reduce) {
+    document.documentElement.classList.add("theme-transition");
+    const vt = document.startViewTransition(fn);
+    vt.finished.finally(() => document.documentElement.classList.remove("theme-transition"));
+  } else {
+    fn();
+  }
+}
+
+async function _applyTheme(mode) {
+  const root = document.documentElement;
+  const mq = window.matchMedia("(prefers-color-scheme: dark)");
+  _withThemeTransition(() => {
+    if (mode === "system") {
+      root.setAttribute("data-theme-mode", "system");
+      root.setAttribute("data-theme", mq.matches ? "black" : "white");
+    } else {
+      root.removeAttribute("data-theme-mode");
+      root.setAttribute("data-theme", mode);
+    }
+    _paintThemeSwitches(mode);
+  });
+  try { localStorage.setItem("zsdash-theme-mode", mode === "system" ? "system" : "explicit"); } catch (e) {}
+  // The server only knows explicit themes; "System" keeps whatever it
+  // last stored and the browser-local mode overrides it on every load.
+  if (mode === "system") return;
+  try { await apiFetch("/api/theme", { method: "POST", body: JSON.stringify({ theme: mode }) }); }
   catch (err) { toast("Could not save theme: " + err.message, "err"); }
 }
 
 function initTheme() {
   if (!document.querySelector("[data-theme-choice]")) return;
-  _paintThemeSwitches(_currentTheme());
+  _paintThemeSwitches(_themeMode());
+  window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => _paintThemeSwitches(_themeMode()));
   document.addEventListener("click", (e) => {
     const btn = e.target.closest("[data-theme-choice]");
     if (!btn) return;
     const wrap = btn.closest(".menu-wrap");
-    if (wrap) wrap.classList.remove("is-open");
+    if (wrap) { wrap.classList.remove("is-open"); const m = wrap.querySelector(".menu"); if (m) m.inert = true; }
     _applyTheme(btn.dataset.themeChoice);
   });
 }
@@ -172,7 +214,7 @@ function initSidebar() {
   const collapseBtn = document.getElementById("sidebar-collapse");
   const drawerBtn = document.getElementById("sidebar-toggle");
   const backdrop = shell.querySelector(".sidebar-backdrop");
-  const drawerMq = window.matchMedia("(max-width: 1023px)");
+  const drawerMq = window.matchMedia("(max-width: 767px)");
 
   // Below the drawer breakpoint the sidebar is off-canvas when closed; mark
   // it inert so its links aren't keyboard/screen-reader reachable while hidden.
@@ -319,18 +361,20 @@ function pushSparkline(key, value, max = 40) {
   return arr;
 }
 
-function renderSparkline(svgEl, values, { width = 100, height = 32, pad = 2 } = {}) {
-  if (!svgEl || values.length < 2) return;
-  svgEl.setAttribute("viewBox", `0 0 ${width} ${height}`);
-  svgEl.setAttribute("preserveAspectRatio", "none");
+// Sparklines morph between updates: when the point count is unchanged
+// (the steady state once the history window is full) the previous and
+// next y-values are interpolated over a short rAF tween, so the line
+// glides rather than jumps. Reduced-motion users get the instant swap.
+const _sparkPrev = new WeakMap();
+
+function _sparkPoints(values, width, height, pad) {
   const min = Math.min(...values), max = Math.max(...values);
   const range = max - min || 1;
   const step = (width - pad * 2) / (values.length - 1);
-  const points = values.map((v, i) => {
-    const x = pad + i * step;
-    const y = height - pad - ((v - min) / range) * (height - pad * 2);
-    return [x, y];
-  });
+  return values.map((v, i) => [pad + i * step, height - pad - ((v - min) / range) * (height - pad * 2)]);
+}
+
+function _sparkPaint(svgEl, points, height) {
   const lineD = points.map((p, i) => (i === 0 ? "M" : "L") + p[0].toFixed(1) + "," + p[1].toFixed(1)).join(" ");
   const fillD = `${lineD} L${points[points.length - 1][0].toFixed(1)},${height} L${points[0][0].toFixed(1)},${height} Z`;
   let line = svgEl.querySelector("path.line");
@@ -339,6 +383,32 @@ function renderSparkline(svgEl, values, { width = 100, height = 32, pad = 2 } = 
   if (!line) { line = document.createElementNS("http://www.w3.org/2000/svg", "path"); line.setAttribute("class", "line"); svgEl.appendChild(line); }
   fill.setAttribute("d", fillD);
   line.setAttribute("d", lineD);
+}
+
+function renderSparkline(svgEl, values, { width = 100, height = 32, pad = 2 } = {}) {
+  if (!svgEl || values.length < 2) return;
+  svgEl.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  svgEl.setAttribute("preserveAspectRatio", "none");
+  const next = _sparkPoints(values, width, height, pad);
+  const prevState = _sparkPrev.get(svgEl);
+  const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (prevState && prevState.raf) cancelAnimationFrame(prevState.raf);
+  const from = prevState && prevState.points;
+  if (reduce || !from || from.length !== next.length || document.hidden) {
+    _sparkPaint(svgEl, next, height);
+    _sparkPrev.set(svgEl, { points: next });
+    return;
+  }
+  const state = { points: next, raf: 0 };
+  _sparkPrev.set(svgEl, state);
+  const t0 = performance.now(), dur = 420;
+  const tick = (now) => {
+    const t = Math.min(1, (now - t0) / dur);
+    const e = 1 - Math.pow(1 - t, 3);
+    _sparkPaint(svgEl, next.map((p, i) => [p[0], from[i][1] + (p[1] - from[i][1]) * e]), height);
+    if (t < 1) state.raf = requestAnimationFrame(tick);
+  };
+  state.raf = requestAnimationFrame(tick);
 }
 
 // per-core CPU bars: an attribute-driven SVG bar chart (no inline "style",

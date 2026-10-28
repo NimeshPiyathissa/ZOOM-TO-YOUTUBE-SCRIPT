@@ -254,7 +254,7 @@ def load_theme_tokens(theme: str) -> dict[str, str]:
         base = parse_tokens(extract_block(css, r"(?m)^:root \{"))
         selector = {
             "white": r':root\[data-theme="white"\](?:,\s*:root:not\(\[data-theme\]\))?\s*\{',
-            "black": r':root\[data-theme="black"\]\s*\{',
+            "black": r':root\[data-theme="black"\](?:,\s*:root\[data-theme="default"\])?\s*\{',
             "default": r':root\[data-theme="default"\]\s*\{',
         }[theme]
         theme_block = parse_tokens(extract_block(css, selector))

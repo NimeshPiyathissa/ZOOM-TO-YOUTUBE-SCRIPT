@@ -58,9 +58,28 @@ function _cssStateFor(phase) {
 }
 
 const STATE_LABEL = {
-  STOPPED: "Stopped", STARTING: "Starting…", LIVE: "Live",
-  RECONNECTING: "Reconnecting…", FAILED: "Failed",
+  STOPPED: "Off air", STARTING: "Starting the encoder…", LIVE: "Streaming to YouTube",
+  RECONNECTING: "Reconnecting…", FAILED: "Encoder failed",
 };
+// Short word inside the status ring.
+const RING_WORD = { STOPPED: "Off air", STARTING: "Start", LIVE: "Live", RECONNECTING: "Retry", FAILED: "Failed" };
+
+// The ring shows an HH:MM:SS on-air clock that ticks every second
+// between /api/state polls (anchored to the last polled uptime).
+let _ringUptime = null, _ringAnchor = 0;
+function _clock(sec) {
+  sec = Math.max(0, Math.floor(sec));
+  const h = String(Math.floor(sec / 3600)).padStart(2, "0");
+  const m = String(Math.floor((sec % 3600) / 60)).padStart(2, "0");
+  const s = String(sec % 60).padStart(2, "0");
+  return `${h}:${m}:${s}`;
+}
+function _tickRing() {
+  const el = document.getElementById("hero-ring-time");
+  if (!el) return;
+  el.textContent = _ringUptime == null ? "" : _clock(_ringUptime + (Date.now() - _ringAnchor) / 1000);
+}
+setInterval(_tickRing, 1000);
 
 function renderState(stream) {
   const dot = document.getElementById("hero-dot");
@@ -76,6 +95,13 @@ function renderState(stream) {
   heroCard.classList.add("state-" + cssState);
   dot.className = "dot-lg dot-" + cssState;
   text.textContent = STATE_LABEL[stream.phase] || stream.phase;
+  const ringWord = document.getElementById("hero-ring-word");
+  if (ringWord) ringWord.textContent = RING_WORD[stream.phase] || stream.phase;
+  _ringUptime = stream.phase === "LIVE" && stream.uptime_seconds != null ? stream.uptime_seconds : null;
+  _ringAnchor = Date.now();
+  _tickRing();
+  const tag = document.getElementById("preview-tag");
+  if (tag) tag.hidden = stream.phase !== "LIVE";
 
   if (stream.phase === "LIVE") {
     sub.textContent = `Uptime ${fmtUptime(stream.uptime_seconds)} · restarts ${stream.restart_count}`;
@@ -86,7 +112,7 @@ function renderState(stream) {
   } else if (stream.phase === "FAILED") {
     sub.textContent = `Gave up after ${stream.restart_count} restarts.`;
   } else {
-    sub.textContent = "Not streaming.";
+    sub.textContent = "Not streaming. Pick a source on Controls, then Go Live.";
   }
 
   document.getElementById("btn-go-live").hidden = stream.phase === "LIVE" || stream.phase === "RECONNECTING";
@@ -132,7 +158,7 @@ function renderRestartRate(count) {
 
 function renderActiveSource(source) {
   const chipSource = document.getElementById("hero-chip-source");
-  if (chipSource) chipSource.textContent = source ? source.name : "—";
+  if (chipSource) { chipSource.textContent = source ? source.name : "—"; chipSource.hidden = !source; }
   const wrap = document.getElementById("hero-source");
   if (!source) { wrap.hidden = true; return; }
   wrap.hidden = false;
@@ -240,18 +266,16 @@ function renderSystem(sys) {
   renderSparkline(document.getElementById("spark-mem"), pushSparkline("mem", sys.mem_percent));
   if (sys.upload_kbps != null) renderSparkline(document.getElementById("spark-net"), pushSparkline("net", sys.upload_kbps));
 
-  const cpuBar = document.getElementById("stat-bar-cpu");
-  if (cpuBar) cpuBar.style.width = Math.min(100, sys.cpu_avg) + "%";
-  const memBar = document.getElementById("stat-bar-mem");
-  if (memBar) memBar.style.width = Math.min(100, sys.mem_percent) + "%";
-  const diskBar = document.getElementById("stat-bar-disk");
-  if (diskBar) diskBar.style.width = Math.min(100, sys.disk_percent) + "%";
+  setProgress(document.getElementById("stat-bar-cpu"), sys.cpu_avg);
+  setProgress(document.getElementById("stat-bar-mem"), sys.mem_percent);
+  setProgress(document.getElementById("stat-bar-disk"), sys.disk_percent);
 }
 
 async function renderAccount() {
   const el = document.getElementById("account-status");
   try {
     const data = await apiFetch("/api/zoom/account");
+    el.classList.remove("skeleton");
     el.textContent = data.confirmed_signed_in ? `Signed in as ${data.label || "(unlabeled)"}` : "Signed out (guest join)";
   } catch (err) { /* transient */ }
 }
@@ -313,7 +337,7 @@ async function pollOverviewRecording() {
       btnOverviewRecord.className = "btn btn-rec-active btn-lg";
       if (overviewRecIcon) overviewRecIcon.textContent = "⏹";
       if (overviewRecText) overviewRecText.textContent = "Stop Recording";
-      if (overviewRecPill) overviewRecPill.style.display = "inline-flex";
+      if (overviewRecPill) overviewRecPill.hidden = false;
       if (overviewRecTimer) {
         const dur = parseInt(data.duration, 10) || 0;
         const h = String(Math.floor(dur / 3600)).padStart(2, "0");
@@ -325,7 +349,7 @@ async function pollOverviewRecording() {
       btnOverviewRecord.className = "btn btn-rec btn-lg";
       if (overviewRecIcon) overviewRecIcon.textContent = "⏺";
       if (overviewRecText) overviewRecText.textContent = "Start Recording";
-      if (overviewRecPill) overviewRecPill.style.display = "none";
+      if (overviewRecPill) overviewRecPill.hidden = true;
     }
   } catch (err) {
     // Ignore polling errors

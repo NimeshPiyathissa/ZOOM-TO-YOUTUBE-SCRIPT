@@ -1,19 +1,40 @@
-/* Self-hosted variable fonts. No external font requests, ever.
-   Plus Jakarta Sans: SIL OFL, see /static/fonts/LICENSE-PlusJakartaSans.txt
-   JetBrains Mono: SIL OFL, see /static/fonts/LICENSE-JetBrainsMono.txt */
+/* Self-hosted variable fonts. No external font requests, ever - the
+   dashboard keeps its typography even if every CDN is down.
+   Geist + Geist Mono: SIL OFL 1.1, see /static/fonts/LICENSE-Geist.txt
+
+   The two "Fallback" faces are metric-adjusted local system fonts, so
+   the brief moment before the woff2 arrives (font-display: swap) lays
+   text out at nearly the same width - no visible reflow on swap. */
 
 @font-face {
-  font-family: "Plus Jakarta Sans var";
-  src: url("/static/fonts/PlusJakartaSansVariable.woff2") format("woff2");
-  font-weight: 200 800;
+  font-family: "Geist";
+  src: url("/static/fonts/GeistVariable.woff2") format("woff2-variations"),
+       url("/static/fonts/GeistVariable.woff2") format("woff2");
+  font-weight: 100 900;
   font-style: normal;
   font-display: swap;
 }
 
 @font-face {
-  font-family: "JetBrains Mono var";
-  src: url("/static/fonts/JetBrainsMono.woff2") format("woff2");
-  font-weight: 100 800;
+  font-family: "Geist Mono";
+  src: url("/static/fonts/GeistMonoVariable.woff2") format("woff2-variations"),
+       url("/static/fonts/GeistMonoVariable.woff2") format("woff2");
+  font-weight: 100 900;
   font-style: normal;
   font-display: swap;
+}
+
+@font-face {
+  font-family: "Geist Fallback";
+  src: local("Arial"), local("Helvetica Neue"), local("Helvetica");
+  size-adjust: 104%;
+  ascent-override: 92%;
+  descent-override: 22%;
+  line-gap-override: 0%;
+}
+
+@font-face {
+  font-family: "Geist Mono Fallback";
+  src: local("Consolas"), local("Menlo"), local("Courier New");
+  size-adjust: 100%;
 }

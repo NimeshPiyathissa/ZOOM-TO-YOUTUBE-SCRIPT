@@ -1,333 +1,328 @@
 /* ============================================================
-   Design tokens. Every color, size, and timing value used by the
-   dashboard is defined here as a CSS custom property. Nothing else
-   in the codebase should hard-code a hex value, px size, or ms
-   duration - change the look by changing a token.
+   Design tokens - "Atrium". Every color, size, radius, shadow,
+   blur, opacity, and timing value the dashboard uses is defined
+   here as a CSS custom property. Page and component styles only
+   ever read these names; change the look by changing a token.
 
-   Three themes, one semantic token set: White (light), Black (dark),
-   Default (the original forest/glass look). Pages/components only
-   ever read the semantic names below (--bg, --surface, --text, ...);
-   each [data-theme="..."] block redefines values, never structure.
-   First visit (no saved preference anywhere) has no [data-theme]
-   attribute at all and follows the device's prefers-color-scheme
-   between White and Black - Default is only ever reached by an
-   explicit choice.
+   Two themes, one semantic token set:
+     Light  - [data-theme="white"]
+     Dark   - [data-theme="black"]  (the legacy "default" value the
+              backend still accepts renders as Dark, same block)
+   "System" is not a third palette: an inline script in base.html's
+   <head> resolves prefers-color-scheme to white/black before first
+   paint (and follows live OS changes), so there is never a flash and
+   never a duplicated palette to keep in sync.
    ============================================================ */
 
 :root {
-  /* ---- typography ---- */
-  --font-sans: "Plus Jakarta Sans var", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --font-mono: "JetBrains Mono var", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  /* ---- typography ---------------------------------------------------- */
+  --font-sans: "Geist", "Geist Fallback", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "Geist Mono", "Geist Mono Fallback", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
-  --text-xs: 12px;
-  --text-sm: 13px;
-  --text-base: 14px;
-  --text-md: 16px;
-  --text-lg: 20px;
-  --text-xl: 24px;
-  --text-2xl: 32px;
+  /* type scale: label -> body -> heading -> display */
+  --text-2xs: 11px;      /* eyebrows, nav group labels, micro-captions */
+  --text-xs: 12px;       /* labels, hints, chips, table heads */
+  --text-sm: 13px;       /* dense UI body, buttons, nav */
+  --text-base: 14px;     /* body */
+  --text-md: 16px;       /* card titles, large inputs */
+  --text-lg: 18px;       /* section headings */
+  --text-xl: 22px;       /* page titles, hero headline */
+  --text-2xl: 28px;      /* stat values */
+  --text-3xl: 36px;      /* display (login, hero state) */
 
   --weight-normal: 400;
   --weight-medium: 500;
   --weight-semibold: 600;
   --weight-bold: 700;
 
+  --leading-none: 1;
   --leading-tight: 1.2;
-  --leading-normal: 1.45;
-  --leading-relaxed: 1.6;
+  --leading-snug: 1.35;
+  --leading-normal: 1.5;
+  --leading-relaxed: 1.65;
 
+  --tracking-tighter: -0.035em;
   --tracking-tight: -0.02em;
   --tracking-normal: 0;
   --tracking-wide: 0.06em;
+  --tracking-wider: 0.1em;
 
-  /* ---- spacing (4px grid) ---- */
+  --measure: 68ch;       /* max readable line length for prose/help text */
+
+  /* ---- spacing (4px grid) ------------------------------------------- */
+  --space-0: 0;
+  --space-px: 1px;
+  --space-0-5: 2px;
   --space-1: 4px;
+  --space-1-5: 6px;
   --space-2: 8px;
+  --space-2-5: 10px;
   --space-3: 12px;
+  --space-3-5: 14px;
   --space-4: 16px;
   --space-5: 20px;
   --space-6: 24px;
+  --space-7: 28px;
   --space-8: 32px;
   --space-10: 40px;
   --space-12: 48px;
   --space-16: 64px;
+  --space-20: 80px;
 
-  /* ---- radii (reference scale: cards ~14-16px) ---- */
+  /* ---- sizing ------------------------------------------------------- */
+  --border-w: 1px;
+  --border-w-thick: 2px;
+  --control-h-xs: 24px;
+  --control-h-sm: 30px;
+  --control-h: 38px;
+  --control-h-lg: 44px;
+  --control-h-touch: 52px;
+  --icon-xs: 12px;
+  --icon-sm: 14px;
+  --icon-md: 16px;
+  --icon-lg: 20px;
+  --icon-xl: 28px;
+  --dot-sm: 6px;
+  --dot-md: 8px;
+  --dot-lg: 10px;
+  --ring-size: 112px;
+  --ring-stroke: 8px;
+  --progress-h: 6px;
+  --progress-h-thin: 4px;
+  --sparkline-h: 40px;
+  --tile-accent-h: 2px;
+  --switch-w: 40px;
+  --switch-h: 24px;
+  --switch-knob: 20px;
+
+  /* ---- radii: tighter inside, softer outside ------------------------ */
+  --radius-xs: 6px;
   --radius-sm: 8px;
   --radius-md: 12px;
   --radius-lg: 16px;
   --radius-xl: 20px;
+  --radius-2xl: 28px;
   --radius-full: 999px;
 
-  /* ---- motion: transform/opacity only, kept short - the encoder has
-     CPU priority over the UI's own decoration ---- */
+  /* ---- opacity ------------------------------------------------------ */
+  --opacity-disabled: 0.5;
+  --opacity-muted: 0.72;
+  --opacity-stale: 0.45;
+  --opacity-hover-tint: 0.06;
+  --opacity-ambient: 0.75;
+
+  /* ---- blur --------------------------------------------------------- */
+  --blur-xs: 4px;
+  --blur-sm: 8px;
+  --blur-md: 14px;
+  --blur-lg: 20px;
+  --blur-xl: 32px;
+
+  /* ---- motion: transform/opacity only, short - the encoder has CPU
+     priority over the UI's own decoration ---------------------------- */
+  --duration-instant: 90ms;
   --duration-fast: 150ms;
-  --duration-base: 200ms;
+  --duration-base: 220ms;
   --duration-slow: 320ms;
-  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --duration-slower: 480ms;
+  --duration-pulse: 2400ms;
+  --duration-shimmer: 1500ms;
+  --duration-spin: 800ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);          /* arrivals */
+  --ease-in: cubic-bezier(0.55, 0, 1, 0.45);          /* departures */
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);      /* state morphs */
+  --ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);    /* pops, toggles */
+  --stagger-step: 45ms;
+  --lift-y: -2px;
+  --press-scale: 0.97;
+  --enter-y: 10px;
 
-  /* ---- layout ---- */
-  --sidebar-w: 240px;
-  --sidebar-w-collapsed: 68px;
-  --topbar-h: 56px;
-  --content-max-w: 1360px;
+  /* ---- layout ------------------------------------------------------- */
+  --sidebar-w: 252px;
+  --sidebar-w-collapsed: 72px;
+  --topbar-h: 60px;
+  --shell-gap: 16px;
+  --content-max-w: 1400px;
+  --mobile-bar-h: 76px;
 
-  /* ---- z-index ---- */
+  /* ---- z-index ------------------------------------------------------ */
+  --z-base: 1;
+  --z-raised: 2;
   --z-sticky: 10;
+  --z-drawer: 40;
   --z-dropdown: 50;
   --z-toast: 100;
   --z-modal: 200;
 
-  /* ---- true-black exceptions: a video/VNC canvas is a device-black
-     surface, not a themed one - this is the one token every theme
-     shares unchanged ---- */
+  /* ---- device-black: a video/VNC canvas is a device surface, not a
+     themed one - shared unchanged by every theme ---------------------- */
   --canvas-black: #000000;
 
   /* ---- log/terminal surface: deliberately theme-invariant (always a
-     dark monospace panel, like every other terminal/log UI) rather
-     than flipping white in the White theme - checked for AA on its
-     own in scripts/check-contrast.* ---- */
-  --term-bg: #0b0d11;
-  --term-text: #d7dbe3;
-  --term-line-no: #6b7484;
-  --term-err: #ff8a8a;
+     dark monospace panel, like every other terminal/log UI). Checked
+     for AA on its own in scripts/check-contrast.py ------------------- */
+  --term-bg: #0a0c12;
+  --term-bg-2: #10131b;
+  --term-border: #1d2230;
+  --term-text: #d8dce6;
+  --term-dim: #8b93a7;
+  --term-line-no: #6b7488;
+  --term-err: #ff8f8f;
   --term-warn: #ffcf7a;
+  --term-info: #8fb4ff;
+  --term-ok: #6ee7b0;
+  --term-hl: rgba(141, 162, 240, 0.28);
 
-  /* ---- scrim: modal/drawer backdrop dimming, same across themes ---- */
-  --scrim: rgba(8, 10, 14, 0.6);
+  /* ---- scrim: modal/drawer backdrop dimming, same across themes ----- */
+  --scrim: rgba(6, 8, 13, 0.62);
+  --scrim-strong: rgba(6, 8, 13, 0.8);
+  --on-media: #ffffff;   /* text/icons drawn over video or media */
 }
 
 /* ================================================================
-   White - cool off-white, pure white cards, deep navy for primary
-   text and the active/selected state.
+   Light - cool off-white canvas, pure white glass, deep navy ink and
+   a navy primary. Shadows are tinted with the ink hue, never black.
    ================================================================ */
 :root[data-theme="white"],
 :root:not([data-theme]) {
-  --bg: #eef1f8;
+  --bg: #eef1f7;
   --surface: #ffffff;
   --surface-2: #ffffff;
   --bg-panel: var(--surface);
   --bg-elevated: var(--surface-2);
-  --bg-hover: #e7eaf3;
-  --border: #e0e4ee;
-  --border-strong: #c7cde0;
+  --bg-sunken: #e6eaf2;
+  --bg-hover: #e8ecf4;
+  --bg-active: #dfe4ef;
+  --border: #dfe3ec;
+  --border-strong: #c6cddd;
 
-  --text: #15213f;
-  --text-dim: #4d5a7c;
-  --text-faint: #828db0;
+  --text: #121a33;
+  --text-dim: #4a5576;
+  --text-faint: #6b7593;
   --text-on-accent: #ffffff;
 
   --accent: #30509e;
-  --accent-solid: #1a2748;
-  --accent-solid-hover: #233357;
+  --accent-solid: #1f2f5c;
+  --accent-solid-hover: #2b3f78;
   --accent-tint: rgba(48, 80, 158, 0.1);
+  --accent-tint-strong: rgba(48, 80, 158, 0.18);
   --accent-ring: rgba(48, 80, 158, 0.65);
+  --accent-glow: rgba(48, 80, 158, 0.28);
 
   --live: #c4273c;
   --live-solid: #b91c2e;
-  --live-solid-hover: #9f1526;
+  --live-solid-hover: #a3182a;
   --live-tint: rgba(196, 39, 60, 0.1);
+  --live-glow: rgba(196, 39, 60, 0.32);
   --danger: var(--live);
   --danger-solid: var(--live-solid);
 
   --success: #0f6b40;
   --success-tint: rgba(15, 107, 64, 0.1);
-  --warning: #9a5b00;
+  --success-glow: rgba(15, 107, 64, 0.28);
+  --warning: #8f5400;
   --warning-tint: rgba(154, 91, 0, 0.1);
+  --warning-glow: rgba(154, 91, 0, 0.28);
   --info: #2056c9;
   --info-tint: rgba(32, 86, 201, 0.1);
 
-  --shadow-xs: 0 1px 1px rgba(21, 33, 63, 0.04);
-  --shadow-sm: 0 1px 2px rgba(21, 33, 63, 0.05);
-  --shadow-md: 0 6px 20px rgba(21, 33, 63, 0.08);
-  --shadow-lg: 0 20px 48px rgba(21, 33, 63, 0.16);
+  --shadow-xs: 0 1px 1px rgba(18, 26, 51, 0.04);
+  --shadow-sm: 0 1px 2px rgba(18, 26, 51, 0.06), 0 1px 1px rgba(18, 26, 51, 0.03);
+  --shadow-md: 0 8px 24px -6px rgba(18, 26, 51, 0.12), 0 2px 6px rgba(18, 26, 51, 0.05);
+  --shadow-lg: 0 24px 56px -12px rgba(18, 26, 51, 0.22), 0 4px 12px rgba(18, 26, 51, 0.06);
+  --shadow-inset: inset 0 1px 2px rgba(18, 26, 51, 0.06);
 
   --nav-active-bg: var(--accent-solid);
   --nav-active-text: #ffffff;
 
-  --glass-blur: 20px;
-  --glass-sat: 140%;
-  --glass-tint: rgba(255, 255, 255, 0.7);
+  --glass-blur: var(--blur-lg);
+  --glass-sat: 150%;
+  --glass-tint: rgba(255, 255, 255, 0.72);
+  --glass-tint-strong: rgba(255, 255, 255, 0.88);
   --glass-tint-active: var(--accent-tint);
-  --glass-border: rgba(21, 33, 63, 0.08);
-  --glass-edge-highlight: rgba(255, 255, 255, 0.9);
-  --glass-shadow: 0 1px 0 rgba(255, 255, 255, 0.6) inset, 0 8px 32px rgba(21, 33, 63, 0.08);
+  --glass-border: rgba(18, 26, 51, 0.08);
+  --glass-edge-highlight: rgba(255, 255, 255, 0.95);
+  --glass-shadow: 0 1px 0 rgba(255, 255, 255, 0.7) inset, 0 10px 32px -8px rgba(18, 26, 51, 0.12), 0 1px 2px rgba(18, 26, 51, 0.04);
+  --glass-shadow-hover: 0 1px 0 rgba(255, 255, 255, 0.8) inset, 0 18px 44px -10px rgba(18, 26, 51, 0.2), 0 2px 6px rgba(18, 26, 51, 0.06);
+
+  --ambient-a: rgba(48, 80, 158, 0.16);
+  --ambient-b: rgba(196, 39, 60, 0.08);
+  --skeleton-base: #e4e8f1;
+  --skeleton-shine: #f3f5fa;
 
   color-scheme: light;
 }
 
 /* ================================================================
-   Black - near-black cool background, raised dark surfaces (not pure
-   #000 on #000), light text, same accent family as White.
+   Dark - near-black cool canvas, raised translucent glass, periwinkle
+   accent. Same accent family as Light so the brand reads identically.
    ================================================================ */
-:root[data-theme="black"] {
-  --bg: #0a0c10;
-  --surface: #14171e;
-  --surface-2: #1a1e26;
+:root[data-theme="black"],
+:root[data-theme="default"] {
+  --bg: #07080c;
+  --surface: #11131a;
+  --surface-2: #171a23;
   --bg-panel: var(--surface);
   --bg-elevated: var(--surface-2);
-  --bg-hover: #1f2430;
-  --border: #262c38;
-  --border-strong: #363e4e;
+  --bg-sunken: #0c0e14;
+  --bg-hover: #1d212c;
+  --bg-active: #242936;
+  --border: #232836;
+  --border-strong: #343b4d;
 
-  --text: #e9ecf4;
-  --text-dim: #9aa4bd;
-  --text-faint: #6b7489;
+  --text: #eceef5;
+  --text-dim: #9ba3b9;
+  --text-faint: #6f7790;
   --text-on-accent: #ffffff;
 
-  --accent: #8aa0e8;
-  --accent-solid: #39579f;
-  --accent-solid-hover: #4868b7;
-  --accent-tint: rgba(138, 160, 232, 0.16);
-  --accent-ring: rgba(138, 160, 232, 0.6);
+  --accent: #8da2f0;
+  --accent-solid: #3b58b0;
+  --accent-solid-hover: #4a69c6;
+  --accent-tint: rgba(141, 162, 240, 0.14);
+  --accent-tint-strong: rgba(141, 162, 240, 0.24);
+  --accent-ring: rgba(141, 162, 240, 0.6);
+  --accent-glow: rgba(110, 138, 235, 0.42);
 
-  --live: #ff7a7a;
-  --live-solid: #d33c3c;
-  --live-solid-hover: #e24b4b;
-  --live-tint: rgba(255, 122, 122, 0.16);
+  --live: #ff7676;
+  --live-solid: #cf3434;
+  --live-solid-hover: #e04646;
+  --live-tint: rgba(255, 118, 118, 0.14);
+  --live-glow: rgba(255, 92, 92, 0.5);
   --danger: var(--live);
   --danger-solid: var(--live-solid);
 
   --success: #3ddc97;
-  --success-tint: rgba(61, 220, 151, 0.16);
+  --success-tint: rgba(61, 220, 151, 0.14);
+  --success-glow: rgba(61, 220, 151, 0.4);
   --warning: #f3b84c;
-  --warning-tint: rgba(243, 184, 76, 0.16);
-  --info: #70a6ff;
-  --info-tint: rgba(112, 166, 255, 0.16);
+  --warning-tint: rgba(243, 184, 76, 0.14);
+  --warning-glow: rgba(243, 184, 76, 0.4);
+  --info: #79abff;
+  --info-tint: rgba(121, 171, 255, 0.14);
 
   --shadow-xs: 0 1px 1px rgba(0, 0, 0, 0.3);
-  --shadow-sm: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 1px 2px rgba(0, 0, 0, 0.45);
-  --shadow-md: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 6px 20px rgba(0, 0, 0, 0.5);
-  --shadow-lg: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 20px 48px rgba(0, 0, 0, 0.6);
+  --shadow-sm: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 1px 2px rgba(0, 0, 0, 0.5);
+  --shadow-md: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 10px 28px -6px rgba(0, 0, 0, 0.6);
+  --shadow-lg: 0 1px 0 rgba(255, 255, 255, 0.05) inset, 0 28px 60px -12px rgba(0, 0, 0, 0.75);
+  --shadow-inset: inset 0 1px 2px rgba(0, 0, 0, 0.4);
 
   --nav-active-bg: var(--accent-solid);
   --nav-active-text: #ffffff;
 
-  --glass-blur: 20px;
+  --glass-blur: var(--blur-lg);
   --glass-sat: 160%;
-  --glass-tint: rgba(255, 255, 255, 0.045);
+  --glass-tint: rgba(255, 255, 255, 0.04);
+  --glass-tint-strong: rgba(22, 25, 34, 0.86);
   --glass-tint-active: var(--accent-tint);
-  --glass-border: rgba(255, 255, 255, 0.09);
-  --glass-edge-highlight: rgba(255, 255, 255, 0.32);
-  --glass-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 8px 32px rgba(0, 0, 0, 0.45);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-edge-highlight: rgba(255, 255, 255, 0.28);
+  --glass-shadow: 0 1px 0 rgba(255, 255, 255, 0.05) inset, 0 12px 36px -10px rgba(0, 0, 0, 0.6);
+  --glass-shadow-hover: 0 1px 0 rgba(255, 255, 255, 0.08) inset, 0 22px 50px -12px rgba(0, 0, 0, 0.75);
+
+  --ambient-a: rgba(110, 138, 235, 0.2);
+  --ambient-b: rgba(255, 92, 92, 0.1);
+  --skeleton-base: #171a23;
+  --skeleton-shine: #232836;
 
   color-scheme: dark;
-}
-
-/* ================================================================
-   Default - the original forest/glass look: dark slate panels over a
-   fixed background photo (see layout.css for the image rule, scoped
-   to this theme only), teal/cyan accent.
-   ================================================================ */
-:root[data-theme="default"] {
-  --bg: #0e1319;
-  --surface: #171e27;
-  --surface-2: #1d2531;
-  --bg-panel: var(--surface);
-  --bg-elevated: var(--surface-2);
-  --bg-hover: #212a37;
-  --border: #283240;
-  --border-strong: #3a4557;
-
-  --text: #eef1f5;
-  --text-dim: #a7b0c2;
-  --text-faint: #7b869c;
-  --text-on-accent: #ffffff;
-
-  --accent: #22d3ee;
-  --accent-solid: #0e7490;
-  --accent-solid-hover: #119cb4;
-  --accent-tint: rgba(34, 211, 238, 0.16);
-  --accent-ring: rgba(34, 211, 238, 0.5);
-
-  --live: #ff6b6b;
-  --live-solid: #c92a2a;
-  --live-solid-hover: #de3737;
-  --live-tint: rgba(255, 107, 107, 0.16);
-  --danger: var(--live);
-  --danger-solid: var(--live-solid);
-
-  --success: #34d399;
-  --success-tint: rgba(52, 211, 153, 0.16);
-  --warning: #fbbf24;
-  --warning-tint: rgba(251, 191, 36, 0.16);
-  --info: #60a5fa;
-  --info-tint: rgba(96, 165, 250, 0.16);
-
-  --shadow-xs: 0 1px 1px rgba(0, 0, 0, 0.25);
-  --shadow-sm: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow-md: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 6px 20px rgba(0, 0, 0, 0.45);
-  --shadow-lg: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 20px 48px rgba(0, 0, 0, 0.55);
-
-  --nav-active-bg: var(--accent-solid);
-  --nav-active-text: #ffffff;
-
-  --glass-blur: 20px;
-  --glass-sat: 160%;
-  --glass-tint: rgba(255, 255, 255, 0.07);
-  --glass-tint-active: var(--accent-tint);
-  --glass-border: rgba(255, 255, 255, 0.1);
-  --glass-edge-highlight: rgba(255, 255, 255, 0.34);
-  --glass-shadow: 0 1px 0 rgba(255, 255, 255, 0.05) inset, 0 8px 32px rgba(0, 0, 0, 0.5);
-
-  color-scheme: dark;
-}
-
-/* First-visit device-preference fallback: identical values to the
-   explicit blocks above, scoped so they only apply before any theme
-   has ever been chosen (no [data-theme] attribute present at all -
-   see app/main.py's theme resolution and app.js). */
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme]) {
-    --bg: #0a0c10;
-    --surface: #14171e;
-    --surface-2: #1a1e26;
-    --bg-panel: var(--surface);
-    --bg-elevated: var(--surface-2);
-    --bg-hover: #1f2430;
-    --border: #262c38;
-    --border-strong: #363e4e;
-
-    --text: #e9ecf4;
-    --text-dim: #9aa4bd;
-    --text-faint: #6b7489;
-    --text-on-accent: #ffffff;
-
-    --accent: #8aa0e8;
-    --accent-solid: #39579f;
-    --accent-solid-hover: #4868b7;
-    --accent-tint: rgba(138, 160, 232, 0.16);
-    --accent-ring: rgba(138, 160, 232, 0.5);
-
-    --live: #ff7a7a;
-    --live-solid: #d33c3c;
-    --live-solid-hover: #e24b4b;
-    --live-tint: rgba(255, 122, 122, 0.16);
-    --danger: var(--live);
-    --danger-solid: var(--live-solid);
-
-    --success: #3ddc97;
-    --success-tint: rgba(61, 220, 151, 0.16);
-    --warning: #f3b84c;
-    --warning-tint: rgba(243, 184, 76, 0.16);
-    --info: #70a6ff;
-    --info-tint: rgba(112, 166, 255, 0.16);
-
-    --shadow-sm: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 1px 2px rgba(0, 0, 0, 0.45);
-    --shadow-md: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 6px 20px rgba(0, 0, 0, 0.5);
-    --shadow-lg: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 20px 48px rgba(0, 0, 0, 0.6);
-
-    --nav-active-bg: var(--accent-solid);
-    --nav-active-text: #ffffff;
-
-    --glass-blur: 20px;
-    --glass-sat: 160%;
-    --glass-tint: rgba(255, 255, 255, 0.045);
-    --glass-tint-active: var(--accent-tint);
-    --glass-border: rgba(255, 255, 255, 0.09);
-    --glass-edge-highlight: rgba(255, 255, 255, 0.32);
-    --glass-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 8px 32px rgba(0, 0, 0, 0.45);
-
-    color-scheme: dark;
-  }
 }

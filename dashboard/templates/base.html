@@ -1,29 +1,66 @@
 {% from "_macros.html" import icon %}
+{%- set PAGES = {
+  "/": ("Monitor", "Overview"), "/logs": ("Monitor", "Logs"), "/audit": ("Monitor", "Audit"),
+  "/studio": ("Broadcast", "Live Studio"), "/controls": ("Broadcast", "Controls"),
+  "/overlay": ("Broadcast", "Text Overlays"), "/schedule": ("Broadcast", "Schedule"),
+  "/zoom": ("Sources", "Zoom"), "/remote": ("Sources", "Remote"), "/accounts": ("Sources", "Accounts"),
+  "/vnc": ("System", "Remote GUI"), "/settings": ("System", "Settings"), "/config": ("System", "Settings"),
+} -%}
+{%- set page_meta = PAGES.get(request.url.path, ("", "")) -%}
 <!doctype html>
 <html lang="en"{% if theme %} data-theme="{{ theme }}"{% endif %}>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
 <title>{% block title %}Zoom Stream Dashboard{% endblock %}</title>
 {% if csrf_token %}<meta name="csrf-token" content="{{ csrf_token }}">{% endif %}
+<script>
+/* Theme bootstrap - runs before first paint so there is never a flash.
+   "System" (the default for a browser that never chose) follows the OS
+   and keeps following it live; an explicit Light/Dark choice is
+   rendered server-side via data-theme and left alone here. */
+(function () {
+  var root = document.documentElement, mode = null;
+  try { mode = localStorage.getItem("zsdash-theme-mode"); } catch (e) {}
+  var explicit = root.getAttribute("data-theme");
+  if (mode === "system" || !explicit) {
+    var mq = window.matchMedia("(prefers-color-scheme: dark)");
+    var apply = function () { root.setAttribute("data-theme", mq.matches ? "black" : "white"); };
+    apply();
+    root.setAttribute("data-theme-mode", "system");
+    if (mq.addEventListener) mq.addEventListener("change", function () { if (root.getAttribute("data-theme-mode") === "system") apply(); });
+  }
+})();
+</script>
+<link rel="preload" href="/static/fonts/GeistVariable.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="{{ static_url('css/fonts.css') }}">
 <link rel="stylesheet" href="{{ static_url('css/tokens.css') }}">
 <link rel="stylesheet" href="{{ static_url('css/base.css') }}">
 <link rel="stylesheet" href="{{ static_url('css/components.css') }}">
 <link rel="stylesheet" href="{{ static_url('css/layout.css') }}">
 {% block extra_css %}{% endblock %}
-<link rel="icon" href="data:,">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%238da2f0'/%3E%3Cstop offset='1' stop-color='%233b58b0'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='32' height='32' rx='8' fill='url(%23g)'/%3E%3Ccircle cx='16' cy='16' r='7' fill='none' stroke='white' stroke-width='3'/%3E%3Ccircle cx='16' cy='16' r='2.5' fill='white'/%3E%3C/svg%3E">
 </head>
 <body>
+<a class="skip-link" href="#main">Skip to content</a>
 {% include "_icons.html" %}
+<svg width="0" height="0" class="svg-defs" aria-hidden="true" focusable="false">
+  <defs>
+    <linearGradient id="spark-gradient" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" class="spark-stop-top"></stop>
+      <stop offset="100%" class="spark-stop-bottom"></stop>
+    </linearGradient>
+  </defs>
+</svg>
 {% if username %}
 <div class="app-shell">
   <div class="sidebar-backdrop"></div>
   <aside class="sidebar">
-    <div class="sidebar-brand">
+    <a class="sidebar-brand" href="/" aria-label="Zoom Stream - Overview">
       {{ icon("hg-brand") | safe }}
-      <span class="label">Zoom&nbsp;Stream</span>
-    </div>
+      <span class="label">Zoom&nbsp;Stream<span class="brand-sub">Broadcast console</span></span>
+    </a>
     <nav class="sidebar-nav" aria-label="Primary">
       {% macro navitem(href, icon_name, label, active) -%}
       <a href="{{ href }}" class="nav-item{{ ' active' if active }}" {{ 'aria-current="page"' if active }} aria-label="{{ label }}" data-tooltip="{{ label }}">{{ icon(icon_name) | safe }}<span class="label">{{ label }}</span></a>
@@ -61,37 +98,46 @@
   </aside>
 
   <div class="app-main">
-    <div class="topbar">
+    <header class="topbar">
       <button id="sidebar-toggle" class="btn btn-ghost btn-icon sidebar-toggle" aria-label="Open navigation" aria-expanded="false">{{ icon("menu") | safe }}</button>
-      <div class="topbar-status" id="topbar-status">
-        <span class="badge badge-inactive" id="topbar-state-badge"><span class="dot"></span>-</span>
+      <div class="topbar-title">
+        {% if page_meta[0] %}<span class="crumb">{{ page_meta[0] }}</span>{% endif %}
+        <span class="title">{{ page_meta[1] or "Dashboard" }}</span>
+      </div>
+      <div class="topbar-status" id="topbar-status" aria-live="off">
+        <span class="badge badge-inactive skeleton" id="topbar-state-badge"><span class="dot"></span>Loading</span>
         <span class="uptime tnum" id="topbar-uptime"></span>
       </div>
       <div class="topbar-actions">
         <button id="topbar-go-live" class="btn btn-primary btn-sm">{{ icon("play", "icon-sm") | safe }}Go Live</button>
         <button id="topbar-stop" class="btn btn-danger btn-sm" hidden>{{ icon("square", "icon-sm") | safe }}Stop</button>
+        <span class="topbar-sep" aria-hidden="true"></span>
         <button id="topbar-desktop" class="btn btn-ghost btn-icon" aria-label="Open remote desktop" data-tooltip="Remote desktop">{{ icon("monitor") | safe }}</button>
         <div class="menu-wrap theme-switch">
-          <button class="btn btn-ghost btn-icon menu-trigger theme-switch-trigger" aria-label="Change theme" data-tooltip="Theme"></button>
+          <button class="btn btn-ghost btn-icon menu-trigger theme-switch-trigger" aria-label="Change theme" aria-haspopup="menu" data-tooltip="Theme">{{ icon("sun") | safe }}</button>
           <div class="menu" role="menu" inert>
-            <button class="menu-item" type="button" role="menuitem" data-theme-choice="white">{{ icon("sun", "icon-sm") | safe }}White</button>
-            <button class="menu-item" type="button" role="menuitem" data-theme-choice="black">{{ icon("moon", "icon-sm") | safe }}Black</button>
-            <button class="menu-item" type="button" role="menuitem" data-theme-choice="default">{{ icon("sparkles", "icon-sm") | safe }}Default</button>
+            <div class="menu-label">Appearance</div>
+            <button class="menu-item" type="button" role="menuitemradio" data-theme-choice="system">{{ icon("monitor", "icon-sm") | safe }}System</button>
+            <button class="menu-item" type="button" role="menuitemradio" data-theme-choice="white">{{ icon("sun", "icon-sm") | safe }}Light</button>
+            <button class="menu-item" type="button" role="menuitemradio" data-theme-choice="black">{{ icon("moon", "icon-sm") | safe }}Dark</button>
           </div>
         </div>
         <div class="menu-wrap">
-          <button class="btn btn-ghost btn-icon menu-trigger account-avatar" aria-label="Account menu" data-tooltip="Account">{{ icon("user") | safe }}</button>
+          <button class="btn btn-icon menu-trigger account-avatar" aria-label="Account menu" aria-haspopup="menu" data-tooltip="Account"><span class="account-initial" aria-hidden="true">{{ username[:1] }}</span></button>
           <div class="menu" role="menu" inert>
-            <div class="menu-item cursor-default" role="none">{{ icon("lock", "icon-sm") | safe }}{{ username }}</div>
+            <div class="menu-label">Signed in</div>
+            <div class="menu-item cursor-default" role="none">{{ icon("user", "icon-sm") | safe }}{{ username }}</div>
+            <div class="menu-sep" role="separator"></div>
+            <a class="menu-item" role="menuitem" href="/settings">{{ icon("settings", "icon-sm") | safe }}Settings</a>
             <form method="post" action="/logout" class="m-0">
-              <button class="menu-item" type="submit" role="menuitem">{{ icon("log-out", "icon-sm") | safe }}Log out</button>
+              <button class="menu-item danger" type="submit" role="menuitem">{{ icon("log-out", "icon-sm") | safe }}Log out</button>
             </form>
           </div>
         </div>
       </div>
-    </div>
+    </header>
 {% endif %}
-    <main class="{{ 'page' if username else '' }}">
+    <main id="main" class="{{ 'page' if username else '' }}" tabindex="-1">
       {% block content %}{% endblock %}
     </main>
 {% if username %}
@@ -114,8 +160,9 @@
   <div id="vnc-overlay-screen" class="vnc-overlay-screen"></div>
 </div>
 {% endif %}
-<div id="toasts"></div>
+<div id="toasts" aria-live="polite"></div>
 <script src="{{ static_url('app.js') }}"></script>
+<script src="{{ static_url('js/motion.js') }}"></script>
 {% block scripts %}{% endblock %}
 {% if username %}
 <script src="{{ static_url('js/base.js') }}"></script>
