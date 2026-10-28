@@ -1,38 +1,77 @@
 {% extends "base.html" %}
 {% from "_macros.html" import icon %}
 {% block title %}Logs - Zoom Stream Dashboard{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{{ static_url('css/logs.css') }}">{% endblock %}
 {% block content %}
 
-<div class="section mt-0">
-  <div class="section-head"><h2>Recent errors across all services{% if errors %}<span class="count-chip">{{ errors | length }}</span>{% endif %}</h2></div>
-  <div class="card card-glass" id="errors-panel">
-    {% if errors %}
-      <div class="table-wrap">
-        <table><thead><tr><th>Service</th><th>Message</th></tr></thead><tbody>
-        {% for e in errors %}<tr><td>{{ e.unit }}</td><td class="mono">{{ e.message }}</td></tr>{% endfor %}
-        </tbody></table>
-      </div>
-    {% else %}
-      <div class="empty-state">{{ icon("check-circle-2") }}<div class="empty-sub">No recent errors.</div></div>
-    {% endif %}
+<header class="page-header">
+  <div>
+    <h1>Logs</h1>
+    <p class="page-desc">Live output from every streaming service, with search and level filters.</p>
   </div>
-</div>
+  <div class="page-actions">
+    <a class="btn btn-secondary btn-sm" id="log-download" href="#">{{ icon("download", "icon-sm") }}Download</a>
+  </div>
+</header>
 
-<div class="section">
-  <div class="section-head"><h2>Live logs<span class="count-chip">{{ units | length }}</span></h2></div>
-  <div class="tabs" id="log-tabs" role="tablist">
-    {% for u in units %}<button class="tab-btn" role="tab" data-unit="{{ u }}">{{ u }}</button>{% endfor %}
-  </div>
-  <div class="log-toolbar">
-    <input id="log-search" class="input" placeholder="Filter logs&hellip;">
-    <button id="log-pause" class="btn btn-secondary btn-sm">{{ icon("pause", "icon-sm") }}Pause</button>
-    <label class="switch-row">
-      <span class="switch"><input type="checkbox" id="log-autoscroll" checked><span class="track"></span></span>
-      <span class="switch-label text-xs">Auto-scroll</span>
-    </label>
-    <a class="btn btn-ghost btn-sm" id="log-download" href="#">{{ icon("download", "icon-sm") }}Download</a>
-  </div>
-  <div class="log-viewer" id="log-view"></div>
+<div class="logs-layout">
+  <section class="card log-console" aria-labelledby="live-logs-title">
+    <div class="log-console-head">
+      <h2 class="card-title" id="live-logs-title">{{ icon("terminal", "icon-sm") }}Live logs<span class="count-chip">{{ units | length }}</span></h2>
+      <span class="log-conn" id="log-conn" data-state="connecting"><span class="dot"></span><span id="log-conn-text">Connecting</span></span>
+    </div>
+
+    <div class="tabs log-tabs" id="log-tabs" role="tablist" aria-label="Service">
+      {% for u in units %}<button class="tab-btn" role="tab" data-unit="{{ u }}">{{ u }}</button>{% endfor %}
+    </div>
+
+    <div class="log-toolbar">
+      <label class="input-icon log-search-wrap">
+        {{ icon("search", "icon-sm") }}
+        <span class="sr-only">Filter logs</span>
+        <input id="log-search" class="input" placeholder="Filter logs&hellip;" autocomplete="off" spellcheck="false">
+      </label>
+      <div class="segmented" id="log-level" role="group" aria-label="Level">
+        <button type="button" class="seg-btn is-active" data-value="all">All</button>
+        <button type="button" class="seg-btn" data-value="warn"><span class="level-dot warn"></span>Warnings</button>
+        <button type="button" class="seg-btn" data-value="err"><span class="level-dot err"></span>Errors</button>
+      </div>
+      <button id="log-pause" class="btn btn-secondary btn-sm">{{ icon("pause", "icon-sm") }}Pause</button>
+      <label class="switch-row">
+        <span class="switch"><input type="checkbox" id="log-autoscroll" checked><span class="track"></span></span>
+        <span class="switch-label text-xs">Auto-scroll</span>
+      </label>
+    </div>
+
+    <div class="log-frame">
+      <div class="log-frame-bar">
+        <span class="mono" id="log-unit-label">&nbsp;</span>
+        <span class="log-counts mono tnum"><span id="log-count">0</span> lines &middot; <span class="c-warn" id="log-count-warn">0</span> warn &middot; <span class="c-err" id="log-count-err">0</span> err</span>
+      </div>
+      <div class="log-viewer" id="log-view" role="log" aria-live="off" tabindex="0"></div>
+      <div class="log-empty" id="log-empty">
+        <div class="spinner"></div><span>Waiting for log lines&hellip;</span>
+      </div>
+    </div>
+  </section>
+
+  <aside class="card errors-rail" id="errors-panel" aria-labelledby="errors-title">
+    <div class="card-header">
+      <h2 class="card-title" id="errors-title">{{ icon("alert-triangle", "icon-sm") }}Recent errors{% if errors %}<span class="count-chip">{{ errors | length }}</span>{% endif %}</h2>
+    </div>
+    {% if errors %}
+      <ul class="error-list">
+        {% for e in errors %}
+        <li class="error-item">
+          <span class="badge badge-failed"><span class="dot"></span>{{ e.unit }}</span>
+          <p class="error-msg mono">{{ e.message }}</p>
+        </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <div class="empty-state">{{ icon("check-circle-2") }}<div class="empty-title">All clear</div><div class="empty-sub">No recent errors across any service.</div></div>
+    {% endif %}
+  </aside>
 </div>
 
 {% endblock %}

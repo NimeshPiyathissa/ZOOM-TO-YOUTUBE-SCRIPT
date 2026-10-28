@@ -1,27 +1,70 @@
 {% extends "base.html" %}
 {% from "_macros.html" import icon %}
 {% block title %}Audit - Zoom Stream Dashboard{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{{ static_url('css/logs.css') }}">{% endblock %}
 {% block content %}
 
-<div class="section mt-0">
-  <div class="section-head">
-    <h2>Audit log<span class="count-chip">{{ rows | length }}</span></h2>
-    <span class="hint m-0">Most recent 200 events</span>
+<header class="page-header">
+  <div>
+    <h1>Audit log<span class="count-chip">{{ rows | length }}</span></h1>
+    <p class="page-desc">Every sign-in, configuration change and service action taken from this dashboard. Showing the most recent 200 events.</p>
   </div>
-  <div class="card card-glass">
-    <div id="audit-empty" class="empty-state" hidden>
-      {{ icon("list-checks") }}
-      <div class="empty-title">No audit entries yet</div>
-      <div class="empty-sub">Actions taken from this dashboard (logins, config changes, service control) will show up here.</div>
-    </div>
-    <div class="table-wrap" id="audit-table-wrap" hidden>
-      <table id="audit-table">
-        <thead><tr><th>Time</th><th>User</th><th>Action</th><th>Detail</th><th>IP</th></tr></thead>
-        <tbody id="audit-body"></tbody>
-      </table>
-    </div>
+</header>
+
+<section class="audit-stats" id="audit-stats" aria-label="Summary">
+  <div class="stat-tile-glass">
+    <div class="stat-k"><span class="eyebrow">Events</span><span class="stat-aside">shown</span></div>
+    <span class="stat-value tnum" id="audit-stat-total">{{ rows | length }}</span>
   </div>
-</div>
+  <div class="stat-tile-glass">
+    <div class="stat-k"><span class="eyebrow">Users</span><span class="stat-aside">distinct</span></div>
+    <span class="stat-value tnum" id="audit-stat-users">-</span>
+  </div>
+  <div class="stat-tile-glass" id="audit-stat-failed-tile">
+    <div class="stat-k"><span class="eyebrow">Failed sign-ins</span><span class="stat-aside">in list</span></div>
+    <span class="stat-value tnum" id="audit-stat-failed">-</span>
+  </div>
+  <div class="stat-tile-glass">
+    <div class="stat-k"><span class="eyebrow">Last event</span></div>
+    <span class="stat-value" id="audit-stat-last">-</span>
+  </div>
+</section>
+
+<section class="card audit-card" aria-label="Audit events">
+  <div class="audit-toolbar" id="audit-toolbar" hidden>
+    <label class="input-icon">
+      {{ icon("search", "icon-sm") }}
+      <span class="sr-only">Search events</span>
+      <input class="input" id="audit-search" placeholder="Search action, detail or IP&hellip;" autocomplete="off">
+    </label>
+    <select class="input" id="audit-user-filter" aria-label="Filter by user"><option value="">All users</option></select>
+    <select class="input" id="audit-kind-filter" aria-label="Filter by category">
+      <option value="">All categories</option>
+      <option value="auth">Sign-in</option>
+      <option value="danger">Failures</option>
+      <option value="change">Changes</option>
+      <option value="service">Services &amp; stream</option>
+    </select>
+    <span class="audit-shown tnum" id="audit-shown"></span>
+  </div>
+
+  <div id="audit-empty" class="empty-state" hidden>
+    {{ icon("list-checks") }}
+    <div class="empty-title">No audit entries yet</div>
+    <div class="empty-sub">Actions taken from this dashboard (logins, config changes, service control) will show up here.</div>
+  </div>
+  <div id="audit-nomatch" class="empty-state" hidden>
+    {{ icon("search") }}
+    <div class="empty-title">No matching events</div>
+    <div class="empty-sub">Try a different search or clear the filters.</div>
+  </div>
+  <div class="table-wrap" id="audit-table-wrap" hidden>
+    <table id="audit-table">
+      <thead><tr><th>Time</th><th>User</th><th>Action</th><th>Detail</th><th>IP</th></tr></thead>
+      <tbody id="audit-body"></tbody>
+    </table>
+  </div>
+</section>
 
 {% endblock %}
 {% block scripts %}

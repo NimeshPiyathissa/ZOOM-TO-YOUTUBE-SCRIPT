@@ -512,6 +512,8 @@ td.mono, td .mono { font-size: var(--text-xs); }
   display: inline-flex; gap: 2px; overflow-x: auto; padding: 3px; max-width: 100%;
   background: var(--bg-sunken); border: var(--border-w) solid var(--border); border-radius: var(--radius-full);
 }
+.tabs, .segmented { scrollbar-width: none; }
+.tabs::-webkit-scrollbar, .segmented::-webkit-scrollbar { display: none; }
 .tabs .tab-btn {
   appearance: none; border: none; background: transparent; color: var(--text-dim);
   font: inherit; font-size: var(--text-sm); font-weight: var(--weight-medium);

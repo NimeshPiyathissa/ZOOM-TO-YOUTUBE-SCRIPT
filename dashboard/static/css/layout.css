@@ -72,6 +72,8 @@
   transition: background-color var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out),
               box-shadow var(--duration-base) var(--ease-out), transform var(--duration-fast) var(--ease-out);
 }
+.nav-item .label, .sidebar-brand .label { display: inline; color: inherit; font-size: inherit; font-weight: inherit; margin: 0; }
+.sidebar-brand .label { display: block; }
 .nav-item .icon { flex: none; transition: transform var(--duration-base) var(--ease-spring); }
 .nav-item:hover { background: var(--bg-hover); color: var(--text); text-decoration: none; }
 .nav-item:hover .icon { transform: scale(1.08); }
