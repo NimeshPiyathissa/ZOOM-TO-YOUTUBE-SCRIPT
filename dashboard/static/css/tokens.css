@@ -177,6 +177,24 @@
   --scrim: rgba(6, 8, 13, 0.62);
   --scrim-strong: rgba(6, 8, 13, 0.8);
   --on-media: #ffffff;   /* text/icons drawn over video or media */
+
+  /* ---- media chrome: anything drawn over video/black (monitor bezels,
+     overlays on a preview, on-canvas chips). Theme-invariant because
+     the video underneath is. -------------------------------------------- */
+  --media-ink: #07090c;
+  --media-ink-2: #0d1015;
+  --media-scrim: rgba(0, 0, 0, 0.55);
+  --media-scrim-strong: rgba(0, 0, 0, 0.82);
+  --media-panel: rgba(14, 17, 22, 0.8);
+  --media-fill-faint: rgba(255, 255, 255, 0.05);
+  --media-line: rgba(255, 255, 255, 0.08);
+  --media-glass-border: rgba(255, 255, 255, 0.16);
+  --media-text-dim: rgba(255, 255, 255, 0.64);
+  --media-text-faint: rgba(255, 255, 255, 0.42);
+  --media-inset: inset 0 0 0 1px rgba(0, 0, 0, 0.6), inset 0 0 60px rgba(0, 0, 0, 0.5);
+  --media-fade-top: linear-gradient(to bottom, rgba(0, 0, 0, 0.62), rgba(0, 0, 0, 0));
+  --media-fade-bottom: linear-gradient(to top, rgba(0, 0, 0, 0.85), rgba(0, 0, 0, 0));
+  --key-shadow: 0 1px 0 rgba(0, 0, 0, 0.35);
 }
 
 /* ================================================================

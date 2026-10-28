@@ -10,13 +10,10 @@
 {% block content %}
 <div class="studio-container rack-grid">
 
-  <!-- ================================================================ Live Broadcast Controls -->
-  <h2 class="floating-section-title">
-    {{ icon("play-circle", "icon-sm") }}Live Broadcast Controls
-  </h2>
+
 
   <!-- Master Broadcast Header & Tally -->
-  <header class="card card-glass studio-master-bar" aria-labelledby="studio-master-heading">
+  <header class="card studio-master-bar accent-cap" aria-labelledby="studio-master-heading">
     <div class="studio-master-left">
       <div class="studio-brand">
         <span class="studio-live-icon">{{ icon("broadcast") }}</span>
@@ -80,12 +77,9 @@
     </div>
   </header>
 
-  <!-- ================================================================ Program Monitor (16:9) -->
-  <h2 class="floating-section-title">
-    {{ icon("monitor", "icon-sm") }}Program Monitor (16:9)
-  </h2>
 
-  <section class="card card-glass studio-preview-card" aria-labelledby="studio-preview-h">
+  <div class="studio-stage">
+  <section class="card studio-preview-card" aria-labelledby="studio-preview-h">
     <h2 id="studio-preview-h" class="rack-title">
       {{ icon("monitor", "icon-sm") }}Program Monitor
       <span class="rack-title-end"><span class="program-id" aria-hidden="true">DISPLAY :99</span></span>
@@ -100,18 +94,12 @@
         <span class="hint tnum panel-preview-age" id="studio-preview-age"></span>
       </div>
     </div>
-    <p class="hint mt-2">Passive thumbnail, refreshed every 3 s. For touch control of the desktop, use the Program monitor on <a href="/remote">/remote</a>.</p>
+    <p class="hint mt-3 mb-0">Passive thumbnail, refreshed every 3 s. For touch control of the desktop, use the Program monitor on <a href="/remote">/remote</a>.</p>
   </section>
 
-  <!-- ================================================================ Telemetry & Audio Monitor Row -->
-  <h2 class="floating-section-title">
-    {{ icon("activity", "icon-sm") }}Broadcast Telemetry &amp; Audio Peak Monitor
-  </h2>
 
-  <div class="studio-row studio-row-split">
-
-    <!-- Telemetry: Ingest Bitrate, FPS, Dropped Frames, CPU Load -->
-    <section class="card card-glass studio-telemetry-card" aria-labelledby="telem-heading">
+  <!-- Telemetry: Ingest Bitrate, FPS, Dropped Frames, CPU Load -->
+    <section class="card studio-telemetry-card" aria-labelledby="telem-heading">
       <h2 id="telem-heading" class="rack-title">
         {{ icon("activity", "icon-sm") }}Live Stream Health
         <span class="rack-title-end">
@@ -163,8 +151,8 @@
       </div>
     </section>
 
-    <!-- Dual-Channel LED Audio Peak Ladder -->
-    <section class="card card-glass studio-audio-card" aria-labelledby="audio-heading">
+  <!-- Dual-Channel LED Audio Peak Ladder -->
+    <section class="card studio-audio-card" aria-labelledby="audio-heading">
       <h2 id="audio-heading" class="rack-title">
         {{ icon("volume-2", "icon-sm") }}PulseAudio Peak Monitor
         <span class="rack-title-end">
@@ -248,28 +236,20 @@
 
   </div>
 
-  <!-- ================================================================ Schedule -->
-  <h2 class="floating-section-title">
-    {{ icon("calendar-clock", "icon-sm") }}Schedule
-  </h2>
 
   <section class="card" aria-labelledby="studio-schedule-h">
     <h2 id="studio-schedule-h" class="rack-title">
       {{ icon("calendar-clock", "icon-sm") }}Scheduled start/stop
-      <span class="hint m-0" style="font-weight:400;">Asia/Colombo</span>
+      <span class="hint m-0">Asia/Colombo</span>
     </h2>
     <div id="schedule-manager"></div>
   </section>
 
-  <!-- ================================================================ Source & Stream Key Row -->
-  <h2 class="floating-section-title">
-    {{ icon("shuffle", "icon-sm") }}RTMP Ingest &amp; Active Feed
-  </h2>
 
   <div class="studio-row studio-row-split">
 
     <!-- Stream Key & RTMP Manager -->
-    <section class="card card-glass studio-stream-key-card" aria-labelledby="sk-heading">
+    <section class="card studio-stream-key-card" aria-labelledby="sk-heading">
       <h2 id="sk-heading" class="rack-title">
         {{ icon("key-round", "icon-sm") }}RTMP &amp; Stream Key Manager
       </h2>
@@ -310,7 +290,7 @@
     </section>
 
     <!-- Source Feed Indicator & Navigation -->
-    <section class="card card-glass studio-source-card" aria-labelledby="source-heading">
+    <section class="card studio-source-card" aria-labelledby="source-heading">
       <h2 id="source-heading" class="rack-title">
         {{ icon("shuffle", "icon-sm") }}Active Video Source Feed
       </h2>
@@ -357,12 +337,8 @@
     </section>
   </div>
 
-  <!-- ================================================================ Local Recording & Disk Safety Card -->
-  <h2 class="floating-section-title">
-    {{ icon("disc", "icon-sm") }}Local MP4 Archive &amp; Storage Maintenance
-  </h2>
 
-  <section class="card card-glass studio-recording-card" aria-labelledby="rec-heading">
+  <section class="card studio-recording-card" aria-labelledby="rec-heading">
     <div class="card-header-flex">
       <h2 id="rec-heading" class="rack-title">
         {{ icon("disc", "icon-sm") }}Local MP4 Archive &amp; Storage Maintenance

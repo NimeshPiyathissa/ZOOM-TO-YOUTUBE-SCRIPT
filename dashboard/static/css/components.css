@@ -264,8 +264,10 @@ select.input {
 .slider-row { display: flex; align-items: center; gap: var(--space-3); }
 .slider-row output { font-family: var(--font-mono); font-size: var(--text-sm); color: var(--text-dim); min-width: 4.5em; text-align: right; font-variant-numeric: tabular-nums; }
 input[type="range"].slider, input[type="range"] {
-  flex: 1; appearance: none; -webkit-appearance: none; height: var(--progress-h-thin); background: var(--border-strong); border-radius: var(--radius-full); outline: none;
+  width: 100%; flex: none; align-self: auto; appearance: none; -webkit-appearance: none; height: var(--progress-h-thin); margin: var(--space-2) 0;
+  background: var(--border-strong); border-radius: var(--radius-full); outline: none; cursor: pointer;
 }
+.slider-row input[type="range"], .input-group input[type="range"], .remote-volume-row input[type="range"], .yt-seek-row input[type="range"] { flex: 1; width: auto; min-width: 0; }
 input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none; appearance: none; width: 18px; height: 18px; border-radius: 50%;
   background: var(--on-media); border: var(--border-w-thick) solid var(--accent-solid);

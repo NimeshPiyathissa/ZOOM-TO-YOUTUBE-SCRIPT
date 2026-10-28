@@ -42,9 +42,12 @@ function icon(name, cls = "") {
 
 // ---------------------------------------------------------------- toasts
 
+const TOAST_ALIAS = { success: "ok", error: "err", danger: "err", warning: "warn" };
+
 function toast(message, type = "ok") {
   const wrap = document.getElementById("toasts");
   if (!wrap) return;
+  type = TOAST_ALIAS[type] || type;
   const el = document.createElement("div");
   el.className = `toast ${type}`;
   el.setAttribute("role", "status");
