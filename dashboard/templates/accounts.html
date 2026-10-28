@@ -4,9 +4,16 @@
 {% block extra_css %}<link rel="stylesheet" href="{{ static_url('css/rack.css') }}"><link rel="stylesheet" href="{{ static_url('css/remote.css') }}"><link rel="stylesheet" href="{{ static_url('css/accounts.css') }}">{% endblock %}
 {% block content %}
 
+<header class="page-header">
+  <div>
+    <h1>Accounts</h1>
+    <p class="page-desc">Google accounts the stream browser and Zoom can sign in with. You sign in by hand on the remote screen; nothing secret is stored here.</p>
+  </div>
+</header>
+
 <div class="ac-grid rack-grid">
 
-  <section class="card card-glass ac-list-card" aria-labelledby="ac-list-h">
+  <section class="card ac-list-card" aria-labelledby="ac-list-h">
     <h2 id="ac-list-h" class="rack-title">{{ icon("user", "icon-sm") }}Google accounts
       <span class="rack-title-end hint m-0">one shared list - used by the Zoom page and the web source on Remote</span></h2>
     <div class="banner banner-info mb-4" role="note">
@@ -29,7 +36,7 @@
       <article class="account-card" data-account-id="{{ a.id }}" data-label="{{ a.label }}" data-state="{{ a.badge_state }}">
         <div class="account-card-main">
           <div class="account-card-head">
-            <span class="account-label">{{ a.label }}</span>
+            <span class="account-label" data-initial="{{ a.label[:1] }}">{{ a.label }}</span>
             <span class="badge account-state" data-state="{{ a.badge_state }}">
               <svg class="icon account-state-icon" aria-hidden="true"><use href="#i-{{ BADGE_ICON[a.badge_state] }}"></use></svg>
               <span class="account-state-text">{{ BADGE_TEXT[a.badge_state] }}</span>
@@ -61,12 +68,12 @@
         </div>
       </article>
       {% else %}
-      <div class="empty-state" id="account-empty">{{ icon("user") }}<div class="empty-sub">No accounts yet. Import the session the stream browser already has, or add one and sign in.</div></div>
+      <div class="empty-state empty-dashed" id="account-empty">{{ icon("user") }}<div class="empty-title">No accounts yet</div><div class="empty-sub">Import the session the stream browser already has, or add one and sign in.</div></div>
       {% endfor %}
     </div>
   </section>
 
-  <section class="card card-glass ac-add-card" aria-labelledby="ac-add-h">
+  <section class="card ac-add-card" aria-labelledby="ac-add-h">
     <h2 id="ac-add-h" class="rack-title">{{ icon("plus", "icon-sm") }}Add an account</h2>
     <div class="ac-add-grid">
       <div class="ac-add-option">
@@ -89,7 +96,7 @@
   </section>
 
   <!-- Zoom client: its own session (in ~/.zoom), separate from Chrome -->
-  <section class="card card-glass ac-zoom-card" aria-labelledby="ac-zoom-h">
+  <section class="card ac-zoom-card" aria-labelledby="ac-zoom-h">
     <h2 id="ac-zoom-h" class="rack-title">{{ icon("video", "icon-sm") }}Zoom client sign-in
       <span class="rack-title-end hint m-0">separate from the Chrome accounts above</span></h2>
     <p class="hint">The Zoom client keeps its own session in its data directory (persistent across restarts and reboots). When a meeting is set to join with a Google account, Zoom's "Sign in with Google" opens in <em>that account's</em> Chrome profile - already signed in - and returns to Zoom. Confirm the result here; the dashboard can't read Zoom's session, so this is your word.</p>
@@ -123,7 +130,7 @@
         </div>
       </div>
     </div>
-    <div class="card card-glass signin-guide">
+    <div class="card signin-guide">
       <ol class="signin-steps">
         <li><strong>A Chrome window has opened on the remote screen</strong> at Google's sign-in page, maximized. If you only see black, wait a few seconds.</li>
         <li><strong>Sign in there exactly as on a phone:</strong> email, password, then any 2-Step prompt. Type into the remote screen, not this page - nothing you type is seen or kept by the dashboard.</li>

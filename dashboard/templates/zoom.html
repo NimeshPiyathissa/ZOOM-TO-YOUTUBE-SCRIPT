@@ -4,10 +4,17 @@
 {% block extra_css %}<link rel="stylesheet" href="{{ static_url('css/rack.css') }}"><link rel="stylesheet" href="{{ static_url('css/zoom.css') }}">{% endblock %}
 {% block content %}
 
+<header class="page-header">
+  <div>
+    <h1>Zoom</h1>
+    <p class="page-desc">Join, watch and steer the meeting on air, and keep a library of meetings ready to switch to.</p>
+  </div>
+</header>
+
 <div class="zm-grid rack-grid">
 
   <!-- ============================================================ meeting state + join flow -->
-  <section class="card card-glass zm-meeting" aria-labelledby="zm-meeting-h">
+  <section class="card zm-meeting" aria-labelledby="zm-meeting-h">
     <h2 id="zm-meeting-h" class="rack-title">{{ icon("video", "icon-sm") }}Meeting
       <span class="rack-title-end hint m-0" id="zm-status-source">read from Zoom's windows, never assumed</span></h2>
 
@@ -100,7 +107,7 @@
   </section>
 
   <!-- ============================================================ embedded remote screen -->
-  <section class="card card-glass zm-screen" aria-labelledby="zm-screen-h">
+  <section class="card zm-screen" aria-labelledby="zm-screen-h">
     <h2 id="zm-screen-h" class="rack-title">{{ icon("monitor", "icon-sm") }}Remote screen
       <span class="rack-title-end"><span class="hint m-0" id="zm-vnc-status">not connected</span></span></h2>
     <div class="zm-vnc" id="zm-vnc">
@@ -119,7 +126,7 @@
   </section>
 
   <!-- ============================================================ add / edit -->
-  <section class="card card-glass zm-editor" id="zm-editor" aria-labelledby="zm-editor-h">
+  <section class="card zm-editor" id="zm-editor" aria-labelledby="zm-editor-h">
     <h2 id="zm-editor-h" class="rack-title">{{ icon("plus", "icon-sm") }}<span id="zm-editor-title">Add a meeting</span>
       <span class="rack-title-end"><button id="zm-edit-cancel" class="btn btn-ghost btn-sm" hidden>{{ icon("x", "icon-sm") }}Cancel edit</button></span></h2>
 
@@ -274,11 +281,11 @@
   </section>
 
   <!-- ============================================================ library (= zoom rows of the shared source store) -->
-  <section class="card card-glass zm-library-card" aria-labelledby="zm-library-h">
+  <section class="card zm-library-card" aria-labelledby="zm-library-h">
     <h2 id="zm-library-h" class="rack-title">{{ icon("list-checks", "icon-sm") }}Saved meetings
       <span class="rack-title-end hint m-0" id="zm-library-sync">same list as Sources on Remote</span></h2>
     <div class="zm-library" id="zm-library" role="list" aria-label="Saved meetings"></div>
-    <div class="empty-state" id="zm-library-empty" hidden>{{ icon("video") }}<div class="empty-sub">No meetings yet - paste an invite above.</div></div>
+    <div class="empty-state empty-dashed" id="zm-library-empty" hidden>{{ icon("video") }}<div class="empty-title">No meetings yet</div><div class="empty-sub">Paste an invite in "Add a meeting" to save one here.</div></div>
   </section>
 
 </div>

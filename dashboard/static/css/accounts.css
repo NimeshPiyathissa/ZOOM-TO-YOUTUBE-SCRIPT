@@ -5,7 +5,7 @@
    otherwise. Animations here are transform/opacity or background/color
    only, 150-250ms, and respect prefers-reduced-motion throughout. */
 
-@media (min-width: 1024px) {
+@media (min-width: 1200px) {
   .ac-grid { grid-template-columns: minmax(0, 3fr) minmax(320px, 2fr); grid-template-areas: "list add" "list zoom"; align-items: start; }
   .ac-list-card { grid-area: list; }
   .ac-add-card { grid-area: add; }
@@ -17,17 +17,12 @@
 .account-card {
   padding: var(--space-4);
   border-radius: var(--radius-lg);
-  border: 1px solid var(--glass-border);
-  background: var(--glass-tint);
-  box-shadow: var(--glass-shadow);
-  transition: border-color var(--duration-fast) var(--ease-out), box-shadow var(--duration-fast) var(--ease-out);
+  border: var(--border-w) solid var(--glass-border);
+  background: var(--bg-panel);
+  box-shadow: var(--shadow-xs);
+  transition: border-color var(--duration-fast) var(--ease-out), box-shadow var(--duration-base) var(--ease-out), transform var(--duration-base) var(--ease-out);
 }
-@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
-  .account-card { backdrop-filter: blur(12px) saturate(150%); -webkit-backdrop-filter: blur(12px) saturate(150%); }
-}
-@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .account-card { background: var(--bg-elevated); }
-}
+.account-card:hover { border-color: var(--border-strong); box-shadow: var(--shadow-md); transform: translateY(-1px); }
 /* Accent border is reserved for "verified" - every other state uses its
    badge colour for the small icon/text pairing only, not the whole
    card, so a red/amber card border never competes with the one genuine
@@ -36,11 +31,19 @@
 
 .account-card-main { display: flex; flex-direction: column; gap: var(--space-1); }
 .account-card-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; }
-.account-label { font-weight: var(--weight-semibold); }
+.account-label { font-weight: var(--weight-semibold); display: inline-flex; align-items: center; gap: var(--space-2-5); }
+.account-label::before {
+  content: attr(data-initial); width: 32px; height: 32px; border-radius: 50%; flex: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: var(--text-sm); font-weight: var(--weight-semibold); text-transform: uppercase;
+  color: var(--text-on-accent); background: linear-gradient(135deg, var(--accent), var(--accent-solid));
+  box-shadow: 0 4px 10px -4px var(--accent-glow);
+}
+.account-card[data-state="verified"] .account-label::before { background: linear-gradient(135deg, var(--success), color-mix(in srgb, var(--success) 70%, var(--media-ink))); box-shadow: 0 4px 10px -4px var(--success-glow); }
 
 /* ---------------------------------------------------------------- state badge:
    colour is never the only signal - icon + text always ride along. */
-.account-state { display: inline-flex; align-items: center; gap: 6px; }
+.account-state { display: inline-flex; align-items: center; gap: var(--space-1-5); }
 .account-state-icon { width: 14px; height: 14px; flex: none; }
 
 .account-state[data-state="never"] { background: var(--bg-hover); color: var(--text-faint); }
@@ -81,20 +84,14 @@
 .ac-add-grid { display: grid; gap: var(--space-3); }
 .ac-add-option {
   padding: var(--space-3); border-radius: var(--radius-md);
-  border: 1px solid var(--glass-border); background: var(--glass-tint); box-shadow: var(--glass-shadow);
-}
-@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
-  .ac-add-option { backdrop-filter: blur(12px) saturate(150%); -webkit-backdrop-filter: blur(12px) saturate(150%); }
-}
-@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .ac-add-option { background: var(--bg-elevated); }
+  border: var(--border-w) solid var(--border); background: var(--bg-sunken);
 }
 .ac-add-title { display: flex; align-items: center; gap: var(--space-2); font-weight: var(--weight-semibold); }
 .ac-add-title .icon { color: var(--accent); }
 .ac-add-option .input-group .btn { flex: none; }
 
 .ac-zoom-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); min-height: 28px; }
-.signin-vnc { background: var(--rm-ink, #07090c); border-radius: var(--radius-md); overflow: hidden; }
+.signin-vnc { background: var(--rm-ink); border-radius: var(--radius-lg); overflow: hidden; }
 /* Canvas stage is an absolutely-positioned sibling of the status overlay
    (base.css .vnc-status-overlay), both filling .signin-vnc (already
    position:relative via .vnc-frame-box) - same pairing as /vnc's

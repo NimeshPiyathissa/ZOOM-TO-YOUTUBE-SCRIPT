@@ -42,7 +42,7 @@ function setChecking(card, on) {
 }
 
 function paintCard(card, a) {
-  if (a.label != null) { card.dataset.label = a.label; card.querySelector(".account-label").textContent = a.label; }
+  if (a.label != null) { card.dataset.label = a.label; const lbl = card.querySelector(".account-label"); lbl.textContent = a.label; lbl.dataset.initial = a.label.slice(0, 1); }
   if (a.badge_state) {
     setBadge(card, a.badge_state);
     card.dataset.state = a.badge_state;
