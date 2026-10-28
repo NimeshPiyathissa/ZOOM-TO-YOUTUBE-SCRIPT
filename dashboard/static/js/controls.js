@@ -97,6 +97,13 @@ function renderActiveSource(data) {
     badge.innerHTML = "No active source";
     urlEl.textContent = "";
   }
+  const well = document.getElementById("active-source-icon");
+  if (well) {
+    const type = data.active_source && data.active_source.type;
+    const next = sourceIcon[type] || "link";
+    if (well.dataset.icon !== next) { well.dataset.icon = next; well.innerHTML = icon(next); }
+    well.classList.toggle("is-ok", !!data.active_source);
+  }
 }
 
 function renderUnits(units) {

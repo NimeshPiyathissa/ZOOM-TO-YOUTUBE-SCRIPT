@@ -190,6 +190,7 @@ select.input {
 /* password / secret field with a reveal toggle and a "currently" pill */
 .secret-row { display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-3); }
 
+.form-grid .grid-col-full, .form-grid .full { grid-column: 1 / -1; }
 .form-grid { display: grid; gap: var(--space-4); grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
 .form-actions {
   display: flex; align-items: center; justify-content: flex-end; gap: var(--space-2); flex-wrap: wrap;
@@ -295,9 +296,11 @@ input[type="range"]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 4px 
 .badge-active .dot { background: var(--success); box-shadow: 0 0 0 3px var(--success-tint); }
 .badge-inactive { background: var(--bg-hover); color: var(--text-faint); }
 .badge-inactive .dot { background: var(--text-faint); }
-.badge-failed { background: var(--live-tint); color: var(--live); }
+.badge-failed, .badge-error { background: var(--live-tint); color: var(--live); }
+.badge-error .dot { background: var(--live); }
 .badge-failed .dot { background: var(--live); }
-.badge-activating { background: var(--warning-tint); color: var(--warning); }
+.badge-activating, .badge-warning { background: var(--warning-tint); color: var(--warning); }
+.badge-warning .dot { background: var(--warning); }
 .badge-activating .dot { background: var(--warning); animation: pulse 1.4s var(--ease-in-out) infinite; }
 .badge-info { background: var(--info-tint); color: var(--info); }
 .badge-info .dot { background: var(--info); }

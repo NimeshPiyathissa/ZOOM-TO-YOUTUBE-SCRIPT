@@ -1,75 +1,90 @@
 {% extends "base.html" %}
 {% from "_macros.html" import icon %}
 {% block title %}Controls - Zoom Stream Dashboard{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{{ static_url('css/pages.css') }}">{% endblock %}
 {% block content %}
 
-<div class="section mt-0">
-  <div class="section-head"><h2>Active source</h2></div>
-  <div class="card card-glass">
-    <div class="source-active-row">
-      <span class="badge" id="active-source-badge">{{ icon("loader-circle", "icon-sm spin") }}loading&hellip;</span>
-      <span class="mono text-dim" id="active-source-url"></span>
+<header class="page-header">
+  <div>
+    <h1>Controls</h1>
+    <p class="page-desc">Pick what goes on air, drive the Zoom producer, and manage every service in the pipeline.</p>
+  </div>
+</header>
+
+<div class="controls-grid">
+  <section class="card controls-source accent-cap" aria-labelledby="active-source-title">
+    <div class="card-header">
+      <h2 class="card-title" id="active-source-title">{{ icon("radio", "icon-sm") }}Active source</h2>
+    </div>
+    <div class="source-hero">
+      <span class="icon-well source-hero-icon" id="active-source-icon">{{ icon("link") }}</span>
+      <div class="source-hero-meta">
+        <span class="badge skeleton" id="active-source-badge">{{ icon("loader-circle", "icon-sm spin") }}loading&hellip;</span>
+        <span class="mono source-hero-url" id="active-source-url"></span>
+      </div>
     </div>
     {% if sources %}
-    <div class="field max-w-sm">
-      <label class="label" for="quick-source">Switch source</label>
-      <select id="quick-source" class="input">
-        <option value="">Select a saved source&hellip;</option>
-        {% for s in sources %}<option value="{{ s.id }}" {{ "selected" if s.id == active_source_id }}>{{ s.name }} ({{ s.type }})</option>{% endfor %}
-      </select>
+    <div class="switch-source">
+      <div class="field m-0">
+        <label class="label" for="quick-source">Switch source</label>
+        <div class="input-group">
+          <select id="quick-source" class="input">
+            <option value="">Select a saved source&hellip;</option>
+            {% for s in sources %}<option value="{{ s.id }}" {{ "selected" if s.id == active_source_id }}>{{ s.name }} ({{ s.type }})</option>{% endfor %}
+          </select>
+          <button id="btn-switch-source" class="btn btn-primary">{{ icon("shuffle", "icon-sm") }}Switch source</button>
+        </div>
+      </div>
+      <p class="hint mt-3 mb-0">Switching stops the encoder briefly (a few seconds of YouTube-side buffering, same as "Restart encoder" below), swaps the producer, then starts it again - there's no instant hot swap.</p>
     </div>
-    <button id="btn-switch-source" class="btn btn-primary">{{ icon("shuffle", "icon-sm") }}Switch source</button>
-    <p class="hint mt-2">Switching stops the encoder briefly (a few seconds of YouTube-side buffering, same as "Restart encoder" below), swaps the producer, then starts it again - there's no instant hot swap.</p>
     {% else %}
-    <div class="empty-state">{{ icon("link") }}<div class="empty-sub">No saved sources yet. Add one on the Configuration page.</div></div>
+    <div class="empty-state empty-dashed mt-4">{{ icon("link") }}<div class="empty-title">No saved sources yet</div><div class="empty-sub">Add a Zoom meeting, web page or stream on the <a href="/zoom">Zoom</a> or <a href="/remote">Remote</a> page.</div></div>
     {% endif %}
-  </div>
-</div>
+  </section>
 
-<div class="section">
-  <div class="studio-row-split">
-    <div>
-      <div class="section-head"><h2>Zoom producer</h2><span class="hint m-0">only relevant while the active source is a Zoom meeting</span></div>
-      <div class="card card-glass">
-        <div class="btn-row">
-          <button id="btn-join" class="btn btn-primary">{{ icon("play", "icon-sm") }}Join meeting</button>
-          <button id="btn-leave" class="btn btn-danger">{{ icon("square", "icon-sm") }}Leave meeting</button>
-          <button id="btn-rejoin" class="btn btn-secondary">{{ icon("rotate-cw", "icon-sm") }}Rejoin (restart Zoom)</button>
-        </div>
+  <div class="controls-side">
+    <section class="card" aria-labelledby="zoom-producer-title">
+      <div class="card-header">
+        <h2 class="card-title" id="zoom-producer-title">{{ icon("video", "icon-sm") }}Zoom producer</h2>
       </div>
-    </div>
-    <div>
-      <div class="section-head"><h2>Test recording</h2></div>
-      <div class="card card-glass">
-        <p class="hint mb-3">Records 60 seconds of display :99 + audio locally, without touching YouTube.</p>
-        <div class="btn-row">
-          <button id="btn-test-recording" class="btn btn-secondary">{{ icon("video", "icon-sm") }}Run 60s test recording</button>
-          <a class="btn btn-ghost" href="/api/test-recording/download">{{ icon("download", "icon-sm") }}Download latest</a>
-        </div>
+      <p class="hint mt-0 mb-4">Only relevant while the active source is a Zoom meeting.</p>
+      <div class="btn-row">
+        <button id="btn-join" class="btn btn-primary btn-sm">{{ icon("play", "icon-sm") }}Join meeting</button>
+        <button id="btn-leave" class="btn btn-danger-ghost btn-sm">{{ icon("square", "icon-sm") }}Leave meeting</button>
+        <button id="btn-rejoin" class="btn btn-secondary btn-sm">{{ icon("rotate-cw", "icon-sm") }}Rejoin (restart Zoom)</button>
       </div>
-    </div>
+    </section>
+    <section class="card" aria-labelledby="test-rec-title">
+      <div class="card-header">
+        <h2 class="card-title" id="test-rec-title">{{ icon("disc", "icon-sm") }}Test recording</h2>
+      </div>
+      <p class="hint mt-0 mb-4">Records 60 seconds of display :99 + audio locally, without touching YouTube.</p>
+      <div class="btn-row">
+        <button id="btn-test-recording" class="btn btn-secondary btn-sm">{{ icon("video", "icon-sm") }}Run 60s test recording</button>
+        <a class="btn btn-ghost btn-sm" href="/api/test-recording/download">{{ icon("download", "icon-sm") }}Download latest</a>
+      </div>
+    </section>
   </div>
 </div>
 
-<div class="section">
-  <div class="section-head"><h2>Pipeline</h2></div>
-  <div class="card card-glass">
-    <div class="btn-row mb-4">
-      <button id="btn-pipeline-restart" class="btn btn-secondary">{{ icon("rotate-cw", "icon-sm") }}Restart whole pipeline</button>
-    </div>
-    <div class="service-list" id="unit-list"></div>
+<section class="card section" aria-labelledby="pipeline-title">
+  <div class="card-header">
+    <h2 class="card-title" id="pipeline-title">{{ icon("server", "icon-sm") }}Pipeline<span class="count-chip">{{ units | length }}</span></h2>
+    <button id="btn-pipeline-restart" class="btn btn-secondary btn-sm">{{ icon("rotate-cw", "icon-sm") }}Restart whole pipeline</button>
   </div>
-</div>
+  <div class="service-list service-table" id="unit-list"></div>
+</section>
 
-<div class="section">
-  <div class="section-head"><h2>Danger zone</h2></div>
-  <div class="card card-glass card-danger">
-    <p class="hint mb-3">Immediately reboots the VPS, ending any live stream and dropping the meeting.</p>
-    <div class="btn-row">
-      <button id="btn-reboot" class="btn btn-danger">{{ icon("power", "icon-sm") }}Reboot VPS</button>
+<section class="card section danger-zone" aria-labelledby="danger-title">
+  <div class="danger-zone-body">
+    <span class="icon-well is-live">{{ icon("power") }}</span>
+    <div>
+      <h2 class="card-title" id="danger-title">Danger zone</h2>
+      <p class="hint m-0">Immediately reboots the VPS, ending any live stream and dropping the meeting.</p>
     </div>
+    <button id="btn-reboot" class="btn btn-danger">{{ icon("power", "icon-sm") }}Reboot VPS</button>
   </div>
-</div>
+</section>
 
 {% endblock %}
 {% block scripts %}

@@ -1,17 +1,29 @@
 {% extends "base.html" %}
 {% from "_macros.html" import icon %}
 {% block title %}Schedule - Zoom Stream Dashboard{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{{ static_url('css/pages.css') }}">{% endblock %}
 {% block content %}
 
-<div class="section mt-0">
-  <div class="section-head">
-    <h2>Scheduled start/stop</h2>
-    <span class="hint m-0">Asia/Colombo - join early, go live on time, stop + leave automatically</span>
+<header class="page-header">
+  <div>
+    <h1>Schedule</h1>
+    <p class="page-desc">Join early, go live on time, and stop and leave automatically. All times are Asia/Colombo.</p>
   </div>
-  <div class="card card-glass">
-    <div id="schedule-manager"></div>
+</header>
+
+<section class="card sched-next accent-cap" id="sched-next" aria-label="Next scheduled run">
+  <span class="icon-well">{{ icon("calendar-clock") }}</span>
+  <div class="sched-next-meta">
+    <span class="eyebrow">Next run</span>
+    <span class="sched-next-when tnum" id="sched-next-when">&hellip;</span>
+    <span class="hint m-0" id="sched-next-name">Loading schedules&hellip;</span>
   </div>
-</div>
+  <span class="chip-metric" id="sched-next-count">&ndash;</span>
+</section>
+
+<section class="schedule-page" aria-label="Schedules">
+  <div id="schedule-manager"></div>
+</section>
 
 <script type="application/json" id="schedule-sources-data">{{ sources | tojson }}</script>
 

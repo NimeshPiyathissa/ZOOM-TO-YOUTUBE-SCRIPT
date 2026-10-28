@@ -30,6 +30,9 @@
   let serverOffsetMs = 0; // serverTime - Date.now(), applied so the countdown doesn't drift from client-clock skew
   let editingId = null;
   let lastFetchFailed = false;
+  // On the /schedule page the form is a permanent side panel (always
+  // open); elsewhere (Live Studio card) it stays a collapsible <details>.
+  const persistentForm = !!container.closest(".schedule-page");
 
   const post = (url, body) => apiFetch(url, { method: "POST", body: body ? JSON.stringify(body) : undefined });
 
@@ -140,15 +143,37 @@
       return;
     }
     if (schedules.length === 0) {
-      listEl.innerHTML = `<div class="empty-state">${icon("calendar-clock")}<div class="empty-title">No schedules yet</div><div class="empty-sub">Add one below to join early, go live on time, and stop automatically.</div></div>`;
+      renderNext(Date.now());
+      listEl.innerHTML = `<div class="empty-state">${icon("calendar-clock")}<div class="empty-title">No schedules yet</div><div class="empty-sub">Add one to join early, go live on time, and stop automatically.</div></div>`;
       return;
     }
     const nowMs = Date.now() + serverOffsetMs;
+    renderNext(nowMs);
     listEl.innerHTML = `<div class="table-wrap"><table>
       <thead><tr><th>Schedule</th><th>Window</th><th>Repeat</th><th>Status</th><th>Next run (Asia/Colombo)</th><th></th></tr></thead>
       <tbody>${schedules.map((s) => renderRow(s, nowMs)).join("")}</tbody>
     </table></div>`;
     wireRowButtons();
+  }
+
+  // Optional "next up" summary (only pages that include #sched-next).
+  function renderNext(nowMs) {
+    const el = document.getElementById("sched-next");
+    if (!el) return;
+    const upcoming = schedules
+      .filter((s) => s.enabled && s.next_run)
+      .map((s) => ({ s, t: new Date(s.next_run).getTime() }))
+      .sort((a, b) => a.t - b.t)[0];
+    const enabled = schedules.filter((s) => s.enabled).length;
+    document.getElementById("sched-next-count").textContent = `${enabled} of ${schedules.length} enabled`;
+    if (!upcoming) {
+      document.getElementById("sched-next-when").textContent = "Nothing scheduled";
+      document.getElementById("sched-next-name").textContent = schedules.length ? "Every schedule is disabled." : "Add a schedule to automate a broadcast.";
+      return;
+    }
+    const secsLeft = Math.max(0, Math.round((upcoming.t - nowMs) / 1000));
+    document.getElementById("sched-next-when").textContent = secsLeft > 0 ? `in ${fmtDuration(secsLeft)}` : "Active now";
+    document.getElementById("sched-next-name").textContent = `${upcoming.s.label || upcoming.s.source_name || "Schedule #" + upcoming.s.id} · ${fmtClock(upcoming.s.next_run)}`;
   }
 
   function renderRow(s, nowMs) {
@@ -242,7 +267,7 @@
 
     document.getElementById("sf-cancel").addEventListener("click", () => {
       resetForm();
-      details.open = false;
+      details.open = persistentForm;
     });
 
     document.getElementById("sched-form").addEventListener("submit", async (e) => {
@@ -269,13 +294,17 @@
           else await post("/api/schedules", body);
           toast(id ? "Schedule updated" : "Schedule added");
           resetForm();
-          details.open = false;
+          details.open = persistentForm;
           await refresh();
         } catch (err) { toast(err.message, "err"); }
       });
     });
 
     setRepeat("once");
+    if (persistentForm) {
+      details.open = true;
+      details.querySelector("summary").addEventListener("click", (e) => e.preventDefault());
+    }
   }
 
   function resetForm() {
@@ -294,6 +323,8 @@
     document.getElementById("sf-days-field").hidden = true;
     document.getElementById("sf-date-label").textContent = "Date";
     document.getElementById("sf-save").innerHTML = `${icon("check", "icon-sm")}Save schedule`;
+    const sum = document.getElementById("sched-form-summary");
+    if (sum && persistentForm) sum.innerHTML = `${icon("plus", "icon-sm")}Add schedule`;
   }
 
   function openForEdit(s) {
@@ -316,6 +347,8 @@
     const daysSeg = document.getElementById("sf-days-seg");
     daysSeg.querySelectorAll(".seg-btn").forEach((b) => b.classList.toggle("is-active", (s.custom_days || []).includes(Number(b.dataset.value))));
     document.getElementById("sf-save").innerHTML = `${icon("check", "icon-sm")}Save changes`;
+    const sum = document.getElementById("sched-form-summary");
+    if (sum && persistentForm) sum.innerHTML = `${icon("pencil", "icon-sm")}Edit schedule`;
     details.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }
 
