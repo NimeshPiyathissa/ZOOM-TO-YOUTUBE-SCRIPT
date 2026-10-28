@@ -105,3 +105,98 @@
   #sched-list .actions-cell { justify-content: flex-start; padding-top: var(--space-2); }
   .schedule-page #sched-form { grid-template-columns: 1fr; }
 }
+
+/* ---------------------------------------------------------------- Settings */
+.settings-layout { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: var(--space-6); align-items: start; }
+.settings-nav {
+  position: sticky; top: calc(var(--topbar-h) + var(--shell-gap) * 2);
+  display: flex; flex-direction: column; gap: 2px; padding: var(--space-2);
+  border-radius: var(--radius-xl); background: var(--glass-tint); border: var(--border-w) solid var(--glass-border); box-shadow: var(--glass-shadow);
+}
+.settings-nav-link {
+  position: relative; display: flex; align-items: center; gap: var(--space-2-5);
+  height: 38px; padding: 0 var(--space-3); border-radius: var(--radius-md);
+  color: var(--text-dim); font-size: var(--text-sm); font-weight: var(--weight-medium); text-decoration: none;
+  transition: background-color var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
+}
+.settings-nav-link:hover { background: var(--bg-hover); color: var(--text); text-decoration: none; }
+.settings-nav-link.is-active { background: var(--accent-tint); color: var(--text); font-weight: var(--weight-semibold); }
+.settings-nav-link.is-active .icon { color: var(--accent); }
+.settings-nav-link.is-active::before {
+  content: ""; position: absolute; left: 0; top: 25%; bottom: 25%; width: 3px; border-radius: var(--radius-full); background: var(--accent);
+}
+.settings-body { display: flex; flex-direction: column; gap: var(--space-5); min-width: 0; }
+.settings-section { scroll-margin-top: calc(var(--topbar-h) + var(--shell-gap) * 3); }
+.settings-section:hover { transform: none; }
+.settings-section-group { display: flex; flex-direction: column; gap: var(--space-4); scroll-margin-top: calc(var(--topbar-h) + var(--shell-gap) * 3); }
+.settings-section-group > .floating-section-title { margin: var(--space-3) 0 0; }
+.settings-section-head { display: flex; align-items: flex-start; gap: var(--space-3); margin-bottom: var(--space-5); padding-bottom: var(--space-4); border-bottom: var(--border-w) solid var(--border); }
+.settings-section-head h2 { font-size: var(--text-md); margin: var(--space-0-5) 0 var(--space-1); }
+.settings-desc { margin: 0; font-size: var(--text-xs); color: var(--text-dim); max-width: var(--measure); }
+.settings-subhead { font-size: var(--text-sm); font-weight: var(--weight-semibold); margin: var(--space-6) 0 var(--space-3); padding-top: var(--space-5); border-top: var(--border-w) dashed var(--border); }
+.settings-section .switch-row { align-items: flex-start; padding: var(--space-3); border-radius: var(--radius-md); border: var(--border-w) solid var(--border); background: var(--bg-sunken); }
+.settings-section .switch-row .switch { margin-top: 2px; }
+.settings-section .max-w-lg { max-width: 560px; }
+.settings-section .list-row { flex-wrap: wrap; }
+.settings-section .table-wrap { margin-bottom: var(--space-2); }
+.settings-section .table-wrap td:first-child .icon { margin-right: var(--space-1-5); color: var(--text-dim); }
+.form-actions .save-state.is-error { color: var(--live); }
+.form-actions .save-state .icon { width: var(--icon-sm); height: var(--icon-sm); }
+.form-actions .save-state > * { animation: rise-in var(--duration-base) var(--ease-out); }
+.settings-section.danger-zone .settings-section-head h2 { color: var(--live); }
+
+@media (max-width: 1023px) {
+  .settings-layout { grid-template-columns: 1fr; }
+  .settings-nav {
+    top: calc(var(--topbar-h) + var(--shell-gap) + var(--space-2)); z-index: var(--z-sticky);
+    flex-direction: row; overflow-x: auto; scrollbar-width: none; border-radius: var(--radius-full);
+    background: var(--glass-tint-strong);
+  }
+  .settings-nav::-webkit-scrollbar { display: none; }
+  .settings-nav-link { flex: none; height: 34px; border-radius: var(--radius-full); }
+  .settings-nav-link.is-active::before { display: none; }
+}
+@media (max-width: 767px) {
+  .settings-nav { top: calc(var(--topbar-h) + var(--space-4)); }
+  .settings-section-head .icon-well { display: none; }
+  .form-actions { justify-content: stretch; }
+  .form-actions .btn { flex: 1 1 100%; }
+  .form-actions .save-state { width: 100%; }
+}
+
+/* ---------------------------------------------------------------- Remote GUI (/vnc)
+   Only the chrome around the viewport is styled; the noVNC canvas
+   area stays a plain black device surface. */
+.vnc-container { display: flex; flex-direction: column; gap: var(--space-3); width: 100%; }
+.vnc-head { margin-bottom: var(--space-2); }
+.vnc-title-group { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-3); }
+.vnc-title-group h1 { margin: 0; }
+.vnc-title-group .program-id { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-faint); letter-spacing: var(--tracking-wide); padding: var(--space-0-5) var(--space-2); border-radius: var(--radius-full); border: var(--border-w) solid var(--border); }
+.vnc-toolbar { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+.vnc-viewport-card {
+  position: relative; width: 100%;
+  height: calc(100dvh - var(--topbar-h) - var(--shell-gap) * 2 - 150px); min-height: 480px;
+  background: var(--canvas-black); border-radius: var(--radius-xl); border: var(--border-w) solid var(--glass-border);
+  overflow: hidden;
+  /* Grid, not flex: the quick bar sizes to its content and the stage gets
+     the rest (1fr) - noVNC's own autoscale fits the framebuffer inside. */
+  display: grid; grid-template-rows: 1fr auto;
+  box-shadow: var(--shadow-lg);
+}
+.vnc-viewport-card.is-fullscreen { position: fixed; inset: 0; width: 100vw; height: 100dvh; z-index: var(--z-modal); border-radius: 0; border: none; }
+.vnc-screen-stage { position: relative; min-width: 0; min-height: 0; overflow: hidden; background: var(--canvas-black); display: flex; align-items: center; justify-content: center; }
+.vnc-screen-stage > div { width: 100% !important; height: 100% !important; display: flex !important; align-items: center !important; justify-content: center !important; overflow: hidden !important; }
+.vnc-screen-stage canvas { outline: none; cursor: default; }
+.vnc-quick-bar {
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-2);
+  padding: var(--space-2) var(--space-3); z-index: var(--z-raised);
+  background: var(--media-panel); border-top: var(--border-w) solid var(--media-line);
+}
+.vnc-quick-bar .btn-ghost { color: var(--media-text-dim); }
+.vnc-quick-bar .btn-ghost:hover { color: var(--on-media); background: var(--media-fill-faint); }
+.vnc-quick-bar .hint { color: var(--media-text-faint); font-family: var(--font-mono); }
+.vnc-quick-left, .vnc-quick-right { display: flex; align-items: center; gap: var(--space-1); flex-wrap: wrap; }
+@media (max-width: 767px) {
+  .vnc-viewport-card { height: 62dvh; min-height: 320px; border-radius: var(--radius-lg); }
+  .vnc-quick-right { display: none; }
+}

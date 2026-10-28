@@ -1,37 +1,57 @@
 {% extends "base.html" %}
 {% from "_macros.html" import icon %}
-{% block title %}Configuration - Zoom Stream Dashboard{% endblock %}
+{% block title %}Settings - Zoom Stream Dashboard{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{{ static_url('css/pages.css') }}">{% endblock %}
 {% block content %}
 
-<div class="config-container">
+<header class="page-header">
+  <div>
+    <h1>Settings</h1>
+    <p class="page-desc">Appearance, sign-in, sources, ingest keys, notifications and server maintenance.</p>
+  </div>
+</header>
 
-  <!-- ================================================================ Appearance -->
-  <h2 class="floating-section-title" id="appearance">
-    {{ icon("sparkles", "icon-sm") }}Appearance
-  </h2>
-  <div class="card card-glass">
+<div class="config-container settings-layout">
+
+  <nav class="settings-nav" aria-label="Settings sections">
+    <a href="#appearance" class="settings-nav-link">{{ icon("sparkles", "icon-sm") }}Appearance</a>
+    <a href="#zoom-account" class="settings-nav-link">{{ icon("user", "icon-sm") }}Zoom account</a>
+    <a href="#sources" class="settings-nav-link">{{ icon("shuffle", "icon-sm") }}Sources</a>
+    <a href="#youtube" class="settings-nav-link">{{ icon("key-round", "icon-sm") }}YouTube ingest</a>
+    <a href="#telegram-suite-card" class="settings-nav-link">{{ icon("send", "icon-sm") }}Telegram</a>
+    <a href="#system" class="settings-nav-link">{{ icon("power", "icon-sm") }}System</a>
+  </nav>
+
+  <div class="settings-body">
+
+  <section class="card settings-section" id="appearance" aria-labelledby="appearance-h">
+    <div class="settings-section-head">
+      <span class="icon-well">{{ icon("sparkles") }}</span>
+      <div>
+        <h2 id="appearance-h">Appearance</h2>
+        <p class="settings-desc">How the dashboard looks on this browser.</p>
+      </div>
+    </div>
     <div class="list-row">
       <div class="list-row-info">
         <span class="list-row-title">Theme</span>
-        <span class="list-row-subtitle">White and Black follow a cool/navy palette; Default is the original forest/glass look.</span>
+        <span class="list-row-subtitle">System follows this device's light/dark setting. Light and Dark are remembered for your account.</span>
       </div>
       <div class="segmented" role="group" aria-label="Theme">
-        <button type="button" class="seg-btn" data-theme-choice="white">{{ icon("sun", "icon-sm") }}White</button>
-        <button type="button" class="seg-btn" data-theme-choice="black">{{ icon("moon", "icon-sm") }}Black</button>
-        <button type="button" class="seg-btn" data-theme-choice="default">{{ icon("sparkles", "icon-sm") }}Default</button>
+        <button type="button" class="seg-btn" data-theme-choice="system">{{ icon("monitor", "icon-sm") }}System</button>
+        <button type="button" class="seg-btn" data-theme-choice="white">{{ icon("sun", "icon-sm") }}Light</button>
+        <button type="button" class="seg-btn" data-theme-choice="black">{{ icon("moon", "icon-sm") }}Dark</button>
       </div>
     </div>
-  </div>
+  </section>
 
-  <!-- ================================================================ Basic settings -->
-  <h2 class="floating-section-title">
-    {{ icon("sliders-horizontal", "icon-sm") }}Basic settings
-  </h2>
-
-  <!-- Zoom Account & Identity Card -->
-  <div class="card card-glass" id="zoom-account">
-    <div class="health-card-head mb-2">
-      <h3 class="glass-row-title">{{ icon("user", "icon-sm") }}Zoom Account &amp; Identity</h3>
+  <section class="card settings-section" id="zoom-account" aria-labelledby="zoom-account-h">
+    <div class="settings-section-head">
+      <span class="icon-well">{{ icon("user") }}</span>
+      <div>
+        <h2 id="zoom-account-h">Zoom Account &amp; Identity</h2>
+        <p class="settings-desc">Which Zoom identity the bot joins as.</p>
+      </div>
     </div>
     <p class="hint mb-3">
       Google Sign-In is completed by hand over Remote GUI - nothing here ever reads, stores, or logs a Google
@@ -56,16 +76,16 @@
       </div>
       <span class="hint">Click this once the Google Sign-In flow in the browser is finished and Zoom is showing its home screen.</span>
     </div>
-  </div>
+  </section>
 
-  <!-- Video Sources Card -->
-  <div class="section-head mt-4">
-    <h2 class="floating-section-title">
-      {{ icon("shuffle", "icon-sm") }}Video &amp; Stream Sources
-    </h2>
-  </div>
-
-  <div class="card card-glass">
+  <section class="card settings-section" id="sources" aria-labelledby="sources-h" data-settings-form>
+    <div class="settings-section-head">
+      <span class="icon-well">{{ icon("shuffle") }}</span>
+      <div>
+        <h2 id="sources-h">Video &amp; Stream Sources</h2>
+        <p class="settings-desc">Everything the encoder can put on air: Zoom meetings, web pages and direct media.</p>
+      </div>
+    </div>
     {% if sources %}
     <div class="table-wrap">
       <table id="sources-table">
@@ -86,10 +106,10 @@
       </table>
     </div>
     {% else %}
-    <div class="empty-state">{{ icon("link") }}<div class="empty-sub">No saved sources yet.</div></div>
+    <div class="empty-state empty-dashed">{{ icon("link") }}<div class="empty-title">No saved sources yet</div><div class="empty-sub">Add one below, or paste an invite on the Zoom page.</div></div>
     {% endif %}
 
-    <h3 class="mt-4 mb-3">Add source</h3>
+    <h3 class="settings-subhead">Add source</h3>
     <div class="form-grid">
       <div class="field"><label class="label">Name</label><input class="input" id="src-name"></div>
       <div class="field">
@@ -152,20 +172,20 @@
         <div><div class="switch-label">Loop</div><div class="hint">Restart from the beginning when the file ends (local MP4/MKV)</div></div>
       </div>
     </div>
-
-    <div class="btn-row mt-4">
+    <div class="form-actions">
+      <span class="save-state" aria-live="polite"></span>
       <button id="btn-add-source" class="btn btn-primary">{{ icon("plus", "icon-sm") }}Add source</button>
     </div>
-  </div>
+  </section>
 
-  <!-- YouTube Ingest & Secrets Card -->
-  <div class="section-head mt-4">
-    <h2 class="floating-section-title">
-      {{ icon("key-round", "icon-sm") }}YouTube Ingest &amp; Stream Keys
-    </h2>
-  </div>
-
-  <div class="card card-glass">
+  <section class="card settings-section" id="youtube" aria-labelledby="youtube-h" data-settings-form>
+    <div class="settings-section-head">
+      <span class="icon-well">{{ icon("key-round") }}</span>
+      <div>
+        <h2 id="youtube-h">YouTube Ingest &amp; Stream Keys</h2>
+        <p class="settings-desc">Where the stream goes. Keys are never shown unless you reveal them.</p>
+      </div>
+    </div>
     <div class="field max-w-lg">
       <label class="label" for="cfg-yt-key">YouTube stream key</label>
       <div class="input-action-group">
@@ -178,25 +198,22 @@
       <label class="label" for="cfg-yt-url">RTMP ingest URL</label>
       <input class="input readout" id="cfg-yt-url" value="{{ yt_url }}" readonly>
       <span class="hint">Primary YouTube ingest endpoint.</span>
-    </div>
-    <div class="btn-row mt-3">
+    </div>    <div class="form-actions">
+      <span class="save-state" aria-live="polite"></span>
       <button id="btn-save-secrets" class="btn btn-primary" disabled>{{ icon("check", "icon-sm") }}Save secrets</button>
     </div>
-  </div>
+  </section>
 
-  <!-- Telegram Suite & Cloud Storage Card -->
-  <div class="section-head mt-4">
-    <h2 class="floating-section-title">
-      {{ icon("send", "icon-sm") }}Telegram Suite &amp; Cloud Storage
-    </h2>
-  </div>
+  <section class="card settings-section" id="telegram-suite-card" aria-labelledby="telegram-h" data-settings-form>
+    <div class="settings-section-head">
+      <span class="icon-well">{{ icon("send") }}</span>
+      <div>
+        <h2 id="telegram-h">Telegram Suite &amp; Cloud Storage</h2>
+        <p class="settings-desc">Alerts, channel broadcasts, and the MTProto uploader for recordings up to 4 GB with Telegram Premium.</p>
+      </div>
+    </div>
 
-  <div class="card card-glass" id="telegram-suite-card">
-    <p class="hint mb-4">
-      Configure Telegram alerts, channel broadcasts, and high-speed MTProto Telethon cloud uploader (supporting up to 4GB files with Telegram Premium).
-    </p>
-
-    <h3 class="mb-3">Telegram Credentials &amp; Bot Setup</h3>
+    <h3 class="settings-subhead">Telegram Credentials &amp; Bot Setup</h3>
     <div class="form-grid">
       <div class="field">
         <label class="label" for="cfg-tg-bot-token">Telegram Bot Token</label>
@@ -214,7 +231,7 @@
       </div>
     </div>
 
-    <h3 class="mt-4 mb-3">Telethon 4GB Premium Client (MTProto)</h3>
+    <h3 class="settings-subhead">Telethon 4GB Premium Client (MTProto)</h3>
     <div class="form-grid">
       <div class="field">
         <label class="label" for="cfg-tg-api-id">Telegram API ID</label>
@@ -241,7 +258,7 @@
       <span class="hint">Telethon StringSession string for a Telegram Premium account. Enables 4GB single-file uploads directly to Telegram.</span>
     </div>
 
-    <h3 class="mt-4 mb-3">Action Toggles &amp; Storage Automation</h3>
+    <h3 class="settings-subhead">Action Toggles &amp; Storage Automation</h3>
     <div class="switch-row mb-3">
       <span class="switch"><input type="checkbox" id="cfg-tg-auto-upload" {{ 'checked' if telegram_cfg.telegram_auto_upload_recording }}><span class="track"></span></span>
       <div>
@@ -273,55 +290,68 @@
         <div class="hint">Send immediate alerts if FFmpeg encounters dropped frames, crashes, or Zoom disconnects.</div>
       </div>
     </div>
-
-    <div class="btn-row mt-4">
+    <div class="form-actions">
+      <span class="save-state" aria-live="polite"></span>
       <button id="btn-save-telegram" class="btn btn-primary">{{ icon("check", "icon-sm") }}Save Telegram Settings</button>
       <button id="btn-test-telegram" class="btn btn-secondary">{{ icon("send", "icon-sm") }}Test Telegram Connection</button>
-      <button id="btn-clean-recordings" class="btn btn-secondary" title="Purge local MP4s to free VPS disk space">🧹 Clean Local Recordings Now</button>
+      <button id="btn-clean-recordings" class="btn btn-secondary" title="Purge local MP4s to free VPS disk space">{{ icon("trash-2", "icon-sm") }}Clean Local Recordings Now</button>
     </div>
-  </div>
+  </section>
 
-  <!-- ================================================================ System -->
-  <div class="section-head mt-4">
-    <h2 class="floating-section-title" id="system">
-      {{ icon("power", "icon-sm") }}System
-    </h2>
-  </div>
+  <section class="settings-section-group" id="system" aria-labelledby="system-h">
+    <h2 class="floating-section-title" id="system-h">{{ icon("power", "icon-sm") }}System</h2>
 
-  <div class="card card-glass" id="system-restart-card">
-    <div class="card-header"><h3>Restart all services</h3></div>
-    <p class="hint mb-3">
-      Restarts the pipeline (display, audio, Zoom/browser source, remote desktop, encoder) in
-      dependency order, verifying each one comes back, then restarts the dashboard itself last.
-      The stream drops for the duration.
-    </p>
-    <div class="btn-row mb-3">
-      <button id="btn-restart-all" class="btn btn-primary">{{ icon("rotate-cw", "icon-sm") }}Restart all services</button>
-    </div>
-    <div id="restart-all-steps" class="step-list" hidden></div>
-  </div>
-
-  <div class="card card-glass" id="system-reboot-card">
-    <div class="card-header"><h3>Reboot server</h3></div>
-    <p class="hint mb-3">
-      Restarts the whole machine. The stream stops and the dashboard is offline for 1-2 minutes.
-      A stream is not auto-started afterward unless a schedule says so.
-    </p>
-    <div class="eyebrow mb-2">Readiness checks</div>
-    <div id="reboot-readiness" class="step-list mb-3">
-      <div class="step-row" data-status="pending">
-        <span class="step-row-icon"><span class="spinner"></span></span>
-        <div class="step-row-body"><div class="step-row-label">Checking…</div></div>
+    <div class="card settings-section" id="system-restart-card">
+      <div class="settings-section-head">
+        <span class="icon-well">{{ icon("rotate-cw") }}</span>
+        <div>
+          <h2 id="restart-h">Restart all services</h2>
+          <p class="settings-desc">Restart the whole pipeline in dependency order.</p>
+        </div>
       </div>
-    </div>
-    <div class="btn-row">
-      <button id="btn-reboot" class="btn btn-danger" disabled>{{ icon("power", "icon-sm") }}Reboot server</button>
-      <button id="btn-reboot-recheck" class="btn btn-secondary btn-sm">{{ icon("refresh-ccw-dot", "icon-sm") }}Re-check</button>
-    </div>
-  </div>
+      <p class="hint mb-3">
+        Restarts the pipeline (display, audio, Zoom/browser source, remote desktop, encoder) in
+        dependency order, verifying each one comes back, then restarts the dashboard itself last.
+        The stream drops for the duration.
+      </p>
+      <div class="btn-row mb-3">
+        <button id="btn-restart-all" class="btn btn-primary">{{ icon("rotate-cw", "icon-sm") }}Restart all services</button>
+      </div>
+      <div id="restart-all-steps" class="step-list" hidden></div>
 
+    </div>
+
+    <div class="card settings-section danger-zone" id="system-reboot-card">
+      <div class="settings-section-head">
+        <span class="icon-well is-live">{{ icon("power") }}</span>
+        <div>
+          <h2 id="reboot-h">Reboot server</h2>
+          <p class="settings-desc">Restart the whole machine.</p>
+        </div>
+      </div>
+      <p class="hint mb-3">
+        Restarts the whole machine. The stream stops and the dashboard is offline for 1-2 minutes.
+        A stream is not auto-started afterward unless a schedule says so.
+      </p>
+      <div class="eyebrow mb-2">Readiness checks</div>
+      <div id="reboot-readiness" class="step-list mb-3">
+        <div class="step-row" data-status="pending">
+          <span class="step-row-icon"><span class="spinner"></span></span>
+          <div class="step-row-body"><div class="step-row-label">Checking…</div></div>
+        </div>
+      </div>
+      <div class="btn-row">
+        <button id="btn-reboot" class="btn btn-danger" disabled>{{ icon("power", "icon-sm") }}Reboot server</button>
+        <button id="btn-reboot-recheck" class="btn btn-secondary btn-sm">{{ icon("refresh-ccw-dot", "icon-sm") }}Re-check</button>
+      </div>
+
+    </div>
+  </section>
+
+  </div>
 </div>
 {% endblock %}
 {% block scripts %}
 <script src="{{ static_url('js/config.js') }}"></script>
+<script src="{{ static_url('js/settings-ui.js') }}"></script>
 {% endblock %}

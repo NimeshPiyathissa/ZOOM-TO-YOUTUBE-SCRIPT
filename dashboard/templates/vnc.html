@@ -1,130 +1,19 @@
 {% extends "base.html" %}
 {% from "_macros.html" import icon %}
 {% block title %}Remote GUI - Zoom Stream Dashboard{% endblock %}
-{% block extra_css %}
-<style>
-.vnc-container {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  margin-top: 0;
-  width: 100%;
-}
-.vnc-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: var(--space-3);
-}
-.vnc-title-group {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-.vnc-title-group h2 {
-  margin: 0;
-  font-size: var(--text-lg);
-  font-weight: var(--weight-bold);
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-.vnc-toolbar {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  flex-wrap: wrap;
-}
-.vnc-viewport-card {
-  position: relative;
-  width: 100%;
-  height: calc(100vh - 210px);
-  min-height: 540px;
-  background: var(--canvas-black);
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border);
-  overflow: hidden;
-  /* Grid, not flex: .vnc-quick-bar sizes to its own content (auto) and
-     .vnc-screen-stage gets everything left over (1fr). A flex `1 1 0`
-     item here would have flex-basis:0 as its main-size hint and the
-     grow factor would resolve the item's final height itself - any
-     inline/CSS height we set on the item is silently discarded, which
-     is exactly how the old flex-based layout stayed wrong no matter
-     what JS wrote to .vnc-screen-stage's style. Grid's 1fr track has no
-     such override: the stage's box is simply "whatever's left", and
-     noVNC's own autoscale() (rfb.scaleViewport, see vnc.js) fits the
-     real framebuffer inside that box and letterboxes - no JS sizing of
-     our own needed at all.
-  */
-  display: grid;
-  grid-template-rows: 1fr auto;
-  box-shadow: var(--shadow-sm);
-}
-.vnc-viewport-card.is-fullscreen {
-  position: fixed;
-  inset: 0;
-  width: 100vw;
-  height: 100vh;
-  z-index: 9999;
-  border-radius: 0;
-  border: none;
-}
-.vnc-screen-stage {
-  position: relative;
-  /* Grid items default to min-height/min-width:auto, which can refuse
-     to shrink below content size - force 0 so the 1fr row can actually
-     shrink on small viewports instead of overflowing the card. */
-  min-width: 0;
-  min-height: 0;
-  overflow: hidden;
-  background: var(--canvas-black);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.vnc-screen-stage > div {
-  width: 100% !important;
-  height: 100% !important;
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  overflow: hidden !important;
-}
-.vnc-screen-stage canvas {
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.75);
-  outline: none;
-  cursor: default;
-}
-/* .vnc-status-overlay/.vnc-status-card/.vnc-status-title/.vnc-status-desc
-   now live in base.css (shared with the Accounts sign-in panel's embed). */
-.vnc-quick-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: var(--space-2) var(--space-3);
-  background: var(--bg-elevated);
-  border-top: 1px solid var(--border);
-  gap: var(--space-2);
-  flex-wrap: wrap;
-  z-index: 5;
-}
-.vnc-quick-left, .vnc-quick-right {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-</style>
-{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{{ static_url('css/pages.css') }}">{% endblock %}
 {% block content %}
 <div class="vnc-container">
-  <div class="vnc-head">
-    <div class="vnc-title-group">
-      <h2>{{ icon("monitor", "icon-md") }}Remote GUI</h2>
-      <span class="program-id" aria-hidden="true">DISPLAY :99</span>
-      <span class="badge badge-inactive" id="vnc-badge"><span class="dot"></span><span id="vnc-badge-text">Connecting…</span></span>
+  <header class="page-header vnc-head">
+    <div>
+      <div class="vnc-title-group">
+        <h1>Remote GUI</h1>
+        <span class="program-id" aria-hidden="true">DISPLAY :99</span>
+        <span class="badge badge-inactive" id="vnc-badge"><span class="dot"></span><span id="vnc-badge-text">Connecting…</span></span>
+      </div>
+      <p class="page-desc">Full interactive view and desktop control, securely proxied through this dashboard.</p>
     </div>
-    <div class="vnc-toolbar">
+    <div class="vnc-toolbar page-actions">
       <button id="vnc-btn-scale" class="btn btn-secondary btn-sm" aria-pressed="true" title="Toggle fit-to-window scaling">
         {{ icon("maximize", "icon-sm") }}<span id="vnc-scale-text">Fit Window</span>
       </button>
@@ -135,10 +24,7 @@
         {{ icon("maximize") }}
       </button>
     </div>
-  </div>
-  <p class="hint m-0">
-    Full interactive view and desktop control, securely proxied through this dashboard.
-  </p>
+  </header>
 
   <div class="vnc-viewport-card" id="vnc-viewport">
     <div id="vnc-screen" class="vnc-screen-stage"></div>
