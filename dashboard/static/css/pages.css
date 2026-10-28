@@ -146,7 +146,8 @@
 .settings-section.danger-zone .settings-section-head h2 { color: var(--live); }
 
 @media (max-width: 1023px) {
-  .settings-layout { grid-template-columns: 1fr; }
+  .settings-layout { grid-template-columns: minmax(0, 1fr); }
+  .settings-nav { min-width: 0; }
   .settings-nav {
     top: calc(var(--topbar-h) + var(--shell-gap) + var(--space-2)); z-index: var(--z-sticky);
     flex-direction: row; overflow-x: auto; scrollbar-width: none; border-radius: var(--radius-full);

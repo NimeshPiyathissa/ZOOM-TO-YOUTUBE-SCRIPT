@@ -8,6 +8,11 @@ html, body { margin: 0; padding: 0; }
 
 html {
   -webkit-text-size-adjust: 100%;
+  /* Hidden tooltips (visibility:hidden pseudo-elements) on right-edge
+     buttons still count as scrollable overflow - never let them, or any
+     other off-canvas decoration, create a horizontal scrollbar. Applies
+     to the viewport, so sticky positioning is unaffected. */
+  overflow-x: hidden;
   scroll-behavior: smooth;
   background: var(--bg);
 }
