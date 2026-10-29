@@ -29,7 +29,9 @@ async function apiFetch(url, opts = {}) {
   }
   if (!res.ok) {
     const msg = (data && (data.error || data.detail)) || `Request failed (${res.status})`;
-    throw new Error(msg);
+    const err = new Error(msg);
+    err.status = res.status;
+    throw err;
   }
   return data;
 }
@@ -187,12 +189,19 @@ async function _applyTheme(mode) {
     }
     _paintThemeSwitches(mode);
   });
-  try { localStorage.setItem("zsdash-theme-mode", mode === "system" ? "system" : "explicit"); } catch (e) {}
+  try {
+    localStorage.setItem("zsdash-theme-mode", mode === "system" ? "system" : "explicit");
+    if (mode !== "system") localStorage.setItem("zsdash-theme", mode);
+  } catch (e) {}
   // The server only knows explicit themes; "System" keeps whatever it
   // last stored and the browser-local mode overrides it on every load.
   if (mode === "system") return;
   try { await apiFetch("/api/theme", { method: "POST", body: JSON.stringify({ theme: mode }) }); }
-  catch (err) { toast("Could not save theme: " + err.message, "err"); }
+  catch (err) {
+    // 404 = a backend without /api/theme; the browser copy above is then
+    // the only store, which is enough - nothing failed from the user's view.
+    if (err.status !== 404) toast("Could not save theme: " + err.message, "err");
+  }
 }
 
 function initTheme() {

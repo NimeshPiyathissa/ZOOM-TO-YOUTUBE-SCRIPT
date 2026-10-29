@@ -19,11 +19,17 @@
 /* Theme bootstrap - runs before first paint so there is never a flash.
    "System" (the default for a browser that never chose) follows the OS
    and keeps following it live; an explicit Light/Dark choice is
-   rendered server-side via data-theme and left alone here. */
+   rendered server-side via data-theme and left alone here. A backend
+   without theme support renders nothing, so the browser's own copy of
+   the explicit choice (zsdash-theme) fills in. */
 (function () {
-  var root = document.documentElement, mode = null;
-  try { mode = localStorage.getItem("zsdash-theme-mode"); } catch (e) {}
+  var root = document.documentElement, mode = null, saved = null;
+  try { mode = localStorage.getItem("zsdash-theme-mode"); saved = localStorage.getItem("zsdash-theme"); } catch (e) {}
   var explicit = root.getAttribute("data-theme");
+  if (!explicit && mode === "explicit" && (saved === "white" || saved === "black")) {
+    root.setAttribute("data-theme", saved);
+    explicit = saved;
+  }
   if (mode === "system" || !explicit) {
     var mq = window.matchMedia("(prefers-color-scheme: dark)");
     var apply = function () { root.setAttribute("data-theme", mq.matches ? "black" : "white"); };
