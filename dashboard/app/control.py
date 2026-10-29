@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import functools
 import json
+import pathlib
 import pwd
 import re
 import subprocess
@@ -22,7 +23,8 @@ CAT = "/usr/bin/cat"
 
 SHOW_PROPERTIES = (
     "ActiveState,SubState,Result,NRestarts,"
-    "ActiveEnterTimestamp,ExecMainStartTimestamp,ExecMainStatus,MainPID,ExecMainCode"
+    "ActiveEnterTimestamp,ExecMainStartTimestamp,ExecMainStatus,MainPID,ExecMainCode,"
+    "UnitFileState"
 )
 
 # ffmpeg exits 255 only when it caught a stop signal and shut down cleanly
@@ -198,6 +200,7 @@ def unit_show(unit: str) -> dict:
         "exec_main_code": exec_main_code,
         "uptime_seconds": uptime_seconds,
         "main_pid": main_pid,
+        "unit_file_state": props.get("UnitFileState", ""),
         "phase": _derive_phase(active, sub, main_pid, unit, exec_main_code, exec_main_status),
     }
 
@@ -1280,3 +1283,169 @@ def zoom_leave(then: str) -> list[dict]:
         proc = run_as_zoombot(argv, timeout=10)
         results.append({"ok": proc.returncode == 0, "action": "slate", "stderr": proc.stderr.decode(errors="replace").strip()})
     return results
+
+
+# ---------------------------------------------------------------- Part 4: full restart + reboot readiness
+#
+# "Restart all services" restarts the whole pipeline in dependency order
+# AND the dashboard itself last, with each step verified before moving on
+# - not just "the systemctl command returned 0" (pipeline_restart() above
+# only checks that), but "the unit actually reached LIVE". Runs in a
+# background thread (see main.py's /api/system/restart-all); the frontend
+# polls restart_progress() instead of waiting on one long request, because
+# the final step (restarting dashboard.service) kills this very process -
+# there is no response to wait for by that point.
+
+CADDY_UNIT = "caddy.service"
+DASHBOARD_UNIT = "dashboard.service"
+
+_restart_progress: dict = {"running": False, "steps": [], "started_at": None, "finished_at": None}
+
+
+def _progress_init(units: list[str]) -> None:
+    _restart_progress["running"] = True
+    _restart_progress["steps"] = [{"unit": u, "status": "pending", "detail": ""} for u in units] + [
+        {"unit": "dashboard", "status": "pending", "detail": ""}
+    ]
+    _restart_progress["started_at"] = time.time()
+    _restart_progress["finished_at"] = None
+
+
+def _progress_set(unit: str, status: str, detail: str = "") -> None:
+    for step in _restart_progress["steps"]:
+        if step["unit"] == unit:
+            step["status"] = status
+            step["detail"] = detail
+            return
+
+
+def restart_progress() -> dict:
+    return _restart_progress
+
+
+def _units_for_active_source() -> list[str]:
+    env = read_current_source()
+    source_type = env.get("SOURCE_TYPE", "zoom")
+    if source_type == "webpage":
+        wanted = "browser-source"
+    elif source_type == "zoom":
+        wanted = "browser-source" if env.get("ZOOM_JOIN_VIA") == "web" else "zoom"
+    else:
+        wanted = None
+    units = []
+    for unit in config.UNIT_ORDER:
+        if unit in ("zoom", "browser-source") and unit != wanted:
+            continue
+        if unit == "audio-setup" and wanted is None:
+            continue
+        units.append(unit)
+    return units
+
+
+def _wait_for_unit_live(unit: str, timeout: float = 25.0) -> dict:
+    deadline = time.time() + timeout
+    last = unit_show(unit)
+    while time.time() < deadline:
+        last = unit_show(unit)
+        if last["phase"] in (PHASE_LIVE, PHASE_FAILED):
+            return last
+        time.sleep(0.5)
+    return last
+
+
+def full_restart() -> None:
+    """Runs synchronously in whatever thread calls it (main.py runs this
+    in a background thread via run_in_threadpool / a plain Thread, not
+    the request's own coroutine). Stops the whole pipeline, then starts
+    each unit the active source actually needs one at a time - never
+    starting the next until the current one is confirmed LIVE or has
+    definitively FAILED - then restarts the dashboard itself last."""
+    units = _units_for_active_source()
+    _progress_init(units)
+    try:
+        for unit in config.STOP_ORDER:
+            unit_action(unit, "stop")
+        time.sleep(1)
+        for unit in units:
+            _progress_set(unit, "running", "starting…")
+            result = unit_action(unit, "start")
+            if not result.get("ok"):
+                _progress_set(unit, "failed", result.get("stderr") or "start command failed")
+                continue
+            info = _wait_for_unit_live(unit)
+            if info["phase"] == PHASE_LIVE:
+                _progress_set(unit, "ok", "live")
+            else:
+                _progress_set(unit, "failed", f"did not reach LIVE (phase={info['phase']})")
+        _progress_set("dashboard", "running", "restarting…")
+    finally:
+        _restart_progress["finished_at"] = time.time()
+        _restart_progress["running"] = False
+    # Last: restart the dashboard itself. This call's own return almost
+    # never gets observed - systemd tears this process down as part of
+    # carrying it out - which is fine, the step above already recorded
+    # "running" and the frontend treats losing the connection here as
+    # expected, polling /api/state until the new process answers.
+    subprocess.run([SUDO, SYSTEMCTL, "restart", DASHBOARD_UNIT], timeout=10)
+
+
+def reboot_readiness() -> list[dict]:
+    """Read-only checks that everything will actually come back after a
+    reboot - run before the UI allows the reboot button, and again
+    server-side right before actually rebooting. Never mutates anything."""
+    checks: list[dict] = []
+
+    for unit in config.UNIT_ORDER:
+        info = unit_show(unit)
+        enabled = info.get("unit_file_state") == "enabled"
+        checks.append({
+            "check": f"{unit}.service enabled",
+            "ok": enabled,
+            "detail": "" if enabled else f"unit_file_state={info.get('unit_file_state', 'unknown')}",
+        })
+
+    try:
+        proc = subprocess.run(
+            [SUDO, "/usr/bin/loginctl", "show-user", config.ZOOMBOT_USER, "--property=Linger"],
+            capture_output=True, timeout=10,
+        )
+        linger_ok = proc.stdout.decode(errors="replace").strip() == "Linger=yes"
+        checks.append({"check": "zoombot lingering enabled", "ok": linger_ok, "detail": "" if linger_ok else proc.stdout.decode(errors="replace").strip()})
+    except Exception as exc:
+        checks.append({"check": "zoombot lingering enabled", "ok": False, "detail": str(exc)})
+
+    for unit, label in ((DASHBOARD_UNIT, "dashboard.service enabled"), (CADDY_UNIT, "caddy.service enabled")):
+        try:
+            proc = subprocess.run([SYSTEMCTL, "is-enabled", unit], capture_output=True, timeout=10)
+            state = proc.stdout.decode(errors="replace").strip()
+            checks.append({"check": label, "ok": state == "enabled", "detail": state})
+        except Exception as exc:
+            checks.append({"check": label, "ok": False, "detail": str(exc)})
+
+    caddyfile = pathlib.Path("/etc/caddy/Caddyfile")
+    if caddyfile.exists():
+        try:
+            proc = subprocess.run(
+                ["/usr/bin/caddy", "validate", "--config", str(caddyfile)],
+                capture_output=True, timeout=15,
+            )
+            checks.append({
+                "check": "Caddy config valid",
+                "ok": proc.returncode == 0,
+                "detail": "" if proc.returncode == 0 else proc.stderr.decode(errors="replace").strip()[-500:],
+            })
+        except Exception as exc:
+            checks.append({"check": "Caddy config valid", "ok": False, "detail": str(exc)})
+    else:
+        checks.append({"check": "Caddy config valid", "ok": False, "detail": "no Caddyfile at /etc/caddy/Caddyfile"})
+
+    try:
+        import json as _json
+        settings_path = config.SETTINGS_FILE
+        if settings_path.exists():
+            _json.loads(settings_path.read_text(encoding="utf-8"))
+        checks.append({"check": "settings.json parses", "ok": True, "detail": ""})
+    except Exception as exc:
+        checks.append({"check": "settings.json parses", "ok": False, "detail": str(exc)})
+
+    return checks
