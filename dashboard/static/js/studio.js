@@ -587,6 +587,15 @@
   btnTopChat.addEventListener("click", () => toggleLiveChat());
   btnCloseChat.addEventListener("click", () => toggleLiveChat(false));
   chatBackdrop.addEventListener("click", () => toggleLiveChat(false));
+  document.addEventListener("keydown", (e) => {
+    // The safety modal sits above the drawer and takes Escape first. Capture
+    // phase, so this runs before the modal's own (bubble) Escape handler has
+    // hidden it - otherwise one keypress would close both.
+    if (e.key === "Escape" && chatDrawer.classList.contains("is-open") && safetyBackdrop.hidden) {
+      toggleLiveChat(false);
+      btnTopChat.focus();
+    }
+  }, true);
 
   btnSaveChatId.addEventListener("click", async () => {
     const val = chatVideoIdInput.value.trim();
