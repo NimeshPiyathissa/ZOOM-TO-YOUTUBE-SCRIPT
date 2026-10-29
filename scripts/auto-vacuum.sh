@@ -1,31 +1,41 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# Automated Disk Maintenance & Auto-Vacuum Script
-# - Cleans systemd journal logs to max 200MB
-# - Prunes Chrome browser caches in user profiles
-# - Cleans old temp files
+# Daily disk maintenance for the zoombot user (zoom-vacuum.timer, a --user unit)
+# - Prunes Chrome caches, but only in Chrome profiles that are NOT in use right
+#   now: deleting Cache/GPUCache under a running Chrome (the stream kiosk) can
+#   break its rendering mid-stream, and cookies/sign-ins are never touched.
+# - Removes this user's stale ffmpeg temp chunks.
+# The systemd journal is NOT vacuumed here - that needs root, which a --user
+# unit can't get (the old User=root line made every run fail with
+# 216/GROUP). Journal retention is journald's own configuration, managed
+# separately from this unit.
 # ==============================================================================
 
 set -uo pipefail
+cd "${HOME}" || exit 1  # find(1) fails outright from an unreadable cwd
 
-echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] Starting automated disk maintenance..."
+log() { echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] $*"; }
 
-# 1. Vacuum journalctl logs to 200MB
-if command -v journalctl >/dev/null 2>&1; then
-  echo "Vacuuming systemd journal to 200M..."
-  journalctl --vacuum-size=200M 2>/dev/null || true
+log "Starting automated disk maintenance..."
+
+# 1. Chrome caches. A Chrome user-data-dir is any directory holding a
+#    "Local State" file; Chrome keeps a SingletonLock symlink in it for as
+#    long as it's running.
+CONFIG_DIR="${HOME}/.config"
+if [[ -d "$CONFIG_DIR" ]]; then
+  while IFS= read -r -d '' state_file; do
+    profile_dir="$(dirname "$state_file")"
+    if [[ -L "$profile_dir/SingletonLock" || -e "$profile_dir/SingletonLock" ]]; then
+      log "Skipping $profile_dir (Chrome is running on it)"
+      continue
+    fi
+    log "Pruning caches in $profile_dir"
+    find "$profile_dir" -maxdepth 3 -type d \( -name "Cache" -o -name "Code Cache" -o -name "GPUCache" \) \
+      -prune -exec rm -rf {} + 2>/dev/null || true
+  done < <(find "$CONFIG_DIR" -maxdepth 3 -name "Local State" -type f -print0 2>/dev/null)
 fi
 
-# 2. Prune Chrome browser caches (older than 3 days or excess cache)
-ZOOMBOT_HOME="/home/zoombot"
-if [[ -d "$ZOOMBOT_HOME/.config" ]]; then
-  echo "Pruning old Chrome caches under $ZOOMBOT_HOME/.config..."
-  find "$ZOOMBOT_HOME/.config" -type d \( -name "Cache" -o -name "Code Cache" -o -name "GPUCache" \) -prune -exec rm -rf {} + 2>/dev/null || true
-fi
+# 2. Leftover ffmpeg temp chunks older than a day - this user's own only.
+find /tmp -maxdepth 1 -user "$(id -un)" -name "ffmpeg*.tmp" -mtime +1 -delete 2>/dev/null || true
 
-# 3. Clean temporary recording files or leftover chunks
-if [[ -d "/tmp" ]]; then
-  find /tmp -name "ffmpeg*.tmp" -mtime +1 -delete 2>/dev/null || true
-fi
-
-echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] Automated disk maintenance completed successfully."
+log "Automated disk maintenance completed successfully."

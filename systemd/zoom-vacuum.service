@@ -1,8 +1,11 @@
 [Unit]
 Description=Zoom Stream Daily Disk Vacuum and Maintenance
-After=network.target
 
 [Service]
 Type=oneshot
-User=root
-ExecStart=/home/zoombot/zoom-stream/scripts/auto-vacuum.sh
+# Runs as the unit's own (zoombot) user: this is a --user unit, which can't
+# switch to root - the old User=root failed every run with 216/GROUP. Journal
+# size (root-only) is left to journald's own configuration.
+Nice=19
+IOSchedulingClass=idle
+ExecStart=%h/zoom-stream/scripts/auto-vacuum.sh
