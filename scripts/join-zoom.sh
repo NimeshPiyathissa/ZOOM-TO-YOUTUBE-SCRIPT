@@ -21,6 +21,13 @@ wait_for_x
 if [[ "${SOURCE_TYPE:-zoom}" == "zoom" && "${ZOOM_JOIN_VIA:-client}" == "web" ]]; then
   log "ZOOM_JOIN_VIA=web - this meeting joins via the browser-source unit, nothing to do here, exiting cleanly"
   exit 0
+elif [[ "${SOURCE_TYPE:-zoom}" != "zoom" ]]; then
+  # Mirror of browser-source.sh's guard: the unit is enabled at boot, so with
+  # a webpage source active it must exit cleanly (Restart=on-failure then
+  # leaves it inactive) instead of failing on an empty ZOOM_LINK until
+  # systemd's start limit marks it failed.
+  log "SOURCE_TYPE is '${SOURCE_TYPE}', not for this unit - nothing to do, exiting cleanly"
+  exit 0
 fi
 
 ZOOM_BIN="$(command -v zoom || echo /opt/zoom/ZoomLauncher)"
