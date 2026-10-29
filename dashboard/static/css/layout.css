@@ -113,7 +113,7 @@
   transition-delay: 0s;
 }
 /* The rail's overflow:hidden would clip side tooltips; let them out. */
-.app-shell.is-collapsed .sidebar, .app-shell.is-collapsed .sidebar-nav { overflow: visible; }
+.app-shell.is-collapsed .sidebar, .app-shell.is-collapsed .sidebar-nav, .app-shell.is-collapsed .nav-item { overflow: visible; }
 
 .sidebar-foot { padding: var(--space-3); flex: none; display: flex; justify-content: flex-end; border-top: var(--border-w) solid var(--border); }
 .app-shell.is-collapsed .sidebar-foot { justify-content: center; }
@@ -223,7 +223,7 @@ main.page {
   .app-shell .sidebar { width: var(--sidebar-w-collapsed); overflow: visible; }
   .app-shell .sidebar-nav { overflow: visible; padding-left: var(--space-2-5); padding-right: var(--space-2-5); }
   .app-shell .nav-item span.label, .app-shell .sidebar-brand span.label, .app-shell .nav-group-label { display: none; }
-  .app-shell .nav-item { justify-content: center; padding: 0; height: 44px; }
+  .app-shell .nav-item { justify-content: center; padding: 0; height: 44px; overflow: visible; }
   .app-shell .sidebar-brand { justify-content: center; padding: 0; }
   .app-shell .nav-group { margin-top: var(--space-3); padding-top: var(--space-3); border-top: var(--border-w) solid var(--border); }
   .app-shell .nav-group:first-child { margin-top: var(--space-1); padding-top: 0; border-top: none; }
