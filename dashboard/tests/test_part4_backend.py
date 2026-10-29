@@ -271,4 +271,4 @@ def test_show_properties_match_installer_sudoers_grant():
 def test_root_grants_match_commands_the_code_runs():
     installer = (Path(__file__).resolve().parents[1] / "install-dashboard.sh").read_text(encoding="utf-8")
     assert f"NOPASSWD: {control.SYSTEMCTL} restart {control.DASHBOARD_UNIT}" in installer
-    assert f"NOPASSWD: /usr/bin/loginctl show-user {config.ZOOMBOT_USER} --property=Linger" in installer
+    assert f"NOPASSWD: NOEXEC: /usr/bin/loginctl show-user {config.ZOOMBOT_USER} --property=Linger" in installer

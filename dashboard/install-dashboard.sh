@@ -111,7 +111,7 @@ SUDOERS_TMP="$(mktemp)"
     for verb in start stop restart reset-failed; do
       echo "${DASH_USER} ALL=(zoombot) NOPASSWD: /usr/bin/systemctl --user ${verb} ${unit}.service"
     done
-    echo "${DASH_USER} ALL=(zoombot) NOPASSWD: /usr/bin/systemctl --user show ${unit}.service --property=${SHOW_PROPS}"
+    echo "${DASH_USER} ALL=(zoombot) NOPASSWD: NOEXEC: /usr/bin/systemctl --user show ${unit}.service --property=${SHOW_PROPS}"
   done
   echo ""
   echo "${DASH_USER} ALL=(zoombot) NOPASSWD: /usr/bin/cat ${STREAM_APP_DIR}/.env"
@@ -138,7 +138,7 @@ SUDOERS_TMP="$(mktemp)"
   # caddy's own enabled state (no sudo needed for that part - systemctl
   # is-enabled is a plain read of /etc/systemd/system symlinks).
   echo "${DASH_USER} ALL=(root) NOPASSWD: /usr/bin/systemctl restart dashboard.service"
-  echo "${DASH_USER} ALL=(root) NOPASSWD: /usr/bin/loginctl show-user zoombot --property=Linger"
+  echo "${DASH_USER} ALL=(root) NOPASSWD: NOEXEC: /usr/bin/loginctl show-user zoombot --property=Linger"
   echo ""
   echo "# Touch remote / media control"
   echo "${DASH_USER} ALL=(zoombot) NOPASSWD: ${STREAM_APP_DIR}/scripts/set-stream-audio.sh *"
