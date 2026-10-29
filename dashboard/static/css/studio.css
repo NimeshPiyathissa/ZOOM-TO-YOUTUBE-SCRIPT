@@ -156,6 +156,12 @@
 .banner-danger { background: var(--live-tint); border-color: color-mix(in srgb, var(--live) 30%, transparent); color: var(--live); }
 .studio-master-actions .rec-duration-pill { height: var(--control-h-lg); }
 
+/* main.page has a view-transition-name, which makes it a stacking context:
+   the fixed chat drawer / safety modal inside it can't out-rank the sticky
+   topbar on their own z-index, so lift the page while one is open (main is
+   a flex item of .app-main, so z-index applies without a position change). */
+main.page:has(.studio-chat-drawer.is-open, .studio-modal-backdrop:not([hidden])) { z-index: var(--z-modal); }
+
 /* ---------------------------------------------------------------- slide-over chat */
 .studio-chat-backdrop {
   position: fixed; inset: 0; background: var(--scrim); z-index: calc(var(--z-modal) - 1);
