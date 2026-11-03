@@ -61,7 +61,7 @@
 .error-list { list-style: none; margin: 0; padding: 0; overflow-y: auto; display: flex; flex-direction: column; gap: var(--space-2); }
 .error-item {
   padding: var(--space-3); border-radius: var(--radius-md); background: var(--bg-sunken); border: var(--border-w) solid var(--border);
-  border-left: var(--border-w-thick) solid var(--live);
+  border-left: var(--border-w-thick) solid var(--danger);
 }
 .error-msg { margin: var(--space-2) 0 0; font-size: var(--text-xs); color: var(--text); line-height: var(--leading-normal); overflow-wrap: anywhere; }
 
@@ -81,7 +81,7 @@
 /* ---------------------------------------------------------------- Audit */
 .audit-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-4); margin-bottom: var(--space-5); }
 .audit-stats .stat-value { font-size: var(--text-xl); }
-.audit-stats .stat-tile-glass.is-alert .stat-value { color: var(--live); }
+.audit-stats .stat-tile-glass.is-alert .stat-value { color: var(--danger); }
 .audit-card { padding: 0; overflow: hidden; }
 .audit-card:hover { transform: none; }
 .audit-toolbar {

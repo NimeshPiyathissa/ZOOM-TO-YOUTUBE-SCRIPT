@@ -469,8 +469,11 @@ function badgeHtml(activeState, text) {
 // LIVE/RECONNECTING/FAILED - see control.py's _derive_phase) to a badge
 // class, used everywhere a unit's status is shown so two places can
 // never render it differently.
-function phaseBadgeClass(phase) {
-  if (phase === "LIVE") return "badge-active";
+// `unit` is optional: the encoder (and anything that speaks for it - the
+// topbar, the program monitors) being LIVE means ON AIR and gets the
+// scarlet "LIVE" pill; any other unit that is merely running is just green.
+function phaseBadgeClass(phase, unit) {
+  if (phase === "LIVE") return (unit && unit !== "ffmpeg-stream") ? "badge-active" : "badge-live";
   if (phase === "FAILED") return "badge-failed";
   if (phase === "STARTING" || phase === "RECONNECTING") return "badge-activating";
   return "badge-inactive";

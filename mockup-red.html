@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Red redesign - two directions</title>
+<style>
+  /* Design exploration only: not wired into the app, not meant to be merged.
+     Inter is the real self-hosted file (dashboard/static/fonts/InterVariable*.woff2). */
+  @font-face { font-family: "Inter"; src: url("dashboard/static/fonts/InterVariable.woff2") format("woff2"); font-weight: 100 900; font-display: swap; }
+  @font-face { font-family: "Geist Mono"; src: url("dashboard/static/fonts/GeistMonoVariable.woff2") format("woff2"); font-weight: 100 900; font-display: swap; }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body { font-family: "Inter", system-ui, sans-serif; background: #121212; color: #eee; -webkit-font-smoothing: antialiased; }
+  button { font: inherit; color: inherit; cursor: pointer; }
+
+  /* ------------------------------------------------ switcher */
+  .bar { position: sticky; top: 0; z-index: 50; display: flex; flex-wrap: wrap; gap: 12px 28px; align-items: center; padding: 12px 24px; background: #1b1b1d; border-bottom: 1px solid #333; font-size: 13px; }
+  .bar .grp { display: flex; align-items: center; gap: 6px; }
+  .bar b { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: #9a9a9a; margin-right: 6px; }
+  .bar button { border: 1px solid #3a3a3d; background: #242427; padding: 6px 14px; border-radius: 8px; font-weight: 600; }
+  .bar button.on { background: #c8102e; border-color: #c8102e; color: #fff; }
+  .intro { max-width: 1280px; margin: 0 auto; padding: 28px 24px 8px; color: #bbb; font-size: 14px; line-height: 1.6; }
+  .intro h1 { font-size: 28px; letter-spacing: -.03em; font-weight: 900; color: #fff; margin: 0 0 6px; }
+  .intro code { font-family: "Geist Mono", monospace; background: #222; padding: 1px 6px; border-radius: 4px; }
+  .label { max-width: 1280px; margin: 28px auto 8px; padding: 0 24px; font: 700 11px "Inter"; letter-spacing: .1em; text-transform: uppercase; color: #8d8d92; }
+  .stage { max-width: 1280px; margin: 0 auto 8px; padding: 0 24px; }
+  .frame { border: 1px solid #2c2c2f; border-radius: 14px; overflow: hidden; }
+
+  /* ================================================ TOKENS
+     A "Oxblood": warm near-black / warm paper, deep crimson, champagne accent
+     B "Signal":  graphite / cool white, vivid red slab sidebar, ice accent
+     LIVE is deliberately NOT the brand red: A = orange-leaning scarlet on near-black text,
+     B = black tally pill with an orange-scarlet dot. Failed = outlined + cross icon. */
+  .mock { --r-sm: 8px; --r-md: 12px; --r-lg: 18px; font-size: 14px; color: var(--text); background: var(--bg); }
+  .mock[data-dir="A"][data-mode="dark"] {
+    --bg:#0f0b0b; --s1:#181212; --s2:#211918; --line:#2e2423; --text:#ede6e4; --dim:#a89b98;
+    --brand:#c8102e; --brand-hi:#d91a38; --brand-deep:#8e0b21; --on-brand:#fff; --brand-text:#ff6b78;
+    --accent:#e9c98f; --live:#ff4d2e; --on-live:#1a0603; --ok:#3ddc84; --warn:#f5b83d; --fail-bg:#2a0c10; --fail:#ff8a94;
+    --glow: 0 0 0 1px rgba(200,16,46,.5), 0 8px 28px -6px rgba(200,16,46,.55);
+    --side:#0b0808; --side-text:#cbbfbc; --side-act:rgba(200,16,46,.14);
+  }
+  .mock[data-dir="A"][data-mode="light"] {
+    --bg:#fbf7f6; --s1:#ffffff; --s2:#f5eeec; --line:#ebe0de; --text:#1c1413; --dim:#6b5e5c;
+    --brand:#c8102e; --brand-hi:#b50e28; --brand-deep:#8e0b21; --on-brand:#fff; --brand-text:#b50e28;
+    --accent:#7a5a1e; --live:#ff4d2e; --on-live:#1a0603; --ok:#12803f; --warn:#8a5a00; --fail-bg:#fdecee; --fail:#a30d24;
+    --glow: 0 0 0 1px rgba(200,16,46,.35), 0 8px 24px -8px rgba(200,16,46,.45);
+    --side:#ffffff; --side-text:#4a3d3b; --side-act:rgba(200,16,46,.08);
+  }
+  .mock[data-dir="B"][data-mode="dark"] {
+    --bg:#0c0c0e; --s1:#151518; --s2:#1d1d21; --line:#2a2a30; --text:#f1f1f3; --dim:#a0a0a8;
+    --brand:#d4152b; --brand-hi:#e51a31; --brand-deep:#8f0d1d; --on-brand:#fff; --brand-text:#ff7a88;
+    --accent:#a8c5d6; --live:#ff5a36; --on-live:#fff; --ok:#3ddc84; --warn:#f5b83d; --fail-bg:#2b0e12; --fail:#ff8a94;
+    --glow: 0 0 0 1px rgba(212,21,43,.5), 0 8px 28px -6px rgba(212,21,43,.6);
+    --side:#d4152b; --side-text:#ffe9eb; --side-act:rgba(0,0,0,.22);
+  }
+  .mock[data-dir="B"][data-mode="light"] {
+    --bg:#f4f4f6; --s1:#ffffff; --s2:#ececef; --line:#e1e1e6; --text:#141417; --dim:#62626b;
+    --brand:#d4152b; --brand-hi:#b80f2a; --brand-deep:#8f0d1d; --on-brand:#fff; --brand-text:#b80f2a;
+    --accent:#2f6f8f; --live:#ff5a36; --on-live:#fff; --ok:#12803f; --warn:#8a5a00; --fail-bg:#fdecee; --fail:#a30d24;
+    --glow: 0 0 0 1px rgba(212,21,43,.35), 0 8px 24px -8px rgba(212,21,43,.5);
+    --side:#d4152b; --side-text:#ffe9eb; --side-act:rgba(0,0,0,.2);
+  }
+
+  /* ------------------------------------------------ type */
+  .mock h1, .mock h2, .mock .big { font-family: "Inter"; letter-spacing: -.035em; }
+  .mock .mono { font-family: "Geist Mono", ui-monospace, monospace; letter-spacing: 0; }
+  .eyebrow { font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--dim); }
+  .mock[data-dir="A"] .eyebrow { color: var(--accent); }
+  .mock[data-dir="B"] .eyebrow { color: var(--brand-text); }
+
+  /* ------------------------------------------------ buttons */
+  .btn { display: inline-flex; align-items: center; gap: 8px; border: 1px solid transparent; border-radius: var(--r-sm); padding: 9px 16px; font-weight: 650; font-size: 13.5px; transition: transform .15s, box-shadow .2s, background .2s; }
+  .btn:active { transform: scale(.97); }
+  .btn.primary { background: var(--brand); color: var(--on-brand); }
+  .btn.primary:hover { background: var(--brand-hi); box-shadow: var(--glow); transform: translateY(-1px); }
+  .btn.secondary { background: var(--s2); border-color: var(--line); color: var(--text); }
+  .btn.secondary:hover { border-color: var(--dim); transform: translateY(-1px); }
+  .btn.ghost { color: var(--dim); }
+  .btn.ghost:hover { background: var(--s2); color: var(--text); }
+  .btn.danger { background: transparent; border-color: var(--fail); color: var(--fail); }
+  .btn.danger:hover { background: var(--fail-bg); }
+  .btn.sm { padding: 6px 11px; font-size: 12.5px; }
+  .btn.icon { padding: 9px; }
+  .btn[disabled] { opacity: .45; cursor: not-allowed; transform: none; box-shadow: none; }
+  .btn .spin { width: 13px; height: 13px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  svg.i { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+
+  /* ------------------------------------------------ state chips: all differ by SHAPE + ICON + MOTION, not only hue */
+  .chip { display: inline-flex; align-items: center; gap: 7px; padding: 4px 11px 4px 9px; border-radius: 999px; font-size: 12px; font-weight: 700; letter-spacing: .03em; }
+  .chip.live { background: var(--live); color: var(--on-live); }
+  .chip.live .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; animation: pulse 1.4s ease-in-out infinite; }
+  .mock[data-dir="B"] .chip.live { background: #0a0a0a; color: #fff; border: 1px solid #000; }
+  .mock[data-dir="B"] .chip.live .dot { background: var(--live); box-shadow: 0 0 0 0 var(--live); animation: ring 1.4s ease-out infinite; }
+  @keyframes pulse { 50% { transform: scale(.55); opacity: .55; } }
+  @keyframes ring { 70% { box-shadow: 0 0 0 7px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
+  .chip.fail { background: var(--fail-bg); color: var(--fail); box-shadow: inset 0 0 0 1.5px var(--fail); }
+  .chip.err { background: transparent; color: var(--fail); box-shadow: inset 0 0 0 1.5px var(--fail); border-radius: 6px; }
+  .chip.ok { background: color-mix(in srgb, var(--ok) 16%, transparent); color: var(--ok); }
+  .chip.warn { background: color-mix(in srgb, var(--warn) 16%, transparent); color: var(--warn); }
+  .chip.idle { background: var(--s2); color: var(--dim); }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+
+  /* ------------------------------------------------ shell */
+  .shell { display: grid; grid-template-columns: 232px 1fr; min-height: 760px; }
+  .side { background: var(--side); color: var(--side-text); padding: 22px 14px; display: flex; flex-direction: column; gap: 22px; position: relative; }
+  .mock[data-dir="A"] .side { border-right: 1px solid var(--line); }
+  .brand { display: flex; align-items: center; gap: 10px; padding: 0 8px; font-weight: 900; letter-spacing: -.04em; font-size: 19px; color: var(--text); }
+  .mock[data-dir="B"] .brand { color: #fff; }
+  .brand .mark { width: 28px; height: 28px; border-radius: 9px; background: linear-gradient(145deg, var(--brand-hi), var(--brand-deep)); display: grid; place-items: center; color: #fff; box-shadow: var(--glow); }
+  .mock[data-dir="B"] .brand .mark { background: #fff; color: var(--brand); box-shadow: none; }
+  .nav { display: flex; flex-direction: column; gap: 2px; position: relative; }
+  .nav a { display: flex; align-items: center; gap: 11px; padding: 9px 10px; border-radius: 9px; color: inherit; text-decoration: none; font-weight: 550; font-size: 13.5px; position: relative; transition: background .2s, color .2s; }
+  .nav a:hover { background: var(--side-act); }
+  .nav a.act { background: var(--side-act); color: var(--text); font-weight: 700; }
+  .mock[data-dir="B"] .nav a.act { color: #fff; }
+  .nav a.act::before { content: ""; position: absolute; left: -14px; top: 8px; bottom: 8px; width: 4px; border-radius: 0 4px 4px 0; background: var(--brand); box-shadow: 0 0 14px var(--brand); }
+  .mock[data-dir="B"] .nav a.act::before { background: #fff; box-shadow: none; }
+  .nav .sec { font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; opacity: .6; padding: 10px 10px 4px; font-weight: 700; }
+  .side .foot { margin-top: auto; display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 10px; background: var(--side-act); font-size: 12.5px; }
+  .avatar { width: 28px; height: 28px; border-radius: 50%; background: var(--s2); display: grid; place-items: center; font-weight: 800; font-size: 12px; color: var(--text); }
+  .main { padding: 30px 36px 40px; display: flex; flex-direction: column; gap: 22px; min-width: 0; }
+  .top { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  .top h1 { margin: 4px 0 0; font-size: 40px; line-height: 1; font-weight: 900; }
+  .top p { margin: 8px 0 0; color: var(--dim); max-width: 52ch; }
+  .card { background: var(--s1); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 20px; transition: transform .2s, border-color .2s; }
+  .card:hover { border-color: color-mix(in srgb, var(--brand) 40%, var(--line)); }
+  .card h2 { margin: 0 0 14px; font-size: 15px; font-weight: 750; letter-spacing: -.01em; display: flex; align-items: center; gap: 8px; }
+  .grid { display: grid; gap: 16px; }
+  .g4 { grid-template-columns: repeat(4, 1fr); } .g2 { grid-template-columns: 1.6fr 1fr; } .g3 { grid-template-columns: repeat(3, 1fr); }
+  .stat .k { font-size: 12px; color: var(--dim); font-weight: 600; }
+  .stat .v { font-size: 38px; font-weight: 900; letter-spacing: -.045em; line-height: 1.05; margin-top: 6px; font-variant-numeric: tabular-nums; }
+  .stat .d { font-size: 12px; color: var(--dim); margin-top: 6px; }
+  .bar-track { height: 6px; border-radius: 6px; background: var(--s2); overflow: hidden; margin-top: 12px; }
+  .bar-track i { display: block; height: 100%; width: 62%; border-radius: 6px; background: linear-gradient(90deg, var(--brand-deep), var(--brand)); }
+
+  /* direction-specific character */
+  .mock[data-dir="A"] .card { background: linear-gradient(180deg, color-mix(in srgb, var(--s2) 55%, var(--s1)), var(--s1)); }
+  .mock[data-dir="A"] .main { background: radial-gradient(900px 340px at 78% -10%, color-mix(in srgb, var(--brand) 12%, transparent), transparent 70%); }
+  .mock[data-dir="B"] .hero { background: var(--brand); color: #fff; border: 0; position: relative; overflow: hidden; }
+  .mock[data-dir="B"] .hero::after { content: ""; position: absolute; right: -60px; top: -60px; width: 260px; height: 260px; border-radius: 50%; background: rgba(255,255,255,.1); }
+  .mock[data-dir="B"] .hero .k, .mock[data-dir="B"] .hero .d { color: rgba(255,255,255,.85); }
+  .mock[data-dir="B"] .card { border-radius: 14px; }
+  .mock[data-dir="B"] .top h1 { text-transform: none; }
+
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 0; border-top: 1px solid var(--line); }
+  .row:first-of-type { border-top: 0; }
+  .logs { font-family: "Geist Mono", monospace; font-size: 12px; line-height: 1.75; color: var(--dim); background: var(--bg); border: 1px solid var(--line); border-radius: var(--r-md); padding: 12px 14px; }
+  .logs .t { color: var(--dim); opacity: .7; } .logs .e { color: var(--fail); } .logs .w { color: var(--warn); } .logs .o { color: var(--ok); }
+  .seg { display: inline-flex; padding: 3px; background: var(--s2); border: 1px solid var(--line); border-radius: 10px; gap: 2px; }
+  .seg button { border: 0; background: transparent; padding: 6px 14px; border-radius: 7px; font-weight: 650; font-size: 12.5px; color: var(--dim); }
+  .seg button.on { background: var(--brand); color: var(--on-brand); }
+  .switch { width: 42px; height: 24px; border-radius: 24px; background: var(--brand); position: relative; flex: none; }
+  .switch::after { content: ""; position: absolute; right: 3px; top: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; }
+  .banner { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 10px 14px; border-radius: var(--r-md); border: 1px solid var(--warn); background: color-mix(in srgb, var(--warn) 12%, transparent); font-size: 13px; }
+  .screen { aspect-ratio: 16/9; border-radius: var(--r-md); background: #070505; border: 1px solid var(--line); position: relative; overflow: hidden; display: grid; place-items: center; color: #8d8283; }
+  .screen .tile { position: absolute; inset: 6% 5% 12%; border-radius: 10px; background: linear-gradient(135deg, #2b1b1d, #151010); border: 1px solid #3a2a2c; display: grid; place-items: center; font-weight: 800; letter-spacing: -.03em; font-size: 22px; color: #e8dcdc; }
+  .screen .tb { position: absolute; left: 50%; bottom: 3%; transform: translateX(-50%); width: 62%; height: 7%; border-radius: 8px; background: rgba(255,255,255,.07); }
+  .ctl { display: grid; gap: 4px; padding: 14px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--s2); }
+  .ctl .n { font-size: 12px; color: var(--dim); font-weight: 600; } .ctl .s { font-weight: 800; letter-spacing: -.02em; font-size: 16px; }
+
+  /* ------------------------------------------------ login */
+  .login { display: grid; grid-template-columns: 1.05fr 1fr; min-height: 640px; }
+  .login .art { position: relative; overflow: hidden; padding: 44px; display: flex; flex-direction: column; justify-content: space-between; color: #fff; background: linear-gradient(155deg, var(--brand-hi), var(--brand-deep) 70%, #4a0613); }
+  .login .art::before { content: ""; position: absolute; width: 520px; height: 520px; border-radius: 50%; right: -160px; bottom: -200px; border: 90px solid rgba(255,255,255,.07); }
+  .login .art h2 { font-size: 58px; line-height: .96; font-weight: 900; letter-spacing: -.05em; margin: 0; max-width: 9ch; }
+  .login .art p { max-width: 36ch; color: rgba(255,255,255,.82); line-height: 1.55; }
+  .login .form { padding: 44px; display: grid; place-content: center; gap: 18px; background: var(--bg); }
+  .login .form h1 { font-size: 30px; margin: 0; font-weight: 900; }
+  .field { display: grid; gap: 6px; font-size: 12.5px; font-weight: 650; color: var(--dim); }
+  .field input { background: var(--s1); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 11px 13px; color: var(--text); font: inherit; width: 340px; max-width: 100%; }
+  .field input:focus { outline: 2px solid var(--brand); outline-offset: 1px; }
+  .mock[data-dir="B"] .login { grid-template-columns: 1fr; background: radial-gradient(700px 400px at 50% 0%, color-mix(in srgb, var(--brand) 30%, transparent), transparent 70%), var(--bg); place-items: center; }
+  .mock[data-dir="B"] .login .art { display: none; }
+  .mock[data-dir="B"] .login .form { background: var(--s1); border: 1px solid var(--line); border-radius: 22px; padding: 40px; box-shadow: 0 30px 80px -30px rgba(0,0,0,.6); background-image: linear-gradient(var(--brand), var(--brand)); background-repeat: no-repeat; background-size: 100% 5px; }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 16px 20px; background: var(--s1); border: 1px solid var(--line); border-radius: var(--r-lg); }
+  .swatches { display: flex; gap: 8px; flex-wrap: wrap; }
+  .sw { width: 92px; border-radius: 10px; overflow: hidden; border: 1px solid var(--line); font-size: 11px; background: var(--s1); }
+  .sw i { display: block; height: 40px; } .sw span { display: block; padding: 5px 8px; color: var(--dim); font-family: "Geist Mono", monospace; }
+
+  @media (max-width: 900px) { .shell { grid-template-columns: 1fr; } .side { display: none; } .g4, .g3, .g2 { grid-template-columns: 1fr 1fr; } .login { grid-template-columns: 1fr; } .login .art { min-height: 220px; } }
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute"><defs>
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 11l9-8 9 8M5 10v10h14V10"/></symbol>
+  <symbol id="i-zoom" viewBox="0 0 24 24"><rect x="3" y="6" width="13" height="12" rx="2"/><path d="M16 10l5-3v10l-5-3"/></symbol>
+  <symbol id="i-radio" viewBox="0 0 24 24"><circle cx="12" cy="12" r="2"/><path d="M7.8 7.8a6 6 0 000 8.4M16.2 7.8a6 6 0 010 8.4M4.9 4.9a10 10 0 000 14.2M19.1 4.9a10 10 0 010 14.2"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></symbol>
+  <symbol id="i-cal" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></symbol>
+  <symbol id="i-monitor" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></symbol>
+  <symbol id="i-cog" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3l10 18H2L12 3zM12 10v5M12 18h.01"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M21 12a9 9 0 01-15.5 6.2M3 12A9 9 0 0118.5 5.8M21 4v5h-5M3 20v-5h5"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4l13 8-13 8z"/></symbol>
+  <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0014 0M12 18v3"/></symbol>
+  <symbol id="i-expand" viewBox="0 0 24 24"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></symbol>
+</defs></svg>
+
+<div class="bar">
+  <div class="grp"><b>Direction</b><button data-set-dir="A" class="on">A · Oxblood</button><button data-set-dir="B">B · Signal</button></div>
+  <div class="grp"><b>Mode</b><button data-set-mode="dark" class="on">Dark</button><button data-set-mode="light">Light</button></div>
+  <div class="grp" style="margin-left:auto;color:#9a9a9a">Hover the buttons - the glow / lift / press states are live.</div>
+</div>
+
+<div class="intro">
+  <h1>Red redesign - pick a direction</h1>
+  <p><b style="color:#fff">A · Oxblood</b> - deep wine-crimson on warm near-black / warm paper, champagne as the single accent, glassy cards, a glowing indicator bar on the sidebar. Calm, expensive, editorial.
+  &nbsp;<b style="color:#fff">B · Signal</b> - one confident vivid-red slab for the sidebar and hero, cool graphite / clean white everywhere else, ice-blue accent. Louder, more broadcast-control-room.</p>
+  <p><b style="color:#fff">LIVE is never the brand red.</b> In A, LIVE is an orange-leaning scarlet pill with dark text and a pulsing dot; in B it is a black tally pill with a ringing orange dot. Failed is an <em>outlined</em> chip with a cross icon, errors carry a warning triangle, success is green, warnings amber - each also differs by label and motion, so none depends on hue alone. Type: Inter (Black / ExtraBold headings and numbers, tight tracking) + Geist Mono for logs and stats.</p>
+</div>
+
+<!-- ============================================================= LOGIN -->
+<div class="label">1 · Login</div>
+<div class="stage"><div class="frame">
+  <div class="mock" data-dir="A" data-mode="dark">
+    <div class="login">
+      <div class="art">
+        <div class="brand" style="color:#fff"><span class="mark" style="background:#fff;color:var(--brand);box-shadow:none"><svg class="i"><use href="#i-radio"/></svg></span>Zoom Stream</div>
+        <div><h2>Go live without the guesswork.</h2><p>Join the webinar, frame it, and send it to YouTube from one calm control room.</p></div>
+        <span class="mono" style="font-size:12px;opacity:.7">zoom.missakaart.lk</span>
+      </div>
+      <form class="form" onsubmit="return false">
+        <div><div class="eyebrow">Admin</div><h1 style="margin-top:6px">Sign in</h1></div>
+        <label class="field">Username<input value="admin" autocomplete="off"></label>
+        <label class="field">Password<input type="password" value="correct horse"></label>
+        <button class="btn primary" style="justify-content:center;padding:12px">Sign in</button>
+        <span class="chip err" style="width:max-content"><svg class="i"><use href="#i-alert"/></svg>Wrong username or password</span>
+      </form>
+    </div>
+  </div>
+</div></div>
+
+<!-- ============================================================= OVERVIEW -->
+<div class="label">2 · Overview</div>
+<div class="stage"><div class="frame">
+  <div class="mock" data-dir="A" data-mode="dark">
+    <div class="shell">
+      <aside class="side">
+        <div class="brand"><span class="mark"><svg class="i"><use href="#i-radio"/></svg></span>Zoom Stream</div>
+        <nav class="nav">
+          <a class="act"><svg class="i"><use href="#i-home"/></svg>Overview</a>
+          <a><svg class="i"><use href="#i-radio"/></svg>Live Studio</a>
+          <a><svg class="i"><use href="#i-zoom"/></svg>Zoom</a>
+          <a><svg class="i"><use href="#i-monitor"/></svg>Remote</a>
+          <a><svg class="i"><use href="#i-cal"/></svg>Schedule</a>
+          <a><svg class="i"><use href="#i-list"/></svg>Logs</a>
+          <a><svg class="i"><use href="#i-cog"/></svg>Settings</a>
+        </nav>
+        <div class="foot"><span class="avatar">A</span><span>admin<br><span style="opacity:.6;font-size:11.5px">Signed in</span></span></div>
+      </aside>
+      <section class="main">
+        <div class="top">
+          <div><div class="eyebrow">Control room</div><h1>Overview</h1><p>Everything between the webinar and YouTube, at a glance.</p></div>
+          <div style="display:flex;gap:10px;align-items:center"><span class="chip live"><span class="dot"></span>LIVE</span><button class="btn danger"><svg class="i"><use href="#i-stop"/></svg>Stop stream</button></div>
+        </div>
+        <div class="grid g4">
+          <div class="card stat hero"><div class="k">On air for</div><div class="v mono" style="font-family:'Inter'">02:14:09</div><div class="d">since 14:20 · 1080p30</div></div>
+          <div class="card stat"><div class="k">Bitrate</div><div class="v">5.9<span style="font-size:18px;color:var(--dim)"> Mbps</span></div><div class="bar-track"><i></i></div></div>
+          <div class="card stat"><div class="k">Encoder CPU</div><div class="v">38<span style="font-size:18px;color:var(--dim)">%</span></div><div class="d">4 vCPU · steady</div></div>
+          <div class="card stat"><div class="k">Dropped frames</div><div class="v">0</div><div class="d"><span class="chip ok" style="padding:2px 8px"><svg class="i" style="width:12px;height:12px"><use href="#i-check"/></svg>Healthy</span></div></div>
+        </div>
+        <div class="grid g2">
+          <div class="card"><h2><svg class="i"><use href="#i-list"/></svg>Services</h2>
+            <div class="row"><span>Zoom client</span><span class="chip ok"><svg class="i" style="width:12px;height:12px"><use href="#i-check"/></svg>In webinar</span></div>
+            <div class="row"><span>Encoder (ffmpeg)</span><span class="chip live"><span class="dot"></span>LIVE</span></div>
+            <div class="row"><span>Remote desktop</span><span class="chip idle">Idle</span></div>
+            <div class="row"><span>Audio bridge</span><span class="chip warn"><svg class="i" style="width:12px;height:12px"><use href="#i-alert"/></svg>Low level</span></div>
+            <div class="row"><span>Vacuum timer</span><span class="chip fail"><svg class="i" style="width:12px;height:12px"><use href="#i-x"/></svg>Failed</span></div></div>
+          <div class="card"><h2><svg class="i"><use href="#i-list"/></svg>Recent log</h2>
+            <div class="logs"><span class="t">14:20:01</span> <span class="o">encoder started</span><br><span class="t">14:20:09</span> rtmps connected<br><span class="t">15:02:44</span> <span class="w">audio level -41 dB</span><br><span class="t">16:31:12</span> <span class="e">zoom-vacuum: exit 216/GROUP</span><br><span class="t">16:34:09</span> status: in_meeting</div></div>
+        </div>
+      </section>
+    </div>
+  </div>
+</div></div>
+
+<!-- ============================================================= ZOOM -->
+<div class="label">3 · Zoom page</div>
+<div class="stage"><div class="frame">
+  <div class="mock" data-dir="A" data-mode="dark">
+    <div class="shell">
+      <aside class="side">
+        <div class="brand"><span class="mark"><svg class="i"><use href="#i-radio"/></svg></span>Zoom Stream</div>
+        <nav class="nav">
+          <a><svg class="i"><use href="#i-home"/></svg>Overview</a>
+          <a><svg class="i"><use href="#i-radio"/></svg>Live Studio</a>
+          <a class="act"><svg class="i"><use href="#i-zoom"/></svg>Zoom</a>
+          <a><svg class="i"><use href="#i-monitor"/></svg>Remote</a>
+          <a><svg class="i"><use href="#i-cal"/></svg>Schedule</a>
+          <a><svg class="i"><use href="#i-list"/></svg>Logs</a>
+          <a><svg class="i"><use href="#i-cog"/></svg>Settings</a>
+        </nav>
+        <div class="foot"><span class="avatar">A</span><span>admin<br><span style="opacity:.6;font-size:11.5px">Signed in</span></span></div>
+      </aside>
+      <section class="main">
+        <div class="top">
+          <div><div class="eyebrow">Meeting</div><h1>Zoom</h1><p>Webinar 916 1834 6683 · joined as Stream Bot</p></div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap"><span class="chip ok"><svg class="i" style="width:12px;height:12px"><use href="#i-check"/></svg>In webinar · attendee</span>
+            <button class="btn secondary"><svg class="i"><use href="#i-refresh"/></svg>Rejoin</button><button class="btn danger">Leave</button></div>
+        </div>
+        <div class="grid" style="grid-template-columns:1.5fr 1fr">
+          <div class="card"><h2><svg class="i"><use href="#i-monitor"/></svg>Remote screen</h2>
+            <div class="screen"><div class="tile">Webinar video</div><div class="tb"></div></div>
+            <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap"><button class="btn secondary sm"><svg class="i"><use href="#i-expand"/></svg>Fit window</button><button class="btn ghost sm">Reconnect</button><button class="btn primary sm"><span class="spin"></span>Applying…</button><button class="btn secondary sm" disabled>Disabled</button></div></div>
+          <div style="display:grid;gap:16px;align-content:start">
+            <div class="card"><h2><svg class="i"><use href="#i-mic"/></svg>In the meeting</h2>
+              <div class="grid" style="grid-template-columns:1fr 1fr"><div class="ctl"><span class="n">Mic</span><span class="s">N/A · attendee</span></div><div class="ctl"><span class="n">Camera</span><span class="s">N/A · attendee</span></div></div></div>
+            <div class="card"><h2><svg class="i"><use href="#i-expand"/></svg>Meeting only</h2>
+              <div class="row" style="border:0;padding-top:0"><span>Hide Zoom's bars</span><span class="switch"></span></div>
+              <div class="seg"><button class="on">Fit</button><button>Fill</button></div>
+              <div class="banner" style="margin-top:12px"><svg class="i"><use href="#i-alert"/></svg><span>The live encoder still has the old crop.</span><button class="btn secondary sm"><svg class="i"><use href="#i-refresh"/></svg>Restart stream to apply</button></div></div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+</div></div>
+
+<!-- ============================================================= SPEC -->
+<div class="label">Palette, state language and button system (follows the Direction / Mode switch)</div>
+<div class="stage">
+  <div class="mock" data-dir="A" data-mode="dark" id="spec" style="background:transparent;display:grid;gap:14px">
+    <div class="legend"><span class="eyebrow" style="width:100%">States - hue + icon + label + motion</span>
+      <span class="chip live"><span class="dot"></span>LIVE</span>
+      <span class="chip fail"><svg class="i" style="width:12px;height:12px"><use href="#i-x"/></svg>Failed</span>
+      <span class="chip err"><svg class="i" style="width:12px;height:12px"><use href="#i-alert"/></svg>Error: link expired</span>
+      <span class="chip ok"><svg class="i" style="width:12px;height:12px"><use href="#i-check"/></svg>Connected</span>
+      <span class="chip warn"><svg class="i" style="width:12px;height:12px"><use href="#i-alert"/></svg>Check audio</span>
+      <span class="chip idle">Stopped</span>
+      <span class="mono" style="font-size:12px;color:var(--dim)">LIVE pulses · Failed is outlined, static · errors never pulse</span></div>
+    <div class="legend"><span class="eyebrow" style="width:100%">Buttons</span>
+      <button class="btn primary">Primary</button><button class="btn secondary">Secondary</button><button class="btn ghost">Ghost</button><button class="btn danger"><svg class="i"><use href="#i-stop"/></svg>Danger</button><button class="btn icon secondary" aria-label="Refresh"><svg class="i"><use href="#i-refresh"/></svg></button><button class="btn primary"><span class="spin"></span>Loading</button><button class="btn primary" disabled>Disabled</button></div>
+    <div class="legend"><span class="eyebrow" style="width:100%">Palette (current mode)</span>
+      <div class="swatches" id="swatches"></div></div>
+    <div class="legend" style="display:block"><span class="eyebrow">Type</span>
+      <div class="big" style="font-size:64px;font-weight:900;letter-spacing:-.05em;line-height:1;margin:10px 0 4px">128 viewers</div>
+      <div style="font-size:22px;font-weight:800;letter-spacing:-.03em">Inter ExtraBold heading, tight at large sizes</div>
+      <div style="font-size:14px;color:var(--dim);margin-top:6px;max-width:70ch">Body copy stays Inter Regular at 14-16px with generous line height so long status text and help copy stay easy to read on a phone.</div>
+      <div class="mono" style="margin-top:10px;font-size:12.5px;color:var(--dim)">14:20:09  rtmps://a.rtmps.youtube.com  bitrate=5912kbits/s  drop=0</div></div>
+  </div>
+</div>
+<div style="height:60px"></div>
+
+<script>
+  const mocks = () => [...document.querySelectorAll('.mock')];
+  const sw = [['bg','--bg'],['surface','--s1'],['raised','--s2'],['line','--line'],['text','--text'],['brand','--brand'],['brand hover','--brand-hi'],['accent','--accent'],['LIVE','--live'],['ok','--ok'],['warn','--warn'],['failed','--fail']];
+  function paint() {
+    const el = document.getElementById('spec'); const cs = getComputedStyle(el);
+    document.getElementById('swatches').innerHTML = sw.map(([n, v]) => { const c = cs.getPropertyValue(v).trim(); return `<div class="sw"><i style="background:${c}"></i><span>${n}<br>${c}</span></div>`; }).join('');
+  }
+  document.querySelectorAll('[data-set-dir]').forEach(b => b.onclick = () => { mocks().forEach(m => m.dataset.dir = b.dataset.setDir); document.querySelectorAll('[data-set-dir]').forEach(x => x.classList.toggle('on', x === b)); paint(); });
+  document.querySelectorAll('[data-set-mode]').forEach(b => b.onclick = () => { mocks().forEach(m => m.dataset.mode = b.dataset.setMode); document.querySelectorAll('[data-set-mode]').forEach(x => x.classList.toggle('on', x === b)); paint(); });
+  paint();
+</script>
+</body>
+</html>

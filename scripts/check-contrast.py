@@ -136,11 +136,13 @@ PAIRS = [
     ("Accent/link text on card surface", "accent", "bg-panel", 4.5, None),
     ("Sparkline/chart stroke vs card surface", "accent", "bg-panel", 3.0, None),
     ("Primary button text", "text-on-accent", "accent-solid", 4.5, None),
-    ("Danger button text", "text-on-accent", "live-solid", 4.5, None),
-    ("Sidebar active nav pill text", "nav-active-text", "nav-active-bg", 4.5, None),
-    ("CPU bar fill vs track", "accent", "bg-hover", 3.0, None),
+    ("Danger (outlined) button text", "danger", "bg-panel", 4.5, None),
+    ("Primary button hover text", "text-on-accent", "accent-solid-hover", 4.5, None),
+    ("LIVE pill text (dark on scarlet)", "on-live", "live-solid", 4.5, None),
+    ("Champagne accent text on card surface", "champagne", "bg-panel", 4.5, None),
+        ("CPU bar fill vs track", "accent", "bg-hover", 3.0, None),
     ("Toast success icon", "success", "bg-elevated", 4.5, None),
-    ("Toast error icon", "live", "bg-elevated", 4.5, None),
+    ("Toast error icon", "danger", "bg-elevated", 4.5, None),
 ]
 
 # (label, fg_token, tint_token, surface_token, min_ratio) - tint is
@@ -148,7 +150,9 @@ PAIRS = [
 TINT_PAIRS = [
     ("Success badge text", "success", "success-tint", "bg-panel", 4.5),
     ("Warning badge text", "warning", "warning-tint", "bg-panel", 4.5),
-    ("Danger badge / error banner text", "live", "live-tint", "bg-panel", 4.5),
+    ("Danger badge / error banner text", "danger", "danger-tint", "bg-panel", 4.5),
+    ("LIVE badge text", "live", "live-tint", "bg-panel", 4.5),
+    ("Sidebar active nav text", "nav-active-text", "nav-active-bg", "bg-panel", 4.5),
     ("Info banner text", "info", "info-tint", "bg-panel", 4.5),
 ]
 

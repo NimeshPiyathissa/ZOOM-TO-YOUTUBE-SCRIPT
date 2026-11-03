@@ -27,11 +27,11 @@
 .service-table .service-name { min-width: 150px; }
 .service-table .service-meta .tnum { color: var(--text); font-family: var(--font-mono); }
 
-.danger-zone { border-color: color-mix(in srgb, var(--live) 35%, transparent); background: linear-gradient(90deg, var(--live-tint), transparent 60%), var(--bg-panel); }
-.danger-zone:hover { border-color: var(--live); }
+.danger-zone { border-color: color-mix(in srgb, var(--danger) 35%, transparent); background: linear-gradient(90deg, var(--danger-tint), transparent 60%), var(--bg-panel); }
+.danger-zone:hover { border-color: var(--danger); }
 .danger-zone-body { display: flex; align-items: center; gap: var(--space-4); }
 .danger-zone-body > div { flex: 1; min-width: 0; }
-.danger-zone .card-title { color: var(--live); margin-bottom: var(--space-1); }
+.danger-zone .card-title { color: var(--danger); margin-bottom: var(--space-1); }
 
 @media (max-width: 1023px) {
   .controls-grid { grid-template-columns: 1fr; }
@@ -140,10 +140,10 @@
 .settings-section .list-row { flex-wrap: wrap; }
 .settings-section .table-wrap { margin-bottom: var(--space-2); }
 .settings-section .table-wrap td:first-child .icon { margin-right: var(--space-1-5); color: var(--text-dim); }
-.form-actions .save-state.is-error { color: var(--live); }
+.form-actions .save-state.is-error { color: var(--danger); }
 .form-actions .save-state .icon { width: var(--icon-sm); height: var(--icon-sm); }
 .form-actions .save-state > * { animation: rise-in var(--duration-base) var(--ease-out); }
-.settings-section.danger-zone .settings-section-head h2 { color: var(--live); }
+.settings-section.danger-zone .settings-section-head h2 { color: var(--danger); }
 
 @media (max-width: 1023px) {
   .settings-layout { grid-template-columns: minmax(0, 1fr); }

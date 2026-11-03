@@ -179,7 +179,7 @@ function renderUnits(units) {
     // raw-active_state coloring only if a unit somehow has no phase,
     // e.g. the unit_show() error-fallback shape) - never a second,
     // independently-computed guess.
-    badge.className = "badge " + (u.phase ? phaseBadgeClass(u.phase) : badgeClass(u.active_state));
+    badge.className = "badge " + (u.phase ? phaseBadgeClass(u.phase, u.unit) : badgeClass(u.active_state));
     badge.innerHTML = `<span class="dot"></span>${label}`;
     document.getElementById(`unit-${u.unit}-uptime`).textContent = fmtUptime(u.uptime_seconds);
     document.getElementById(`unit-${u.unit}-restarts`).textContent = u.restart_count ?? "-";

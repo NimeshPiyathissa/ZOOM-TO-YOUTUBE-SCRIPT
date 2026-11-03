@@ -9,7 +9,13 @@
 //     page script rewrites its text. Page scripts don't need to know: a
 //     MutationObserver notices the new text and animates toward it,
 //     always landing on the exact string the page wrote.
-//  3. setProgress(el, pct) - drives a .progress-fill / .stat-progress-fill
+//  3. Sidebar indicator - one glowing bar that glides to the active nav
+//     item (transform only), starting from where it sat on the previous
+//     page (sessionStorage), so navigation feels continuous even though
+//     every page is a full load.
+//  4. Card spotlight - the hovered card's highlight follows the pointer
+//     via two custom properties (rAF-throttled, only the hovered card).
+//  5. setProgress(el, pct) - drives a .progress-fill / .stat-progress-fill
 //     with transform: scaleX (never width) and warn/crit tinting.
 (function () {
   const reduceMq = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -126,6 +132,56 @@
     el.classList.toggle("is-crit", p >= crit);
   }
 
+  // ------------------------------------------------------------ 3. nav indicator
+  function mountNavIndicator() {
+    const nav = document.querySelector(".sidebar-nav");
+    if (!nav) return;
+    let bar = nav.querySelector(".nav-indicator");
+    if (!bar) { bar = document.createElement("span"); bar.className = "nav-indicator"; bar.setAttribute("aria-hidden", "true"); nav.appendChild(bar); }
+    const place = (animate) => {
+      const active = nav.querySelector(".nav-item.active");
+      if (!active) { nav.classList.remove("has-indicator"); return; }
+      const top = active.offsetTop + (active.offsetHeight - bar.offsetHeight) / 2;
+      if (!animate) bar.style.transition = "none";
+      bar.style.setProperty("--ind-y", top + "px");
+      nav.classList.add("has-indicator");
+      if (!animate) { void bar.offsetWidth; bar.style.transition = ""; }
+    };
+    let prev = null;
+    try { prev = sessionStorage.getItem("zs-nav-y"); } catch (e) { /* private mode */ }
+    const active = nav.querySelector(".nav-item.active");
+    if (prev != null && active && !reduced()) {
+      bar.style.transition = "none";
+      bar.style.setProperty("--ind-y", prev + "px");
+      nav.classList.add("has-indicator");
+      void bar.offsetWidth;
+      bar.style.transition = "";
+      requestAnimationFrame(() => place(true));
+    } else place(false);
+    if (active) { try { sessionStorage.setItem("zs-nav-y", String(active.offsetTop + (active.offsetHeight - bar.offsetHeight) / 2)); } catch (e) { /* ignore */ } }
+    window.addEventListener("resize", () => place(false));
+    const shell = document.querySelector(".app-shell");
+    if (shell) new MutationObserver(() => requestAnimationFrame(() => place(false))).observe(shell, { attributes: true, attributeFilter: ["class"] });
+  }
+
+  // ------------------------------------------------------------ 4. card spotlight
+  function mountSpotlight() {
+    if (reduced() || !window.matchMedia("(hover: hover)").matches) return;
+    let raf = 0, el = null, x = 0, y = 0;
+    document.addEventListener("pointermove", (e) => {
+      const card = e.target.closest && e.target.closest(".card, .card-3d");
+      if (!card) return;
+      el = card; x = e.clientX; y = e.clientY;
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        const r = el.getBoundingClientRect();
+        el.style.setProperty("--mx", (x - r.left) + "px");
+        el.style.setProperty("--my", (y - r.top) + "px");
+      });
+    }, { passive: true });
+  }
+
   window.zsMotion = { reveal, setProgress };
   window.setProgress = setProgress;
 
@@ -133,6 +189,8 @@
     const main = document.getElementById("main");
     reveal(main);
     watchNumbers(document.body);
+    mountNavIndicator();
+    mountSpotlight();
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
   else init();

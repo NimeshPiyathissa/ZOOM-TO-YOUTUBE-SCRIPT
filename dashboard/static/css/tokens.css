@@ -16,7 +16,8 @@
 
 :root {
   /* ---- typography ---------------------------------------------------- */
-  --font-sans: "Geist", "Geist Fallback", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-sans: "Inter", "Inter Fallback", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-display: "Inter", "Inter Fallback", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --font-mono: "Geist Mono", "Geist Mono Fallback", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
   /* type scale: label -> body -> heading -> display */
@@ -28,12 +29,15 @@
   --text-lg: 18px;       /* section headings */
   --text-xl: 22px;       /* page titles, hero headline */
   --text-2xl: 28px;      /* stat values */
-  --text-3xl: 36px;      /* display (login, hero state) */
+  --text-3xl: 40px;      /* display (login, hero state) */
+  --text-4xl: 56px;      /* hero numbers, login headline */
 
   --weight-normal: 400;
   --weight-medium: 500;
   --weight-semibold: 600;
   --weight-bold: 700;
+  --weight-extrabold: 800;
+  --weight-black: 900;
 
   --leading-none: 1;
   --leading-tight: 1.2;
@@ -161,31 +165,31 @@
   /* ---- log/terminal surface: deliberately theme-invariant (always a
      dark monospace panel, like every other terminal/log UI). Checked
      for AA on its own in scripts/check-contrast.py ------------------- */
-  --term-bg: #0a0c12;
-  --term-bg-2: #10131b;
-  --term-border: #1d2230;
-  --term-text: #d8dce6;
-  --term-dim: #8b93a7;
-  --term-line-no: #6b7488;
+  --term-bg: #0b0808;
+  --term-bg-2: #130e0e;
+  --term-border: #261c1b;
+  --term-text: #e6dcda;
+  --term-dim: #a0928f;
+  --term-line-no: #7d6f6c;
   --term-err: #ff8f8f;
   --term-warn: #ffcf7a;
-  --term-info: #8fb4ff;
+  --term-info: #e9c98f;
   --term-ok: #6ee7b0;
-  --term-hl: rgba(141, 162, 240, 0.28);
+  --term-hl: rgba(233, 201, 143, 0.22);
 
   /* ---- scrim: modal/drawer backdrop dimming, same across themes ----- */
-  --scrim: rgba(6, 8, 13, 0.62);
-  --scrim-strong: rgba(6, 8, 13, 0.8);
+  --scrim: rgba(11, 6, 6, 0.64);
+  --scrim-strong: rgba(11, 6, 6, 0.82);
   --on-media: #ffffff;   /* text/icons drawn over video or media */
 
   /* ---- media chrome: anything drawn over video/black (monitor bezels,
      overlays on a preview, on-canvas chips). Theme-invariant because
      the video underneath is. -------------------------------------------- */
-  --media-ink: #07090c;
-  --media-ink-2: #0d1015;
+  --media-ink: #070505;
+  --media-ink-2: #0f0b0b;
   --media-scrim: rgba(0, 0, 0, 0.55);
   --media-scrim-strong: rgba(0, 0, 0, 0.82);
-  --media-panel: rgba(14, 17, 22, 0.8);
+  --media-panel: rgba(18, 12, 12, 0.82);
   --media-fill-faint: rgba(255, 255, 255, 0.05);
   --media-line: rgba(255, 255, 255, 0.08);
   --media-glass-border: rgba(255, 255, 255, 0.16);
@@ -198,149 +202,170 @@
 }
 
 /* ================================================================
-   Light - cool off-white canvas, pure white glass, deep navy ink and
-   a navy primary. Shadows are tinted with the ink hue, never black.
+   "Oxblood" identity (2026-11). Deep crimson brand, warm near-black and
+   warm paper neutrals, one champagne accent.
+     --accent / --accent-solid   brand crimson (text/ring vs. fill)
+     --champagne                 the single subtle accent
+     --live                      ON-AIR: an orange-leaning scarlet, a
+                                 different hue family from the brand,
+                                 always paired with a pulsing dot + label
+     --danger                    Failed / error: a lighter rose, shown as
+                                 an OUTLINE with an icon - never a fill,
+                                 never pulsing
+   Success stays green, warning amber. Contrast pairs are checked in
+   scripts/check-contrast.py.
    ================================================================ */
+
+/* ---- Light - warm paper, clean white surfaces, ox-blood ink accents */
 :root[data-theme="white"],
 :root:not([data-theme]) {
-  --bg: #eef1f7;
+  --bg: #fbf7f6;
   --surface: #ffffff;
-  --surface-2: #ffffff;
+  --surface-2: #f8f2f0;
   --bg-panel: var(--surface);
-  --bg-elevated: var(--surface-2);
-  --bg-sunken: #e6eaf2;
-  --bg-hover: #e8ecf4;
-  --bg-active: #dfe4ef;
-  --border: #dfe3ec;
-  --border-strong: #c6cddd;
+  --bg-elevated: var(--surface);
+  --bg-sunken: #f3ebe9;
+  --bg-hover: #f5eeec;
+  --bg-active: #ece1de;
+  --border: #ebe0de;
+  --border-strong: #d6c6c2;
 
-  --text: #121a33;
-  --text-dim: #4a5576;
-  --text-faint: #6b7593;
+  --text: #1c1413;
+  --text-dim: #5f5250;
+  --text-faint: #6e605e;
   --text-on-accent: #ffffff;
 
-  --accent: #30509e;
-  --accent-solid: #1f2f5c;
-  --accent-solid-hover: #2b3f78;
-  --accent-tint: rgba(48, 80, 158, 0.1);
-  --accent-tint-strong: rgba(48, 80, 158, 0.18);
-  --accent-ring: rgba(48, 80, 158, 0.65);
-  --accent-glow: rgba(48, 80, 158, 0.28);
+  --accent: #b50e28;
+  --accent-solid: #c8102e;
+  --accent-solid-hover: #a80d25;
+  --accent-deep: #8e0b21;
+  --accent-tint: rgba(200, 16, 46, 0.08);
+  --accent-tint-strong: rgba(200, 16, 46, 0.16);
+  --accent-ring: rgba(200, 16, 46, 0.72);
+  --accent-glow: rgba(200, 16, 46, 0.4);
 
-  --live: #c4273c;
-  --live-solid: #b91c2e;
-  --live-solid-hover: #a3182a;
-  --live-tint: rgba(196, 39, 60, 0.1);
-  --live-glow: rgba(196, 39, 60, 0.32);
-  --danger: var(--live);
-  --danger-solid: var(--live-solid);
+  --champagne: #7a5a1e;
+  --champagne-tint: rgba(122, 90, 30, 0.12);
+
+  --live: #b93000;
+  --live-solid: #ff4d2e;
+  --live-solid-hover: #ff6a45;
+  --on-live: #1a0603;
+  --live-tint: rgba(255, 77, 46, 0.14);
+  --live-glow: rgba(255, 77, 46, 0.45);
+  --danger: #a30d24;
+  --danger-solid: #a30d24;
+  --danger-tint: rgba(163, 13, 36, 0.09);
 
   --success: #0f6b40;
   --success-tint: rgba(15, 107, 64, 0.1);
   --success-glow: rgba(15, 107, 64, 0.28);
-  --warning: #8f5400;
-  --warning-tint: rgba(154, 91, 0, 0.1);
-  --warning-glow: rgba(154, 91, 0, 0.28);
-  --info: #2056c9;
-  --info-tint: rgba(32, 86, 201, 0.1);
+  --warning: #8a5a00;
+  --warning-tint: rgba(138, 90, 0, 0.1);
+  --warning-glow: rgba(138, 90, 0, 0.28);
+  --info: #7a5a1e;
+  --info-tint: rgba(122, 90, 30, 0.12);
 
-  --shadow-xs: 0 1px 1px rgba(18, 26, 51, 0.04);
-  --shadow-sm: 0 1px 2px rgba(18, 26, 51, 0.06), 0 1px 1px rgba(18, 26, 51, 0.03);
-  --shadow-md: 0 8px 24px -6px rgba(18, 26, 51, 0.12), 0 2px 6px rgba(18, 26, 51, 0.05);
-  --shadow-lg: 0 24px 56px -12px rgba(18, 26, 51, 0.22), 0 4px 12px rgba(18, 26, 51, 0.06);
-  --shadow-inset: inset 0 1px 2px rgba(18, 26, 51, 0.06);
+  --shadow-xs: 0 1px 1px rgba(60, 20, 20, 0.04);
+  --shadow-sm: 0 1px 2px rgba(60, 20, 20, 0.07), 0 1px 1px rgba(60, 20, 20, 0.03);
+  --shadow-md: 0 8px 24px -6px rgba(90, 20, 28, 0.14), 0 2px 6px rgba(60, 20, 20, 0.05);
+  --shadow-lg: 0 24px 56px -12px rgba(90, 20, 28, 0.24), 0 4px 12px rgba(60, 20, 20, 0.06);
+  --shadow-inset: inset 0 1px 2px rgba(60, 20, 20, 0.07);
 
-  --nav-active-bg: var(--accent-solid);
-  --nav-active-text: #ffffff;
+  --nav-active-bg: var(--accent-tint);
+  --nav-active-text: var(--text);
 
   --glass-blur: var(--blur-lg);
   --glass-sat: 150%;
-  --glass-tint: rgba(255, 255, 255, 0.72);
-  --glass-tint-strong: rgba(255, 255, 255, 0.88);
+  --glass-tint: rgba(255, 255, 255, 0.74);
+  --glass-tint-strong: rgba(255, 255, 255, 0.9);
   --glass-tint-active: var(--accent-tint);
-  --glass-border: rgba(18, 26, 51, 0.08);
-  --glass-edge-highlight: rgba(255, 255, 255, 0.95);
-  --glass-shadow: 0 1px 0 rgba(255, 255, 255, 0.7) inset, 0 10px 32px -8px rgba(18, 26, 51, 0.12), 0 1px 2px rgba(18, 26, 51, 0.04);
-  --glass-shadow-hover: 0 1px 0 rgba(255, 255, 255, 0.8) inset, 0 18px 44px -10px rgba(18, 26, 51, 0.2), 0 2px 6px rgba(18, 26, 51, 0.06);
+  --glass-border: rgba(90, 30, 30, 0.1);
+  --glass-edge-highlight: rgba(255, 255, 255, 0.35);
+  --glass-shadow: 0 1px 0 rgba(255, 255, 255, 0.8) inset, 0 10px 32px -8px rgba(90, 20, 28, 0.13), 0 1px 2px rgba(60, 20, 20, 0.05);
+  --glass-shadow-hover: 0 1px 0 rgba(255, 255, 255, 0.9) inset, 0 18px 44px -10px rgba(90, 20, 28, 0.22), 0 2px 6px rgba(60, 20, 20, 0.07);
 
-  --ambient-a: rgba(48, 80, 158, 0.16);
-  --ambient-b: rgba(196, 39, 60, 0.08);
-  --skeleton-base: #e4e8f1;
-  --skeleton-shine: #f3f5fa;
+  --ambient-a: rgba(200, 16, 46, 0.13);
+  --ambient-b: rgba(201, 158, 80, 0.12);
+  --skeleton-base: #efe6e4;
+  --skeleton-shine: #faf4f2;
 
   color-scheme: light;
 }
 
-/* ================================================================
-   Dark - near-black cool canvas, raised translucent glass, periwinkle
-   accent. Same accent family as Light so the brand reads identically.
-   ================================================================ */
+/* ---- Dark - warm near-black, raised warm surfaces, glowing crimson */
 :root[data-theme="black"],
 :root[data-theme="default"] {
-  --bg: #07080c;
-  --surface: #11131a;
-  --surface-2: #171a23;
+  --bg: #0f0b0b;
+  --surface: #181212;
+  --surface-2: #211918;
   --bg-panel: var(--surface);
   --bg-elevated: var(--surface-2);
-  --bg-sunken: #0c0e14;
-  --bg-hover: #1d212c;
-  --bg-active: #242936;
-  --border: #232836;
-  --border-strong: #343b4d;
+  --bg-sunken: #0b0808;
+  --bg-hover: #271e1d;
+  --bg-active: #322726;
+  --border: #2e2423;
+  --border-strong: #46363a;
 
-  --text: #eceef5;
-  --text-dim: #9ba3b9;
-  --text-faint: #6f7790;
+  --text: #ede6e4;
+  --text-dim: #a89b98;
+  --text-faint: #8f8280;
   --text-on-accent: #ffffff;
 
-  --accent: #8da2f0;
-  --accent-solid: #3b58b0;
-  --accent-solid-hover: #4a69c6;
-  --accent-tint: rgba(141, 162, 240, 0.14);
-  --accent-tint-strong: rgba(141, 162, 240, 0.24);
-  --accent-ring: rgba(141, 162, 240, 0.6);
-  --accent-glow: rgba(110, 138, 235, 0.42);
+  --accent: #ff6b78;
+  --accent-solid: #c8102e;
+  --accent-solid-hover: #d91a38;
+  --accent-deep: #8e0b21;
+  --accent-tint: rgba(200, 16, 46, 0.16);
+  --accent-tint-strong: rgba(200, 16, 46, 0.28);
+  --accent-ring: rgba(255, 107, 120, 0.6);
+  --accent-glow: rgba(200, 16, 46, 0.55);
 
-  --live: #ff7676;
-  --live-solid: #cf3434;
-  --live-solid-hover: #e04646;
-  --live-tint: rgba(255, 118, 118, 0.14);
-  --live-glow: rgba(255, 92, 92, 0.5);
-  --danger: var(--live);
-  --danger-solid: var(--live-solid);
+  --champagne: #e9c98f;
+  --champagne-tint: rgba(233, 201, 143, 0.12);
 
-  --success: #3ddc97;
-  --success-tint: rgba(61, 220, 151, 0.14);
-  --success-glow: rgba(61, 220, 151, 0.4);
-  --warning: #f3b84c;
-  --warning-tint: rgba(243, 184, 76, 0.14);
-  --warning-glow: rgba(243, 184, 76, 0.4);
-  --info: #79abff;
-  --info-tint: rgba(121, 171, 255, 0.14);
+  --live: #ff5a36;
+  --live-solid: #ff4d2e;
+  --live-solid-hover: #ff6a45;
+  --on-live: #1a0603;
+  --live-tint: rgba(255, 90, 54, 0.16);
+  --live-glow: rgba(255, 77, 46, 0.55);
+  --danger: #ff8a94;
+  --danger-solid: #b3122b;
+  --danger-tint: rgba(255, 138, 148, 0.12);
 
-  --shadow-xs: 0 1px 1px rgba(0, 0, 0, 0.3);
-  --shadow-sm: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 1px 2px rgba(0, 0, 0, 0.5);
-  --shadow-md: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 10px 28px -6px rgba(0, 0, 0, 0.6);
-  --shadow-lg: 0 1px 0 rgba(255, 255, 255, 0.05) inset, 0 28px 60px -12px rgba(0, 0, 0, 0.75);
-  --shadow-inset: inset 0 1px 2px rgba(0, 0, 0, 0.4);
+  --success: #3ddc84;
+  --success-tint: rgba(61, 220, 132, 0.14);
+  --success-glow: rgba(61, 220, 132, 0.4);
+  --warning: #f5b83d;
+  --warning-tint: rgba(245, 184, 61, 0.14);
+  --warning-glow: rgba(245, 184, 61, 0.4);
+  --info: #e9c98f;
+  --info-tint: rgba(233, 201, 143, 0.12);
 
-  --nav-active-bg: var(--accent-solid);
-  --nav-active-text: #ffffff;
+  --shadow-xs: 0 1px 1px rgba(0, 0, 0, 0.35);
+  --shadow-sm: 0 1px 0 rgba(255, 235, 230, 0.03) inset, 0 1px 2px rgba(0, 0, 0, 0.55);
+  --shadow-md: 0 1px 0 rgba(255, 235, 230, 0.04) inset, 0 10px 28px -6px rgba(0, 0, 0, 0.65);
+  --shadow-lg: 0 1px 0 rgba(255, 235, 230, 0.05) inset, 0 28px 60px -12px rgba(0, 0, 0, 0.8);
+  --shadow-inset: inset 0 1px 2px rgba(0, 0, 0, 0.45);
+
+  --nav-active-bg: var(--accent-tint);
+  --nav-active-text: var(--text);
 
   --glass-blur: var(--blur-lg);
   --glass-sat: 160%;
-  --glass-tint: rgba(255, 255, 255, 0.04);
-  --glass-tint-strong: rgba(22, 25, 34, 0.86);
+  --glass-tint: rgba(255, 235, 230, 0.04);
+  --glass-tint-strong: rgba(28, 20, 20, 0.88);
   --glass-tint-active: var(--accent-tint);
-  --glass-border: rgba(255, 255, 255, 0.08);
-  --glass-edge-highlight: rgba(255, 255, 255, 0.28);
-  --glass-shadow: 0 1px 0 rgba(255, 255, 255, 0.05) inset, 0 12px 36px -10px rgba(0, 0, 0, 0.6);
-  --glass-shadow-hover: 0 1px 0 rgba(255, 255, 255, 0.08) inset, 0 22px 50px -12px rgba(0, 0, 0, 0.75);
+  --glass-border: rgba(255, 235, 230, 0.08);
+  --glass-edge-highlight: rgba(255, 255, 255, 0.22);
+  --glass-shadow: 0 1px 0 rgba(255, 235, 230, 0.05) inset, 0 12px 36px -10px rgba(0, 0, 0, 0.65);
+  --glass-shadow-hover: 0 1px 0 rgba(255, 235, 230, 0.08) inset, 0 22px 50px -12px rgba(0, 0, 0, 0.8);
 
-  --ambient-a: rgba(110, 138, 235, 0.2);
-  --ambient-b: rgba(255, 92, 92, 0.1);
-  --skeleton-base: #171a23;
-  --skeleton-shine: #232836;
+  --ambient-a: rgba(200, 16, 46, 0.2);
+  --ambient-b: rgba(233, 201, 143, 0.07);
+  --skeleton-base: #211918;
+  --skeleton-shine: #2e2423;
 
   color-scheme: dark;
 }

@@ -91,8 +91,8 @@
 }
 .telemetry-tile.is-healthy::before { background: var(--success); }
 .telemetry-tile.is-warn::before { background: var(--warning); }
-.telemetry-tile.is-bad::before { background: var(--live); }
-.telemetry-tile.is-bad { border-color: color-mix(in srgb, var(--live) 40%, transparent); }
+.telemetry-tile.is-bad::before { background: var(--danger); }
+.telemetry-tile.is-bad { border-color: color-mix(in srgb, var(--danger) 40%, transparent); }
 .telem-main { display: flex; align-items: baseline; gap: var(--space-1-5); margin: var(--space-1-5) 0 var(--space-1); }
 .telem-val { font-size: var(--text-2xl); font-weight: var(--weight-semibold); letter-spacing: var(--tracking-tighter); color: var(--text); line-height: var(--leading-tight); font-variant-numeric: tabular-nums; }
 .telem-unit { font-size: var(--text-xs); color: var(--text-dim); }
@@ -118,7 +118,7 @@
 .led-tag { display: none; }
 .led-bar.led-green.is-lit { background: var(--term-ok); border-color: var(--term-ok); box-shadow: 0 0 8px var(--success-glow); }
 .led-bar.led-amber.is-lit { background: var(--term-warn); border-color: var(--term-warn); box-shadow: 0 0 8px var(--warning-glow); }
-.led-bar.led-red.is-lit { background: var(--term-err); border-color: var(--term-err); box-shadow: 0 0 12px var(--live-glow); }
+.led-bar.led-red.is-lit { background: var(--term-err); border-color: var(--term-err); box-shadow: 0 0 12px var(--danger-tint); }
 .scale-column { display: flex; flex-direction: column; justify-content: space-between; padding: var(--space-6) 0 var(--space-1); width: 44px; text-align: center; user-select: none; }
 .scale-mark { font-family: var(--font-mono); font-size: var(--text-2xs); line-height: var(--leading-snug); color: var(--media-text-faint); }
 .scale-mark.mark-clip { color: var(--term-err); font-weight: var(--weight-semibold); }
@@ -153,7 +153,7 @@
 /* ---------------------------------------------------------------- recording */
 .card-header-flex { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; margin-bottom: var(--space-4); }
 .card-header-flex .rack-title { margin: 0; flex: 1; }
-.banner-danger { background: var(--live-tint); border-color: color-mix(in srgb, var(--live) 30%, transparent); color: var(--live); }
+.banner-danger { background: var(--danger-tint); border-color: color-mix(in srgb, var(--danger) 30%, transparent); color: var(--danger); }
 .studio-master-actions .rec-duration-pill { height: var(--control-h-lg); }
 
 /* main.page has a view-transition-name, which makes it a stacking context:
@@ -213,7 +213,7 @@ main.page:has(.studio-chat-drawer.is-open, .studio-modal-backdrop:not([hidden]))
   animation: modal-in var(--duration-slow) var(--ease-spring);
 }
 .studio-modal-icon { width: 44px; height: 44px; border-radius: var(--radius-lg); background: var(--warning-tint); color: var(--warning); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-.studio-modal-icon.icon-danger { background: var(--live-tint); color: var(--live); }
+.studio-modal-icon.icon-danger { background: var(--danger-tint); color: var(--danger); }
 .studio-modal-icon.icon-go-live { background: var(--success-tint); color: var(--success); }
 .studio-modal-icon .icon { width: var(--icon-lg); height: var(--icon-lg); }
 .studio-modal-content { flex: 1; display: flex; flex-direction: column; }

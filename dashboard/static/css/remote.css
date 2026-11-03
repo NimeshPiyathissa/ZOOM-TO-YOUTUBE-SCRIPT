@@ -76,7 +76,7 @@
 .panel-preview[data-phase="STARTING"] .monitor-tally,
 .panel-preview[data-phase="RECONNECTING"] .monitor-tally { background: var(--warning); box-shadow: 0 0 10px 1px var(--warning-tint); }
 .panel-preview[data-phase="LIVE"] .monitor-tally { background: var(--live); box-shadow: var(--rm-glow-live); animation: tally-breathe 2.6s ease-in-out infinite; }
-.panel-preview[data-phase="FAILED"] .monitor-tally { background: var(--live); }
+.panel-preview[data-phase="FAILED"] .monitor-tally { background: var(--danger); }
 .panel-preview[data-phase="LIVE"] { border-color: color-mix(in srgb, var(--live) 45%, transparent); }
 @keyframes tally-breathe { 0%, 100% { opacity: 1; } 50% { opacity: 0.72; } }
 @media (prefers-reduced-motion: reduce) { .panel-preview[data-phase="LIVE"] .monitor-tally { animation: none; } }
@@ -94,7 +94,7 @@
 .panel-preview .panel-state.badge .dot { background: currentColor; }
 .panel-preview[data-phase="STARTING"] .panel-state.badge, .panel-preview[data-phase="RECONNECTING"] .panel-state.badge { color: var(--warning); }
 .panel-preview[data-phase="LIVE"] .panel-state.badge { background: var(--live-solid); border-color: var(--live); color: var(--text-on-accent); }
-.panel-preview[data-phase="FAILED"] .panel-state.badge { color: var(--live); }
+.panel-preview[data-phase="FAILED"] .panel-state.badge { color: var(--danger); }
 .panel-elapsed {
   font-family: var(--font-mono); font-size: var(--text-sm); font-weight: var(--weight-medium);
   color: var(--text-on-accent); letter-spacing: var(--tracking-wide); min-width: 5ch;
@@ -127,7 +127,7 @@
   transition: color var(--duration-fast) var(--ease-out);
 }
 .rail-tile.is-warn .stat-value { color: var(--warning); }
-.rail-tile.is-bad .stat-value { color: var(--live); }
+.rail-tile.is-bad .stat-value { color: var(--danger); }
 .rail-restarts { display: flex; align-items: center; justify-content: flex-start; gap: var(--space-3); margin-top: var(--space-4); min-height: 28px; }
 .rail-restarts .restart-rate-badge { margin-left: 0; }
 
@@ -202,9 +202,9 @@
 .yt-hero[data-tone="ok"] .yt-hero-phase { color: var(--success); }
 .yt-hero[data-tone="wait"] .yt-hero-icon { color: var(--warning); box-shadow: 0 0 0 1px var(--warning) inset; }
 .yt-hero[data-tone="wait"] .yt-hero-phase { color: var(--warning); }
-.yt-hero[data-tone="bad"] .yt-hero-icon { color: var(--live); box-shadow: 0 0 0 1px var(--live) inset, 0 0 14px -2px var(--live); }
-.yt-hero[data-tone="bad"] { border-color: color-mix(in srgb, var(--live) 50%, transparent); }
-.yt-hero[data-tone="bad"] .yt-hero-phase { color: var(--live); }
+.yt-hero[data-tone="bad"] .yt-hero-icon { color: var(--danger); box-shadow: 0 0 0 1px var(--danger) inset, 0 0 14px -2px var(--danger); }
+.yt-hero[data-tone="bad"] { border-color: color-mix(in srgb, var(--danger) 50%, transparent); }
+.yt-hero[data-tone="bad"] .yt-hero-phase { color: var(--danger); }
 .yt-hero[data-phase="playing"] .yt-hero-icon .icon { animation: yt-breathe 2.4s ease-in-out infinite; }
 @keyframes yt-breathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.12); } }
 @media (prefers-reduced-motion: reduce) { .yt-hero[data-phase="playing"] .yt-hero-icon .icon { animation: none; } }
@@ -214,8 +214,8 @@
 .yt-guidance-body { min-width: 0; flex: 1; }
 .yt-guidance.tone-wait { background: var(--warning-tint); color: var(--text); border: var(--border-w) solid color-mix(in srgb, var(--warning) 35%, transparent); }
 .yt-guidance.tone-wait > .icon { color: var(--warning); }
-.yt-guidance.tone-bad { background: var(--live-tint); color: var(--text); border: var(--border-w) solid color-mix(in srgb, var(--live) 40%, transparent); }
-.yt-guidance.tone-bad > .icon { color: var(--live); }
+.yt-guidance.tone-bad { background: var(--danger-tint); color: var(--text); border: var(--border-w) solid color-mix(in srgb, var(--danger) 40%, transparent); }
+.yt-guidance.tone-bad > .icon { color: var(--danger); }
 .yt-guidance.tone-idle, .yt-guidance.tone-ok { background: var(--bg-elevated); color: var(--text); border: var(--border-w) solid var(--rm-edge); }
 .yt-auto-log { margin-top: var(--space-2); font-family: var(--font-mono); font-size: var(--text-2xs); }
 
@@ -250,7 +250,7 @@
 /* Add tab */
 .yt-paste { min-height: 64px; resize: vertical; font-family: var(--font-mono); font-size: var(--text-sm); }
 .yt-parsed { display: grid; grid-template-columns: 140px minmax(0, 1fr); gap: var(--space-3); margin: var(--space-3) 0; padding: var(--space-3); border-radius: var(--radius-md); border: var(--border-w) solid var(--accent-ring); background: var(--accent-tint); }
-.yt-parsed.is-error { border-color: color-mix(in srgb, var(--live) 50%, transparent); background: var(--live-tint); }
+.yt-parsed.is-error { border-color: color-mix(in srgb, var(--danger) 50%, transparent); background: var(--danger-tint); }
 .yt-parsed-art { position: relative; aspect-ratio: 16 / 9; border-radius: var(--radius-sm); overflow: hidden; background: var(--rm-ink); }
 .yt-parsed-art img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .yt-parsed-art .yt-kind { position: absolute; left: var(--space-1-5); bottom: var(--space-1-5); }
@@ -278,7 +278,7 @@
 .yt-card-meta, .yt-card-when { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin: 0; }
 .yt-card-actions { display: flex; gap: var(--space-0-5); margin-top: var(--space-1); }
 .yt-card-actions .yt-danger { margin-left: auto; }
-.yt-card-actions .yt-danger:hover { color: var(--live); background: var(--live-tint); }
+.yt-card-actions .yt-danger:hover { color: var(--danger); background: var(--danger-tint); }
 
 .zoom-status { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); min-height: 28px; }
 
@@ -301,7 +301,7 @@
 .meter { position: relative; height: 14px; margin-top: var(--space-3); border-radius: var(--radius-xs); overflow: hidden; background: var(--rm-ink); border: var(--border-w) solid var(--rm-edge); }
 .meter-fill {
   position: absolute; left: 0; top: 0; bottom: 0; width: var(--level, 0%);
-  background: linear-gradient(to right, var(--success) 0 70%, var(--warning) 70% 90%, var(--live) 90% 100%);
+  background: linear-gradient(to right, var(--success) 0 70%, var(--warning) 70% 90%, var(--danger) 90% 100%);
   background-size: calc(100% / max(var(--level-frac, 0.0001), 0.0001)) 100%;
   -webkit-mask: repeating-linear-gradient(90deg, var(--canvas-black) 0 5px, transparent 5px 7px);
   mask: repeating-linear-gradient(90deg, var(--canvas-black) 0 5px, transparent 5px 7px);
@@ -398,8 +398,8 @@ body.vnc-overlay-open { overflow: hidden; }
    single source of truth so JS only ever flips one attribute. */
 .account-state[data-state="signed_in"] { background: var(--success-tint); color: var(--success); }
 .account-state[data-state="signed_in"] .dot { background: var(--success); }
-.account-state[data-state="signed_out"] { background: var(--live-tint); color: var(--live); }
-.account-state[data-state="signed_out"] .dot { background: var(--live); }
+.account-state[data-state="signed_out"] { background: var(--danger-tint); color: var(--danger); }
+.account-state[data-state="signed_out"] .dot { background: var(--danger); }
 .account-state[data-state="inconclusive"] { background: var(--warning-tint); color: var(--warning); }
 .account-state[data-state="inconclusive"] .dot { background: var(--warning); }
 .account-state[data-state="never"] { background: var(--bg-hover); color: var(--text-faint); }

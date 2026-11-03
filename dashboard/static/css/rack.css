@@ -75,7 +75,7 @@ body:has(.rack-grid) { overflow-x: hidden; }
 .zm-notes { list-style: none; padding: 0; margin: var(--space-3) 0 0; display: grid; gap: var(--space-2); }
 .zm-notes li { display: flex; gap: var(--space-2); align-items: flex-start; font-size: var(--text-xs); line-height: var(--leading-normal); color: var(--text-dim); }
 .zm-notes li .icon { flex: none; margin-top: 1px; }
-.zm-notes li.tone-bad { color: var(--live); }
+.zm-notes li.tone-bad { color: var(--danger); }
 .zm-notes li.tone-warn .icon { color: var(--warning); }
 .zm-form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0 var(--space-4); }
 .zm-options { display: grid; gap: var(--space-2); margin-top: var(--space-2); }

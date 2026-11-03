@@ -181,7 +181,7 @@ kbd {
 .text-xs { font-size: var(--text-xs); }
 .grid-cols-main-side { grid-template-columns: 1.3fr 1fr; }
 .grid-cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-.card-danger { border-color: var(--live); }
+.card-danger { border-color: var(--danger); }
 .vnc-frame-box {
   position: relative;
   border-radius: var(--radius-lg); overflow: hidden; border: var(--border-w) solid var(--glass-border);

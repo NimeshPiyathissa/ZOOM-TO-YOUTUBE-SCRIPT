@@ -199,14 +199,14 @@ main.page {
 .hero-state .state-text { font-size: var(--text-xl); font-weight: var(--weight-semibold); letter-spacing: var(--tracking-tighter); line-height: var(--leading-tight); transition: color var(--duration-slow) var(--ease-in-out); }
 .state-LIVE .state-text { color: var(--text); }
 .state-STOPPED .state-text { color: var(--text); }
-.state-ERROR .state-text { color: var(--live); }
+.state-ERROR .state-text { color: var(--danger); }
 .state-STARTING .state-text, .state-RECONNECTING .state-text { color: var(--warning); }
 .hero-state .hint { margin: 0; font-size: var(--text-sm); }
 
 /* Small status dot used by older markup (.dot-lg without a ring) */
 .dot-LIVE { background: var(--live); animation: pulse-ring 1.8s var(--ease-out) infinite; }
 .dot-STOPPED { background: var(--text-faint); }
-.dot-ERROR { background: var(--live); }
+.dot-ERROR { background: var(--danger); }
 .dot-STARTING, .dot-RECONNECTING { background: var(--warning); animation: pulse 1.4s var(--ease-in-out) infinite; }
 
 .restart-rate-badge.is-alarm .dot { animation: pulse 1s var(--ease-in-out) infinite; }
@@ -411,8 +411,8 @@ main.page {
 .hero-ring .dot-LIVE .ring-fg { stroke: var(--live); }
 .hero-ring .dot-LIVE ~ .ring-glow { opacity: 1; animation: breathe var(--duration-pulse) var(--ease-in-out) infinite; }
 .hero-ring .dot-LIVE ~ .ring-label .ring-word { color: var(--live); }
-.hero-ring .dot-ERROR .ring-fg { stroke: var(--live); stroke-dashoffset: 0; }
-.hero-ring .dot-ERROR ~ .ring-label .ring-word { color: var(--live); }
+.hero-ring .dot-ERROR .ring-fg { stroke: var(--danger); stroke-dashoffset: 0; }
+.hero-ring .dot-ERROR ~ .ring-label .ring-word { color: var(--danger); }
 .hero-ring .dot-STARTING .ring-fg, .hero-ring .dot-RECONNECTING .ring-fg { stroke: var(--warning); stroke-dashoffset: 200; }
 .hero-ring .dot-STARTING svg, .hero-ring .dot-RECONNECTING svg { animation: spin 1.4s linear infinite; }
 .hero-ring .dot-STARTING ~ .ring-label .ring-word, .hero-ring .dot-RECONNECTING ~ .ring-label .ring-word { color: var(--warning); }
@@ -483,8 +483,8 @@ main.page {
 .stat-tile-glass .cpu-cores { margin-top: var(--space-3); height: 20px; }
 .stat-foot { display: flex; align-items: center; gap: var(--space-1-5); font-size: var(--text-xs); color: var(--text-dim); margin-top: var(--space-3); }
 .stat-foot .icon { color: var(--text-faint); }
-#restart-rate-wide-tile.is-alarm { border-color: var(--live); box-shadow: 0 0 0 4px var(--live-tint); }
-#restart-rate-wide-tile.is-alarm .stat-value { color: var(--live); }
+#restart-rate-wide-tile.is-alarm { border-color: var(--danger); box-shadow: 0 0 0 4px var(--danger-tint); }
+#restart-rate-wide-tile.is-alarm .stat-value { color: var(--danger); }
 .account-line { display: flex; align-items: center; gap: var(--space-2); font-size: var(--text-sm); color: var(--text); min-width: 0; }
 .account-line .icon { color: var(--accent); }
 .account-line span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

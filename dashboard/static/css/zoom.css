@@ -6,7 +6,7 @@
    values are the four status tones, which map onto existing tokens.
    ============================================================ */
 
-.zm-grid { --zm-idle: var(--text-faint); --zm-wait: var(--warning); --zm-ok: var(--success); --zm-bad: var(--live); }
+.zm-grid { --zm-idle: var(--text-faint); --zm-wait: var(--warning); --zm-ok: var(--success); --zm-bad: var(--danger); }
 
 @media (min-width: 1200px) {
   .zm-grid {
@@ -45,14 +45,14 @@
 .zm-status-side .badge { background: var(--media-scrim); border: var(--border-w) solid var(--media-glass-border); color: var(--on-media); }
 .zm-status-side .badge-active { color: var(--success); } .zm-status-side .badge-active .dot { background: var(--success); }
 .zm-status-side .badge-activating { color: var(--warning); } .zm-status-side .badge-activating .dot { background: var(--warning); }
-.zm-status-side .badge-failed { color: var(--live); } .zm-status-side .badge-failed .dot { background: var(--live); }
+.zm-status-side .badge-failed { color: var(--danger); } .zm-status-side .badge-failed .dot { background: var(--danger); }
 .zm-status-side .badge-inactive .dot { background: var(--media-text-faint); }
 
 .zm-status[data-tone="wait"] .zm-status-icon { color: var(--zm-wait); box-shadow: 0 0 0 1px var(--zm-wait) inset; }
 .zm-status[data-tone="ok"] .zm-status-icon { color: var(--zm-ok); box-shadow: 0 0 0 1px var(--zm-ok) inset, 0 0 18px -4px var(--zm-ok); }
 .zm-status[data-tone="bad"] .zm-status-icon { color: var(--zm-bad); box-shadow: 0 0 0 1px var(--zm-bad) inset, 0 0 18px -4px var(--zm-bad); }
 .zm-status[data-tone="ok"] { border-color: color-mix(in srgb, var(--success) 45%, transparent); }
-.zm-status[data-tone="bad"] { border-color: color-mix(in srgb, var(--live) 50%, transparent); box-shadow: inset 0 0 0 1px var(--media-scrim), 0 0 0 3px var(--live-tint); }
+.zm-status[data-tone="bad"] { border-color: color-mix(in srgb, var(--danger) 50%, transparent); box-shadow: inset 0 0 0 1px var(--media-scrim), 0 0 0 3px var(--danger-tint); }
 .zm-status[data-tone="wait"] .zm-status-icon .icon { animation: zm-tick 2.4s ease-in-out infinite; }
 .zm-status.is-changed { animation: zm-pop var(--duration-base) var(--ease-out); }
 @keyframes zm-pop { from { transform: translateY(2px); opacity: 0.6; } to { transform: none; opacity: 1; } }
@@ -79,8 +79,8 @@
 .zm-guidance-body { min-width: 0; flex: 1; }
 .zm-guidance.tone-wait { background: var(--warning-tint); color: var(--text); border: var(--border-w) solid color-mix(in srgb, var(--warning) 35%, transparent); }
 .zm-guidance.tone-wait .zm-guidance-icon { color: var(--warning); }
-.zm-guidance.tone-bad { background: var(--live-tint); color: var(--text); border: var(--border-w) solid color-mix(in srgb, var(--live) 40%, transparent); }
-.zm-guidance.tone-bad .zm-guidance-icon { color: var(--live); }
+.zm-guidance.tone-bad { background: var(--danger-tint); color: var(--text); border: var(--border-w) solid color-mix(in srgb, var(--danger) 40%, transparent); }
+.zm-guidance.tone-bad .zm-guidance-icon { color: var(--danger); }
 .zm-guidance.tone-idle, .zm-guidance.tone-ok { background: var(--bg-elevated); color: var(--text); border: var(--border-w) solid var(--rm-edge); }
 .zm-guidance.tone-idle .zm-guidance-icon { color: var(--text-dim); }
 
@@ -142,7 +142,7 @@ button.zm-ctl:focus-visible { outline: 2px solid var(--accent-ring); outline-off
 @media (max-width: 480px) { .zm-paste-row { flex-wrap: wrap; } .zm-paste-row .btn { flex: 1 1 100%; } }
 
 .zm-parsed { margin: var(--space-3) 0 var(--space-4); padding: var(--space-4); border-radius: var(--radius-md); border: var(--border-w) solid var(--accent-ring); background: var(--accent-tint); }
-.zm-parsed.is-error { border-color: color-mix(in srgb, var(--live) 50%, transparent); background: var(--live-tint); }
+.zm-parsed.is-error { border-color: color-mix(in srgb, var(--danger) 50%, transparent); background: var(--danger-tint); }
 .zm-parsed-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
 .zm-parsed-head .hint { font-family: var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
 .zm-parsed-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: var(--space-3); margin-top: var(--space-3); }
@@ -184,7 +184,7 @@ button.zm-ctl:focus-visible { outline: 2px solid var(--accent-ring); outline-off
 .zm-card-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-3); }
 .zm-card-actions .btn { min-height: 40px; padding-left: var(--space-3); padding-right: var(--space-3); }
 .zm-card-actions .zm-danger { margin-left: auto; }
-.zm-card-actions .zm-danger:hover { color: var(--live); background: var(--live-tint); }
+.zm-card-actions .zm-danger:hover { color: var(--danger); background: var(--danger-tint); }
 
 /* ---------------------------------------------------------------- sticky bar (phones), floats above the global program bar */
 

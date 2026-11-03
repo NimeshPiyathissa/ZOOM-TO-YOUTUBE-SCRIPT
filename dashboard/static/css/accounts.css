@@ -52,7 +52,7 @@
 .account-state[data-state="check_failed"] { background: var(--warning-tint); color: var(--warning); }
 .account-state[data-state="wrong_account"],
 .account-state[data-state="signed_out"],
-.account-state[data-state="api_wrong_account"] { background: var(--live-tint); color: var(--live); }
+.account-state[data-state="api_wrong_account"] { background: var(--danger-tint); color: var(--danger); }
 .account-state[data-state="api_needs_reauth"],
 .account-state[data-state="api_connected_browser_signed_out"] { background: var(--warning-tint); color: var(--warning); }
 .account-state[data-state="checking"] { background: var(--bg-hover); color: var(--text-dim); }
@@ -70,7 +70,7 @@
    off (no layout shift when a verify result lands: this element's
    height already accommodates two lines via normal wrapping). */
 .account-identity { display: block; }
-.account-identity[data-wrong="1"] { color: var(--live); }
+.account-identity[data-wrong="1"] { color: var(--danger); }
 .account-identity[data-wrong="1"] strong { color: var(--text); font-weight: var(--weight-semibold); }
 
 .account-meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-3); }
@@ -79,7 +79,7 @@
 .account-card-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-3); }
 
 .ac-more .menu { min-width: 220px; }
-.ac-danger { color: var(--live); }
+.ac-danger { color: var(--danger); }
 
 .ac-add-grid { display: grid; gap: var(--space-3); }
 .ac-add-option {
