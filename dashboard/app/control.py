@@ -874,7 +874,14 @@ def _zoom_meeting_status_client() -> dict:
         data["service"] = unit_show("zoom")["phase"]
     except ControlError:
         data["service"] = "unknown"
-    if data["status"] in ("in_meeting", "waiting_room", "not_started", "connecting"):
+    if data["status"] == "in_meeting" and data.get("attendee"):
+        # A webinar attendee's toolbar has Chat / Raise hand / Q&A and no
+        # mic or camera at all - that is "not applicable", not "unreadable".
+        na = {"available": False, "state": "not_applicable",
+              "reason": "webinar attendee - Zoom shows no mic/camera controls in this view"}
+        data["mic"] = dict(na)
+        data["camera"] = dict(na)
+    elif data["status"] in ("in_meeting", "waiting_room", "not_started", "connecting"):
         data["mic"] = _zoom_atspi("mic")
         data["camera"] = _zoom_atspi("camera")
     else:
@@ -1068,6 +1075,11 @@ def zoom_apply_join_options(source: dict) -> dict:
         return report
     for kind, opt in (("mic", "audio_on"), ("camera", "video_on")):
         want = _want_state(bool(options.get(opt, False)), kind)
+        if status.get("attendee"):
+            report[kind] = {"want": want, "before": "not_applicable", "after": "not_applicable", "available": False,
+                            "note": "webinar attendee - no mic/camera controls"}
+            report["skipped"].append(kind)
+            continue
         before = _zoom_atspi(kind)
         entry = {"want": want, "before": before.get("state"), "after": before.get("state"), "available": before.get("available", False)}
         if not before.get("available") or before.get("state") in ("unknown", "no_audio"):
@@ -1109,10 +1121,12 @@ def zoom_set_meeting_only(enabled: bool) -> dict:
     toggles with no readable open/closed state anywhere in the AT-SPI
     tree, so sending one blind could just as easily open a panel that was
     already closed as close one that was open - worse than doing nothing.
-    In practice the floating toolbar already auto-hides on its own after
-    a few seconds with no real pointer activity (this VPS's Xvfb session
-    never gets one), which is Zoom's default unless an operator
-    explicitly turned "always show" on in this profile.
+    The floating toolbar auto-hides only once the pointer is off it, and
+    a VNC session leaves the pointer wherever it last was (observed
+    resting on the bottom toolbar) - so turning this on also parks the
+    pointer on an inert spot (zoom-meeting-only.sh). The encoder crop
+    (scripts/lib.sh build_meeting_only_filter) removes Zoom's top and
+    bottom bars from the output whatever Zoom does.
 
     The video-shape half (Fit vs Fill, i.e. whether bars from a
     non-16:9 meeting are left alone or cropped out) is an encoder

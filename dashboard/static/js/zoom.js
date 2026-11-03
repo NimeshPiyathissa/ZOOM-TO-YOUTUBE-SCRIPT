@@ -126,17 +126,17 @@ function renderStatus(st) {
   // in-meeting controls
   $("zm-controls").classList.toggle("is-off", !inMeeting);
   $("zm-controls-note").textContent = inMeeting ? "state read back from Zoom's toolbar" : "available once in a meeting";
-  paintCtl("mic", st.mic, { muted: "Muted", unmuted: "LIVE", no_audio: "No audio", unknown: "Unknown" }, { muted: "mic-off", unmuted: "mic", no_audio: "mic-off", unknown: "mic" });
-  paintCtl("camera", st.camera, { on: "On", off: "Off", unknown: "Unknown" }, { on: "video", off: "video-off", unknown: "video" });
+  paintCtl("mic", st.mic, { muted: "Muted", unmuted: "LIVE", no_audio: "No audio", not_applicable: "N/A (attendee)", unknown: "Unknown" }, { muted: "mic-off", unmuted: "mic", no_audio: "mic-off", not_applicable: "mic-off", unknown: "mic" });
+  paintCtl("camera", st.camera, { on: "On", off: "Off", not_applicable: "N/A (attendee)", unknown: "Unknown" }, { on: "video", off: "video-off", not_applicable: "video-off", unknown: "video" });
 }
 
 function paintCtl(kind, v, labels, icons) {
-  const state = (v && v.available && v.state) || "unknown";
+  const state = (v && v.state === "not_applicable") ? "not_applicable" : (v && v.available && v.state) || "unknown";
   const btn = $("zm-" + kind);
   btn.dataset.state = state;
   $(`zm-${kind}-state`).textContent = labels[state] || "Unknown";
   $(`zm-${kind}-icon`).innerHTML = icon(icons[state] || icons.unknown);
-  if (state === "unknown" || state === "no_audio") btn.removeAttribute("aria-pressed");
+  if (state === "unknown" || state === "no_audio" || state === "not_applicable") btn.removeAttribute("aria-pressed");
   else btn.setAttribute("aria-pressed", String(state === "unmuted" || state === "on"));
   btn.title = v && v.reason ? v.reason : (v && v.name ? `Zoom shows "${v.name}"` : "");
 }
@@ -210,8 +210,8 @@ async function control(action, btn) {
     try {
       const r = await post("/api/zoom/control", { action });
       const v = r.verify || {};
-      if (action === "mic") paintCtl("mic", v, { muted: "Muted", unmuted: "LIVE", no_audio: "No audio", unknown: "Unknown" }, { muted: "mic-off", unmuted: "mic", no_audio: "mic-off", unknown: "mic" });
-      if (action === "camera") paintCtl("camera", v, { on: "On", off: "Off", unknown: "Unknown" }, { on: "video", off: "video-off", unknown: "video" });
+      if (action === "mic") paintCtl("mic", v, { muted: "Muted", unmuted: "LIVE", no_audio: "No audio", not_applicable: "N/A (attendee)", unknown: "Unknown" }, { muted: "mic-off", unmuted: "mic", no_audio: "mic-off", not_applicable: "mic-off", unknown: "mic" });
+      if (action === "camera") paintCtl("camera", v, { on: "On", off: "Off", not_applicable: "N/A (attendee)", unknown: "Unknown" }, { on: "video", off: "video-off", not_applicable: "video-off", unknown: "video" });
       const s = v.available ? v.state : "unknown";
       toast(s === "unknown" ? `Sent to Zoom - state couldn't be read back` : `Zoom reports ${action}: ${s.replace("_", " ")}`, s === "unknown" ? "err" : "ok");
     } catch (err) { toast(err.message, "err"); }

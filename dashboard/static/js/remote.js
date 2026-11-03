@@ -652,14 +652,14 @@ const ZOOM_STATUS_CLASS = { in_meeting: "badge-active", connecting: "badge-activ
 // Mic/camera buttons show what Zoom *reports* (its own toolbar button,
 // read over AT-SPI): muted / unmuted / no audio / unknown. Never the
 // state we'd expect after a keystroke.
-const MIC_STATE_LABEL = { muted: "Mic muted", unmuted: "Mic live", no_audio: "Mic: no audio joined", unknown: "Mic: unknown" };
-const CAM_STATE_LABEL = { off: "Camera off", on: "Camera on", unknown: "Camera: unknown" };
+const MIC_STATE_LABEL = { muted: "Mic muted", unmuted: "Mic live", no_audio: "Mic: no audio joined", not_applicable: "Mic: N/A (attendee)", unknown: "Mic: unknown" };
+const CAM_STATE_LABEL = { off: "Camera off", on: "Camera on", not_applicable: "Camera: N/A (attendee)", unknown: "Camera: unknown" };
 function paintZoomReadback(which, verify) {
   const btn = document.getElementById(which === "mic" ? "z-mic" : "z-camera");
-  const state = (verify && verify.available && verify.state) || "unknown";
+  const state = (verify && verify.state === "not_applicable") ? "not_applicable" : (verify && verify.available && verify.state) || "unknown";
   const labels = which === "mic" ? MIC_STATE_LABEL : CAM_STATE_LABEL;
   const off = which === "mic" ? (state === "muted" || state === "no_audio") : state === "off";
-  const known = state !== "unknown";
+  const known = state !== "unknown" && state !== "not_applicable";
   btn.innerHTML = icon(which === "mic" ? (off ? "mic-off" : "mic") : (off ? "eye-off" : "video")) + `<span>${labels[state] || labels.unknown}</span>`;
   if (known) btn.setAttribute("aria-pressed", String(off)); else btn.removeAttribute("aria-pressed");
   btn.classList.toggle("btn-danger", known && off); btn.classList.toggle("btn-secondary", !(known && off));
@@ -730,9 +730,12 @@ function renderZoomPanel(st) {
   act.hidden = !st.action; document.getElementById("zoom-status-action-text").textContent = st.action || "";
   paintZoomReadback("mic", st.mic); paintZoomReadback("camera", st.camera);
   const unverified = [];
+  const attendee = st.mic && st.mic.state === "not_applicable";
   if (!(st.mic && st.mic.available)) unverified.push("mic");
   if (!(st.camera && st.camera.available)) unverified.push("camera");
-  document.getElementById("zoom-readback").textContent = unverified.length
+  document.getElementById("zoom-readback").textContent = attendee
+    ? "Webinar attendee view - Zoom shows no mic or camera controls here, so there is nothing to read or toggle."
+    : unverified.length
     ? `State unknown for ${unverified.join(" and ")} (${(st.mic && st.mic.reason) || (st.camera && st.camera.reason) || ""}) - buttons still send Zoom's shortcut.`
     : `Read back from Zoom's own toolbar buttons: "${st.mic.name || ""}" / "${st.camera.name || ""}".`;
 }

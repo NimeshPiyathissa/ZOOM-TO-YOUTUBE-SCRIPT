@@ -20,7 +20,7 @@ case "${1:-}" in
   *) echo "usage: $(basename "$0") mic|camera|view-speaker|view-gallery" >&2; exit 2 ;;
 esac
 
-WID="$(wmctrl -l 2>/dev/null | awk '/Zoom Meeting|Zoom Webinar|Zoom Workplace|Zoom - /{print $1; exit}')"
+WID="$(wmctrl -lGx 2>/dev/null | awk 'tolower($7) ~ /^zoom./ && $5 >= 800 && $6 >= 500 {a=$5*$6; if ($0 ~ /Zoom (Meeting|Webinar)/) a+=1e9; if (a>b) {b=a; id=$1}} END {if (id!="") print id}')"
 if [[ -z "$WID" ]]; then
   echo "Zoom meeting window not found - is zoom.service running and joined?" >&2
   exit 1

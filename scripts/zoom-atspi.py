@@ -5,6 +5,8 @@ local, non-guessing source of Zoom's own UI state on Linux.
   mic      -> the meeting toolbar's Mute/Unmute button
   camera   -> the Start/Stop Video button
   text     -> all visible strings (for zoom-status.py's phrase matching)
+  snapshot -> text + whether the visible UI is a meeting/webinar -
+              one tree walk, used by zoom-status.py
   buttons  -> every button in every *showing* Zoom window, with state -
               the calibration dump: run it once during a real meeting to
               see exactly how this Zoom build names its toolbar controls.
@@ -24,6 +26,9 @@ Output (one JSON line):
                "on"|"off"|"unknown", "name": <raw>, "description": <raw>,
                "reason": <why unavailable>}
   text:       {"available": true, "text": "<tab-joined strings>"}
+  snapshot:   {"available": true, "text": ..., "in_meeting": bool,
+               "kind": "meeting"|"webinar"|"", "attendee": bool,
+               "controls": [<matched toolbar labels>], "windows": [<titles>]}
   buttons:    {"available": true, "windows": [{"title":..,"buttons":[..]}]}
 """
 import json
@@ -34,7 +39,7 @@ import sys
 os.environ.setdefault("DBUS_SESSION_BUS_ADDRESS",
                       f"unix:path={os.environ.get('XDG_RUNTIME_DIR', '/run/user/0')}/bus")
 QUERY = (sys.argv[1] if len(sys.argv) > 1 else "mic").lower()
-if QUERY not in ("mic", "camera", "text", "buttons"):
+if QUERY not in ("mic", "camera", "text", "buttons", "snapshot"):
     print(json.dumps({"available": False, "reason": "bad-query"})); sys.exit(2)
 
 
@@ -116,6 +121,48 @@ if QUERY == "text":
     for w in windows:
         walk(w, collect)
     out({"available": True, "text": "\t".join(strings)[:6000]})
+
+if QUERY == "snapshot":
+    # Webinars (and the 7.x client generally) keep the main window titled
+    # "Zoom Workplace" while in a meeting, so the title can't be what says
+    # "in a meeting". The toolbar can: these labels only exist once a
+    # meeting/webinar UI is up. "Chat"/"Settings"/"More" are deliberately
+    # absent - the home screen's left rail has all three.
+    MEETING_CONTROLS = re.compile(
+        r"^(leave( meeting| webinar)?|end( meeting| webinar)?( for all)?|"
+        r"raise hand|lower hand|q ?& ?a|"
+        r"(un)?mute( (my )?(audio|mic(rophone)?))?|(start|stop)( my)? video|join audio|"
+        r"reactions?|participants?|attendees?|panelists?)$")
+    # Mic/camera exist for panelists and meeting participants, never for
+    # a webinar attendee - their absence next to Q&A/Raise hand is how an
+    # attendee view is told apart from a toolbar that merely isn't readable.
+    AV_CONTROLS = re.compile(r"^((un)?mute( (my )?(audio|mic(rophone)?))?|(start|stop)( my)? video|join audio)$")
+    seen, strings, controls = set(), [], []
+    def collect_snap(node):
+        try:
+            name = (node.name or "").strip()
+            role = node.getRoleName()
+        except Exception:
+            return
+        if not name or len(name) >= 300:
+            return
+        if name not in seen:
+            seen.add(name); strings.append(name)
+        if role in BUTTON_ROLES and MEETING_CONTROLS.match(_norm(name)) and name not in controls:
+            controls.append(name)
+    for w in windows:
+        walk(w, collect_snap)
+    norm = [_norm(c) for c in controls]
+    has_av = any(AV_CONTROLS.match(n) for n in norm)
+    webinar_ui = any(re.match(r"^(q ?& ?a|raise hand|lower hand)$", n) for n in norm)
+    text = "	".join(strings)
+    in_meeting = bool(controls)
+    kind = ""
+    if in_meeting:
+        kind = "webinar" if (webinar_ui and not has_av) or re.search(r"webinar", text.lower()) else "meeting"
+    out({"available": True, "text": text[:6000], "in_meeting": in_meeting, "kind": kind,
+         "attendee": in_meeting and webinar_ui and not has_av,
+         "controls": controls[:20], "windows": [w.name or "" for w in windows]})
 
 if QUERY == "buttons":
     dump = []

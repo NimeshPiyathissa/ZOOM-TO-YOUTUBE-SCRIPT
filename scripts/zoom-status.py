@@ -19,6 +19,10 @@ import json
 import os
 import re
 import subprocess
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from zoom_classify import classify_window
 
 os.environ.setdefault("DISPLAY", ":99")
 
@@ -119,7 +123,7 @@ for line in run(["wmctrl", "-lx"]).splitlines():
 signals.append("titles=" + " | ".join(titles)[:300])
 
 texts = ""
-atspi_raw = run(["/usr/bin/python3", os.path.join(os.path.dirname(__file__), "zoom-atspi.py"), "text"], timeout=12)
+atspi_raw = run(["/usr/bin/python3", os.path.join(os.path.dirname(__file__), "zoom-atspi.py"), "snapshot"], timeout=12)
 try:
     atspi = json.loads(atspi_raw.strip().splitlines()[-1]) if atspi_raw.strip() else {}
 except (json.JSONDecodeError, IndexError):
@@ -127,6 +131,8 @@ except (json.JSONDecodeError, IndexError):
 if atspi.get("available"):
     texts = atspi.get("text", "")
     signals.append("atspi=yes")
+    if atspi.get("controls"):
+        signals.append("controls=" + ",".join(atspi["controls"][:8]))
 else:
     signals.append(f"atspi={atspi.get('reason') or 'no'}")
 
@@ -143,10 +149,11 @@ for status, rx, detail, action in PHRASES:
         )[:240]
         emit(status, detail + (f" Zoom says: \"{quote}\"" if quote else ""), action)
 
-if any(re.search(r"zoom (meeting|webinar)", t, re.I) for t in titles):
-    emit("in_meeting", "A Zoom meeting/webinar window is open.", "")
-elif re.search(r"join a meeting|new meeting", texts, re.I) or any(t.strip() == "Zoom Workplace" for t in titles):
-    emit("not_joined", "Zoom is open at its home screen - not in a meeting.", "Use Join / Rejoin.")
+verdict = classify_window(titles, texts, atspi)
+if verdict:
+    status, detail, action, extra = verdict
+    signals.append("evidence=" + extra.get("evidence", "text"))
+    emit(status, detail, action, **{k: v for k, v in extra.items() if k != "evidence"})
 elif titles:
     emit("unknown", "Zoom is running but no meeting window is recognizable.",
          "Look at the remote desktop - a dialog may be waiting for input.")

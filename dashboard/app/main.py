@@ -679,7 +679,18 @@ async def _apply_join_options_later(source_id: int, timeout: float = 150.0) -> N
             if st.get("terminal") or (st.get("status") == "not_joined" and st.get("service") == control.PHASE_STOPPED):
                 _join_options_last.update({"state": "abandoned", "status": st.get("status"), "finished_at": time.time()})
                 return
-        _join_options_last.update({"state": "timeout", "finished_at": time.time()})
+        # Never saw "in a meeting" - but a main Zoom window may still be up
+        # (detection is best-effort), and Meeting-only is a window-level
+        # setting that doesn't need the toolbar. Try it once rather than
+        # leaving Zoom's chrome on screen.
+        extra: dict = {}
+        s = sources_mod.get_source(source_id)
+        if s and (s.get("options") or {}).get("meeting_only"):
+            try:
+                extra["meeting_only"] = await run_in_threadpool(control.zoom_set_meeting_only, True)
+            except control.ControlError as exc:
+                extra["meeting_only"] = {"applied": False, "note": str(exc)}
+        _join_options_last.update({"state": "timeout", "finished_at": time.time(), **extra})
     except Exception as exc:  # noqa: BLE001 - background task must not die silently
         _join_options_last.update({"state": "error", "error": str(exc)[:200], "finished_at": time.time()})
 
@@ -2343,6 +2354,15 @@ async def api_zoom_control(request: Request):
         result = await run_in_threadpool(control.zoom_shortcut, action)
     except control.ControlError as exc:
         return _api_error(exc)
+    if action.startswith("view-"):
+        # A view change can bring Zoom's bars back or drop its fullscreen
+        # state; re-assert Meeting-only (idempotent) when it's on.
+        active = sources_mod.get_active_source()
+        if active and active["type"] == "zoom" and (active.get("options") or {}).get("meeting_only"):
+            try:
+                result["meeting_only"] = await run_in_threadpool(control.zoom_set_meeting_only, True)
+            except control.ControlError as exc:
+                result["meeting_only"] = {"applied": False, "note": str(exc)}
     db.audit(session["username"], "zoom_control_" + action, ip=deps.client_ip(request))
     return result
 
