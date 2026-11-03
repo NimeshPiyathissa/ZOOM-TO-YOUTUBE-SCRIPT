@@ -149,7 +149,9 @@ for status, rx, detail, action in PHRASES:
         )[:240]
         emit(status, detail + (f" Zoom says: \"{quote}\"" if quote else ""), action)
 
-verdict = classify_window(titles, texts, atspi)
+audio = "zoom" in run(["pactl", "list", "sink-inputs"], timeout=5).lower()
+signals.append(f"audio={'zoom' if audio else 'none'}")
+verdict = classify_window(titles, texts, atspi, audio)
 if verdict:
     status, detail, action, extra = verdict
     signals.append("evidence=" + extra.get("evidence", "text"))

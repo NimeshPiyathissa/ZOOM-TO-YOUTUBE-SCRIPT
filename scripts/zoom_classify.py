@@ -7,6 +7,9 @@ title alone can never mean "not in a meeting". Order of trust:
   1. an explicit "Zoom Meeting"/"Zoom Webinar" title
   2. meeting-only toolbar controls in the AT-SPI tree (Leave, Raise hand,
      Q&A, Mute, Start Video, ...) - zoom-atspi.py's snapshot query
+  2b. Zoom playing meeting audio (a PulseAudio/PipeWire sink-input owned
+     by Zoom) - the only in-meeting signal that needs neither AT-SPI nor a
+     window title; at the home screen Zoom has no stream at all
   3. home-screen text ("Join a meeting", "Sign in", ...) => not joined
   4. a "Zoom Workplace" window whose readable UI has none of the
      home-screen text => treated as a meeting, flagged as inferred
@@ -16,7 +19,7 @@ import re
 HOME_MARKERS = re.compile(r"join a meeting|new meeting|sign in|sign up|^version:|whiteboards", re.I | re.M)
 
 
-def classify_window(titles, texts, snap):
+def classify_window(titles, texts, snap, audio=False):
     """Returns (status, detail, action, extra) or None when nothing
     recognizable is on screen (caller decides connecting/unknown)."""
     snap = snap or {}
@@ -30,6 +33,9 @@ def classify_window(titles, texts, snap):
         kind = snap.get("kind") or "meeting"
         return ("in_meeting", f"Zoom is in a {kind_word(kind)} (toolbar: {', '.join(snap.get('controls', [])[:4])}).", "",
                 {"kind": kind, "attendee": bool(snap.get("attendee")), "evidence": "controls"})
+    if audio:
+        return ("in_meeting", "Zoom is playing meeting audio - it is in a meeting/webinar (window title and toolbar aren't readable here).", "",
+                {"kind": "meeting", "attendee": False, "evidence": "audio"})
     if HOME_MARKERS.search(texts or ""):
         return ("not_joined", "Zoom is open at its home screen - not in a meeting.", "Use Join / Rejoin.", {})
     if any(t.strip() == "Zoom Workplace" for t in titles):

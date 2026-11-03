@@ -824,6 +824,9 @@ def _zoom_atspi(query: str) -> dict:
         return {"available": False, "state": "unknown", "reason": "check did not run"}
     data.setdefault("available", False)
     data.setdefault("state", "unknown")
+    if data.get("reason") == "pyatspi-not-installed":
+        data["reason"] = ("AT-SPI isn't installed on the server, so Zoom's toolbar can't be read "
+                          "(sudo apt install python3-pyatspi gir1.2-atspi-2.0)")
     data["authoritative"] = False
     return data
 

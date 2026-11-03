@@ -56,6 +56,13 @@ def test_workplace_title_with_unreadable_tree_stays_not_joined():
     assert status(["Zoom Workplace"], "", {"available": False}) == "not_joined"
 
 
+def test_audio_alone_proves_a_meeting_when_atspi_is_missing():
+    # prod 2026-11-03: no python3-pyatspi, title "Zoom Workplace", no text
+    r = classify_window(["Zoom Workplace"], "", {"available": False, "reason": "pyatspi-not-installed"}, audio=True)
+    assert r[0] == "in_meeting" and r[3]["evidence"] == "audio"
+    assert classify_window(["Zoom Workplace"], "", {"available": False}, audio=False)[0] == "not_joined"
+
+
 def test_nothing_recognizable():
     assert classify_window(["Some Dialog"], "", {"available": True}) is None
 

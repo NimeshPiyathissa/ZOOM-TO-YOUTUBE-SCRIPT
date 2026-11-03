@@ -155,7 +155,7 @@ LIBGTK3_PKG="$(pick_pkg libgtk-3-0t64 libgtk-3-0)"
 
 apt-get install -y \
   xvfb openbox x11vnc wmctrl xdotool x11-xserver-utils x11-utils unclutter \
-  at-spi2-core \
+  at-spi2-core python3-pyatspi gir1.2-atspi-2.0 \
   ffmpeg fontconfig \
   pipewire pipewire-pulse wireplumber pipewire-audio-client-libraries pulseaudio-utils \
   dbus-user-session \
