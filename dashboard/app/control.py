@@ -1128,17 +1128,39 @@ def zoom_set_meeting_only(enabled: bool) -> dict:
     (scripts/lib.sh build_meeting_only_filter) removes Zoom's top and
     bottom bars from the output whatever Zoom does.
 
-    The video-shape half (Fit vs Fill, i.e. whether bars from a
-    non-16:9 meeting are left alone or cropped out) is an encoder
-    setting, not a window one - see ZOOM_MEETING_ONLY_FIT in
-    current-source.env and scripts/stream.sh's CROP_FILTER, applied on
-    the next ffmpeg-stream start/restart."""
+    The video-shape half (Fit vs Fill) is an encoder setting, not a
+    window one - see ZOOM_MEETING_ONLY_FIT in current-source.env and
+    scripts/stream.sh, applied on the next ffmpeg-stream start/restart
+    (encoder_filter_stale() says when the running encoder is behind)."""
     argv = [SUDO, "-u", config.ZOOMBOT_USER, str(ZOOM_MEETING_ONLY_SCRIPT), "on" if enabled else "off"]
     proc = run_as_zoombot(argv, timeout=10)
     if proc.returncode != 0:
         raise ControlError(proc.stderr.decode(errors="replace").strip() or "could not change full-screen state")
     out = proc.stdout.decode(errors="replace").strip()
     return {"applied": True, "enabled": enabled, "detail": out}
+
+
+_encoder_filter_changed_at: float = 0.0
+
+
+def note_encoder_filter_changed() -> None:
+    """The meeting-only/fit settings the encoder's filter graph is built
+    from just changed (stream.sh reads them once, at process start)."""
+    global _encoder_filter_changed_at
+    _encoder_filter_changed_at = time.time()
+
+
+def encoder_filter_stale() -> bool:
+    """True when ffmpeg-stream is running but was started before the last
+    note_encoder_filter_changed() - i.e. it still has the old filter."""
+    if not _encoder_filter_changed_at:
+        return False
+    try:
+        info = unit_show("ffmpeg-stream")
+    except ControlError:
+        return False
+    up = info.get("uptime_seconds")
+    return info["phase"] in (PHASE_LIVE, PHASE_STARTING) and up is not None         and (time.time() - up) < _encoder_filter_changed_at
 
 
 def zoom_quit_to_slate() -> list[dict]:

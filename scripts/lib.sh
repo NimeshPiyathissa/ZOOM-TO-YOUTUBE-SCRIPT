@@ -206,3 +206,45 @@ wait_for_x() {
     sleep 0.5
   done
 }
+
+# "Meeting only" encoder filter -> $MEETING_ONLY_FILTER (empty when off).
+# Args: out_w out_h fit(fit|fill) trim_top trim_bottom.
+#
+# Zoom keeps drawing its own chrome around the video (top bar with the
+# meeting title/REC/Sign in, the bottom toolbar, the side-panel arrow),
+# and neither fullscreen nor parking the pointer reliably removes all of
+# it, so the top/bottom bands are cut out here - the one place that is
+# guaranteed to be hidden in the output. What is left is the meeting
+# area, and it is never stretched:
+#   fit  - the whole meeting area, scaled to fit, letterboxed with the
+#          smallest bars that preserves its shape;
+#   fill - the smallest centred crop that makes the meeting area exactly
+#          the output shape (no bars), then scaled up.
+# All sizes are rounded to even numbers (yuv420p needs that).
+build_meeting_only_filter() {
+  local out_w="$1" out_h="$2" fit="${3:-fit}" top="${4:-56}" bottom="${5:-96}"
+  MEETING_ONLY_FILTER=""
+  [[ "$out_w" =~ ^[0-9]+$ && "$out_h" =~ ^[0-9]+$ ]] || return 0
+  [[ "$top" =~ ^[0-9]+$ ]] || top=56
+  [[ "$bottom" =~ ^[0-9]+$ ]] || bottom=96
+  # Never trim away more than a third of the frame, whatever was configured.
+  local max=$((out_h / 6))
+  (( top > max )) && top=$max
+  (( bottom > max )) && bottom=$max
+  top=$((top / 2 * 2)); bottom=$((bottom / 2 * 2))
+  local rw=$out_w rh=$((out_h - top - bottom))
+  rh=$((rh / 2 * 2))
+  if [[ "$fit" == "fill" ]]; then
+    local cw ch
+    if (( rw * out_h > rh * out_w )); then   # meeting area wider than output: trim the sides
+      ch=$rh; cw=$((rh * out_w / out_h))
+    else                                     # taller: trim top/bottom
+      cw=$rw; ch=$((rw * out_h / out_w))
+    fi
+    cw=$((cw / 2 * 2)); ch=$((ch / 2 * 2))
+    local cx=$(( (rw - cw) / 2 / 2 * 2 )) cy=$(( top + (rh - ch) / 2 / 2 * 2 ))
+    MEETING_ONLY_FILTER="crop=${cw}:${ch}:${cx}:${cy},scale=${out_w}:${out_h}:flags=lanczos,setsar=1"
+  else
+    MEETING_ONLY_FILTER="crop=${rw}:${rh}:0:${top},scale=${out_w}:${out_h}:force_original_aspect_ratio=decrease:flags=lanczos,pad=${out_w}:${out_h}:(ow-iw)/2:(oh-ih)/2:black,setsar=1"
+  fi
+}

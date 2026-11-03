@@ -102,7 +102,11 @@
         <button class="seg-btn is-active" data-value="fit">Fit - minimal bars</button>
         <button class="seg-btn" data-value="fill">Fill - no bars, slight crop</button>
       </div>
-      <div class="hint m-0" id="zm-meeting-only-hint">Hides the WM window border via true full screen and re-applies after every join, rejoin and view change. Doesn't touch Zoom's chat/participants panels or mic/camera. Fill changes the encoder's filter graph, so it only takes effect on the next stream (re)start.</div>
+      <div class="zm-mo-pending" id="zm-mo-pending" role="status" hidden>
+        <span>The live encoder still has the old crop/fit - this applies on the next stream start.</span>
+        <button type="button" id="zm-mo-restart" class="btn btn-secondary btn-sm">{{ icon("refresh-cw", "icon-sm") }}Restart stream to apply</button>
+      </div>
+      <div class="hint m-0" id="zm-meeting-only-hint">Full-screens Zoom, parks the pointer so its toolbar can auto-hide, and cuts Zoom's top and bottom bars out of the stream. Fit shows the whole meeting area with the smallest bars; Fill crops the least needed to remove them. Neither stretches. Re-applied after every join, rejoin and view change. Changing Fit/Fill or turning this on or off while live restarts the encoder (a few seconds) - you'll be asked first.</div>
     </div>
   </section>
 

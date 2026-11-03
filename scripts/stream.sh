@@ -90,19 +90,15 @@ if [[ -n "$WATERMARK_FILTER" && "$SOURCE_TYPE" == "direct" && "${DIRECT_MODE:-re
   log "Watermark is enabled but DIRECT_MODE=copy can't carry a burned-in filter - re-encoding this run instead"
 fi
 
-# "Meeting only" full-frame mode, Fill sub-option: a fixed, modest edge
-# trim + scale back to the target resolution - not dynamic black-bar
-# detection (ffmpeg's cropdetect only logs detected bounds, it doesn't
-# feed them back into the same single-pass filter graph), so this is a
-# deliberate approximation for the common cases (gallery tiles not quite
-# 16:9, a 4:3 screen share centered with side bars), not a tracked crop
-# of the actual content region. Fit mode (the default) adds no filter at
-# all - ZOOM_MEETING_ONLY_FIT only matters once ZOOM_MEETING_ONLY=1.
+# "Meeting only" full-frame mode: cut Zoom's own top/bottom chrome out of
+# the output and fit or fill what is left (see lib.sh's
+# build_meeting_only_filter). Changing it needs an encoder restart, which
+# the dashboard offers when the stream is live.
 CROP_FILTER=""
-if [[ "$SOURCE_TYPE" == "zoom" && "${ZOOM_MEETING_ONLY:-0}" == "1" && "${ZOOM_MEETING_ONLY_FIT:-fit}" == "fill" ]]; then
-  FILL_PCT="${ZOOM_MEETING_ONLY_FILL_PCT:-8}"
-  CROP_FILTER="crop=iw*(100-${FILL_PCT})/100:ih*(100-${FILL_PCT})/100,scale=${RESOLUTION%x*}:${RESOLUTION#*x}"
-  log "Meeting-only Fill: cropping ${FILL_PCT}% and rescaling to ${RESOLUTION}"
+if [[ "$SOURCE_TYPE" == "zoom" && "${ZOOM_MEETING_ONLY:-0}" == "1" ]]; then
+  build_meeting_only_filter "${RESOLUTION%x*}" "${RESOLUTION#*x}" "${ZOOM_MEETING_ONLY_FIT:-fit}"     "${ZOOM_MEETING_ONLY_TRIM_TOP:-56}" "${ZOOM_MEETING_ONLY_TRIM_BOTTOM:-96}"
+  CROP_FILTER="$MEETING_ONLY_FILTER"
+  log "Meeting-only (${ZOOM_MEETING_ONLY_FIT:-fit}): ${CROP_FILTER}"
 fi
 
 # ---------------------------------------------------------------- encode args

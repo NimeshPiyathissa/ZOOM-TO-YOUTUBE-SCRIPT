@@ -413,3 +413,7 @@ body.vnc-overlay-open { overflow: hidden; }
   .signin-vnc { min-height: 40vh; }
 }
 
+
+/* noVNC's default screen div is grey with overflow:auto - keep the letterbox
+   the box's own ink and never show scrollbars (zoom/pan is done in JS). */
+.rd-stage > div { background: transparent !important; overflow: hidden !important; }

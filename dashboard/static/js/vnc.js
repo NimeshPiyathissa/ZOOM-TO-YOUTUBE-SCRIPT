@@ -221,6 +221,10 @@ scaleBtn?.addEventListener("click", () => {
   scaleMode = !scaleMode;
   if (rfb) {
     rfb.scaleViewport = scaleMode;
+    // Actual 1:1 is bigger than the box: let it be dragged around rather
+    // than silently cropped to the centre.
+    rfb.clipViewport = !scaleMode;
+    rfb.dragViewport = !scaleMode;
   }
   scaleBtn.setAttribute("aria-pressed", String(scaleMode));
   if (scaleText) scaleText.textContent = scaleMode ? "Fit Window" : "Actual 1:1";

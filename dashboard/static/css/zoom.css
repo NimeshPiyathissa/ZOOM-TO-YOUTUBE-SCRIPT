@@ -204,3 +204,13 @@ button.zm-ctl:focus-visible { outline: 2px solid var(--accent-ring); outline-off
   .zm-sticky-status { flex: 1; text-align: right; font-size: var(--text-xs); color: var(--text-dim); padding-right: var(--space-2); }
   .page:has(.zm-grid) { padding-bottom: calc(var(--mobile-bar-h) * 2 + var(--space-8)); }
 }
+
+/* Meeting-only: the running encoder still has the old crop/fit */
+.zm-mo-pending { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); padding: var(--space-2) var(--space-3); border: 1px solid var(--warning, #d9a400); border-radius: var(--radius-md, 10px); background: color-mix(in srgb, var(--warning, #d9a400) 12%, transparent); font-size: var(--text-sm, .875rem); }
+.zm-mo-pending[hidden] { display: none; }
+
+/* noVNC's own screen div defaults to overflow:auto on a grey (#282828)
+   background - scrollbars and grey bars inside the 16:9 box. The framebuffer
+   is autoscaled to fit, so clip it and let the box's own ink show. */
+.zm-vnc-stage > div { width: 100% !important; height: 100% !important; display: flex !important; align-items: center !important; justify-content: center !important; overflow: hidden !important; background: transparent !important; }
+.zm-vnc-stage canvas { outline: none; }

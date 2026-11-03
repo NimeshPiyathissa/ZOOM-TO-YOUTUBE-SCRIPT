@@ -58,3 +58,25 @@ def test_workplace_title_with_unreadable_tree_stays_not_joined():
 
 def test_nothing_recognizable():
     assert classify_window(["Some Dialog"], "", {"available": True}) is None
+
+
+@pytest.mark.skipif(not (shutil.which("bash") and shutil.which("ffmpeg")), reason="needs bash + ffmpeg")
+@pytest.mark.parametrize("fit", ["fit", "fill"])
+def test_meeting_only_filter_never_stretches(fit, tmp_path):
+    lib = (SCRIPTS / "lib.sh").read_text(encoding="utf-8")
+    fn = lib[lib.index("build_meeting_only_filter() {"):]
+    script = tmp_path / "fn.sh"
+    script.write_text(fn, encoding="utf-8", newline="\n")
+    out = subprocess.run(["bash", "-c", f'source "{script.as_posix()}"; build_meeting_only_filter 1920 1080 {fit} 56 96; echo "$MEETING_ONLY_FILTER"'],
+                         capture_output=True, text=True, check=True).stdout.strip()
+    assert out.startswith("crop=")
+    pic = subprocess.run(["ffmpeg", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc2=size=1920x1080:rate=1",
+                          "-vf", out, "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
+                         capture_output=True, check=True).stdout
+    assert len(pic) == 1920 * 1080 * 3          # always exactly the output size
+    if fit == "fill":
+        # no black bars: first and last rows both carry picture content
+        assert any(pic[:1920 * 3]) and any(pic[-1920 * 3:])
+    else:
+        # letterboxed: top and bottom rows are pad (black), middle is picture
+        assert not any(pic[:1920 * 3]) and not any(pic[-1920 * 3:])

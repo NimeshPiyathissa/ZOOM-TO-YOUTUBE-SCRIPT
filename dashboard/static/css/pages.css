@@ -168,7 +168,11 @@
 /* ---------------------------------------------------------------- Remote GUI (/vnc)
    Only the chrome around the viewport is styled; the noVNC canvas
    area stays a plain black device surface. */
-.vnc-container { display: flex; flex-direction: column; gap: var(--space-3); width: 100%; }
+/* The container fills the viewport below the topbar and the card takes
+   whatever the header leaves (flex), so the screen is never short by a
+   guessed header height - no page scroll, no dead strip under the card. */
+.vnc-container { display: flex; flex-direction: column; gap: var(--space-3); width: 100%; min-height: calc(100dvh - var(--topbar-h) - var(--shell-gap) * 2 - var(--space-6) - var(--space-8)); }
+.vnc-container .vnc-head { margin-bottom: 0; flex: none; }
 .vnc-head { margin-bottom: var(--space-2); }
 .vnc-title-group { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-3); }
 .vnc-title-group h1 { margin: 0; }
@@ -176,7 +180,7 @@
 .vnc-toolbar { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
 .vnc-viewport-card {
   position: relative; width: 100%;
-  height: calc(100dvh - var(--topbar-h) - var(--shell-gap) * 2 - 150px); min-height: 480px;
+  flex: 1 1 auto; min-height: 420px;
   background: var(--canvas-black); border-radius: var(--radius-xl); border: var(--border-w) solid var(--glass-border);
   overflow: hidden;
   /* Grid, not flex: the quick bar sizes to its content and the stage gets
@@ -198,6 +202,8 @@
 .vnc-quick-bar .hint { color: var(--media-text-faint); font-family: var(--font-mono); }
 .vnc-quick-left, .vnc-quick-right { display: flex; align-items: center; gap: var(--space-1); flex-wrap: wrap; }
 @media (max-width: 767px) {
-  .vnc-viewport-card { height: 62dvh; min-height: 320px; border-radius: var(--radius-lg); }
+  .vnc-viewport-card { flex: none; height: 62dvh; min-height: 320px; border-radius: var(--radius-lg); }
   .vnc-quick-right { display: none; }
 }
+
+.vnc-screen-stage > div { background: transparent !important; }

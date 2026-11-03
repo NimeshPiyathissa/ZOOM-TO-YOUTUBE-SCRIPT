@@ -772,18 +772,35 @@ function renderMeetingOnlyBtn(s) {
     b.setAttribute("aria-pressed", String(on));
   });
 }
-async function applyMeetingOnlyRemote(enabled, fit) {
+const moPending = document.getElementById("z-mo-pending");
+async function applyMeetingOnlyRemote(enabled, fit, restart = false) {
   const s = sourceById(activeSourceId); if (!s) return;
   try {
-    const r = await post("/api/zoom/meeting-only", { enabled, fit: fit || (s.options || {}).meeting_only_fit || "fit" });
+    const body = { enabled, fit: fit || (s.options || {}).meeting_only_fit || "fit", restart };
+    let r = await post("/api/zoom/meeting-only", body);
     const win = r.window || {};
     const bits = [enabled ? "Meeting only on" : "Meeting only off"];
     if (enabled && win.applied === false) bits.push(`window: ${win.note || "not applied"}`);
-    if (r.restart_needed) bits.push("Fill needs the stream restarted to take effect");
-    toast(bits.join(" · "), win.applied === false ? "err" : "ok");
+    if (r.restart_needed) {
+      // Live: crop/fit lives in ffmpeg's filter graph, so applying it means
+      // an encoder restart - ask first, it drops the stream for a few seconds.
+      if (await confirmDialog("The live stream's encoder has to restart for this crop/fit to apply - the stream drops for a few seconds and YouTube reconnects. Restart it now?", { confirmText: "Restart stream" })) {
+        r = await post("/api/zoom/meeting-only", { ...body, restart: true });
+        bits.push(r.restarted ? "stream restarted" : "restart failed");
+      } else bits.push("applies on next stream restart");
+    }
+    moPending.hidden = !r.restart_needed;
+    toast(bits.join(" · "), win.applied === false || (r.window && r.window.restart_error) ? "err" : "ok");
     await syncSources();
   } catch (err) { toast(err.message, "err"); }
 }
+document.getElementById("z-mo-restart").addEventListener("click", (e) => withLoading(e.currentTarget, async () => {
+  const s = sourceById(activeSourceId); if (!s) return;
+  if (!(await confirmDialog("Restart the encoder now? The stream drops for a few seconds and YouTube reconnects.", { confirmText: "Restart stream" }))) return;
+  const o = s.options || {};
+  await applyMeetingOnlyRemote(!!o.meeting_only, o.meeting_only_fit || "fit", true);
+}));
+apiFetch("/api/zoom/meeting-only").then((r) => { moPending.hidden = !r.pending_restart; }).catch(() => {});
 document.getElementById("z-meeting-only").addEventListener("click", (e) => withLoading(e.currentTarget, () => {
   const nowOn = e.currentTarget.getAttribute("aria-pressed") === "true";
   return applyMeetingOnlyRemote(!nowOn);
