@@ -171,7 +171,7 @@
 /* The container fills the viewport below the topbar and the card takes
    whatever the header leaves (flex), so the screen is never short by a
    guessed header height - no page scroll, no dead strip under the card. */
-.vnc-container { display: flex; flex-direction: column; gap: var(--space-3); width: 100%; min-height: calc(100dvh - var(--topbar-h) - var(--shell-gap) * 2 - var(--space-6) - var(--space-8)); }
+.vnc-container { display: flex; flex-direction: column; gap: var(--space-3); width: 100%; min-height: calc(100dvh - var(--topbar-h) - var(--shell-gap) * 2 - var(--space-6) - var(--space-12)); }
 .vnc-container .vnc-head { margin-bottom: 0; flex: none; }
 .vnc-head { margin-bottom: var(--space-2); }
 .vnc-title-group { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-3); }
