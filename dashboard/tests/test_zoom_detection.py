@@ -87,3 +87,21 @@ def test_meeting_only_filter_never_stretches(fit, tmp_path):
     else:
         # letterboxed: top and bottom rows are pad (black), middle is picture
         assert not any(pic[:1920 * 3]) and not any(pic[-1920 * 3:])
+
+
+def test_encoder_filter_stale_tracks_encoder_start(monkeypatch):
+    """restart_needed means "the running encoder started before the last
+    Fit/Fill change" - not "the setting differs from some default"."""
+    import time as _t
+    from app import control
+    monkeypatch.setattr(control, "_encoder_filter_changed_at", 0.0)
+    live = {"phase": control.PHASE_LIVE, "uptime_seconds": 600}
+    monkeypatch.setattr(control, "unit_show", lambda unit: dict(live))
+    assert control.encoder_filter_stale() is False          # nothing changed yet
+    control.note_encoder_filter_changed()
+    assert control.encoder_filter_stale() is True           # started 10 min before the change
+    live["uptime_seconds"] = 0                              # restarted just now
+    assert control.encoder_filter_stale() is False
+    live.update(phase=control.PHASE_STOPPED, uptime_seconds=None)
+    control.note_encoder_filter_changed()
+    assert control.encoder_filter_stale() is False          # stopped encoder picks it up on next start

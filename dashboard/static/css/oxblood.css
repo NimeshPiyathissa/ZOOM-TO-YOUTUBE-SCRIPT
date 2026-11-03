@@ -282,6 +282,15 @@ tbody tr:hover { background: var(--accent-tint); }
 .mobile-bar { border-radius: 20px; border-color: var(--border); }
 @media (max-width: 767px) {
   .sidebar { border-radius: 0 22px 22px 0; }
+  /* The mobile drawer is always the full sidebar, whatever the desktop
+     rail preference (persisted is-collapsed) says. */
+  .app-shell.is-collapsed .nav-item span.label, .app-shell.is-collapsed .sidebar-brand span.label { opacity: 1; transform: none; width: auto; pointer-events: auto; }
+  .app-shell.is-collapsed .nav-item { gap: var(--space-3); justify-content: flex-start; padding: 0 var(--space-3); height: 40px; }
+  .app-shell.is-collapsed .nav-group-label { opacity: 0.75; height: auto; padding: 0 var(--space-3) var(--space-1-5); }
+  .app-shell.is-collapsed .nav-group { border-top: 0; padding-top: 0; margin-top: var(--space-5); }
+  .app-shell.is-collapsed .sidebar-brand { justify-content: flex-start; padding: 0 var(--space-5); }
+  .app-shell.is-collapsed .sidebar-nav { padding-left: var(--space-3); padding-right: var(--space-3); }
+  .app-shell.is-collapsed .nav-item[data-tooltip]::after { display: none; }
 }
 
 /* ---------------------------------------------------------------- login: split screen */
@@ -372,6 +381,11 @@ body:not(:has(.app-shell)) { overflow-x: hidden; }
   .login-art p, .login-art .login-art-foot { display: none; }
   .login-card { margin: calc(var(--space-6) * -1) auto var(--space-8); width: min(440px, calc(100% - var(--space-8))); z-index: 1; }
 }
+
+/* ---------------------------------------------------------------- page hero titles (Live Studio, Text Overlays) */
+
+.overlay-title, .studio-title { font-family: var(--font-display); font-weight: var(--weight-black); letter-spacing: -0.045em; font-size: clamp(24px, 2.6vw, 32px); }
+.studio-tally-strip, .overlay-hero, .studio-hero { border-radius: var(--radius-xl); }
 
 /* ---------------------------------------------------------------- reduced motion */
 @media (prefers-reduced-motion: reduce) {

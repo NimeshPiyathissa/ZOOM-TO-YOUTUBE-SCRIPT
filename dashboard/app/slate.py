@@ -76,7 +76,7 @@ def generate_brb_js(state: dict) -> str:
         slate.style.inset = '0';
         slate.style.width = '100vw';
         slate.style.height = '100vh';
-        slate.style.background = 'radial-gradient(circle at center, #131b2e 0%, #070a0f 100%)';
+        slate.style.background = 'radial-gradient(circle at 50% 38%, #2a1214 0%, #140c0c 55%, #0b0808 100%)';
         slate.style.zIndex = '2147483647';
         slate.style.display = 'flex';
         slate.style.flexDirection = 'column';
@@ -90,12 +90,12 @@ def generate_brb_js(state: dict) -> str:
         slate.style.pointerEvents = 'auto';
 
         slate.innerHTML = `
-          <div style="display:inline-flex; align-items:center; gap:10px; background:rgba(239,68,68,0.15); border:1px solid rgba(239,68,68,0.4); padding:6px 18px; border-radius:9999px; margin-bottom:28px;">
-            <span style="width:12px; height:12px; border-radius:50%; background:#ef4444; box-shadow:0 0 12px #ef4444;"></span>
-            <span style="font-size:14px; font-weight:700; letter-spacing:2.5px; color:#fca5a5; text-transform:uppercase;">Stream Paused</span>
+          <div style="display:inline-flex; align-items:center; gap:10px; background:rgba(233,201,143,0.14); border:1px solid rgba(233,201,143,0.4); padding:6px 18px; border-radius:9999px; margin-bottom:28px;">
+            <span style="width:12px; height:12px; border-radius:50%; background:#e9c98f; box-shadow:0 0 14px #e9c98f;"></span>
+            <span style="font-size:14px; font-weight:700; letter-spacing:2.5px; color:#e9c98f; text-transform:uppercase;">Stream Paused</span>
           </div>
           <h1 id="brb-slate-title" style="font-size:clamp(32px, 5vw, 64px); font-weight:800; letter-spacing:-1px; margin:0 0 16px 0; text-shadow:0 4px 24px rgba(0,0,0,0.7); max-width:850px; line-height:1.15;"></h1>
-          <p id="brb-slate-sub" style="font-size:clamp(16px, 2.5vw, 24px); color:#94a3b8; margin:0; font-weight:400; max-width:650px; line-height:1.4;"></p>
+          <p id="brb-slate-sub" style="font-size:clamp(16px, 2.5vw, 24px); color:#c9bbb8; margin:0; font-weight:400; max-width:650px; line-height:1.4;"></p>
         `;
         (document.body || document.documentElement).appendChild(slate);
       }}
