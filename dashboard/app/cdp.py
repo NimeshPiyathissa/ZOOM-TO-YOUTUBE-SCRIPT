@@ -30,7 +30,10 @@ async def _get_json(path: str) -> object:
     last: Exception | None = None
     for attempt in range(2):
         try:
-            async with httpx.AsyncClient(timeout=3) as client:
+            # verify=False: this is plain http to 127.0.0.1, but httpx still builds a TLS context
+            # (loading the CA bundle) per client unless told not to - measured ~500 ms CPU per call
+            # on a small box vs ~1 ms. Nothing here is ever sent over TLS.
+            async with httpx.AsyncClient(timeout=3, verify=False) as client:
                 resp = await client.get(url)
                 resp.raise_for_status()
                 return resp.json()
