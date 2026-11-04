@@ -24,7 +24,7 @@ wait_for_x
 ZOOM_WEB_MODE=0
 if [[ "$SOURCE_TYPE" == "zoom" && "${ZOOM_JOIN_VIA:-client}" == "web" ]]; then
   ZOOM_WEB_MODE=1
-elif [[ "$SOURCE_TYPE" != "webpage" ]]; then
+elif [[ "$SOURCE_TYPE" != "webpage" && "$SOURCE_TYPE" != "edumix" ]]; then
   log "SOURCE_TYPE is '$SOURCE_TYPE' (join_via=${ZOOM_JOIN_VIA:-client}), not for this unit - nothing to do, exiting cleanly"
   # Not an error: the dashboard stops this unit when switching away from
   # a source it serves, but systemd may race a leftover start. Exit 0 so
@@ -51,6 +51,18 @@ if [[ "$ZOOM_WEB_MODE" == "1" ]]; then
   TARGET_URL="https://${ZOOM_HOST}/wc/join/${CONFNO}"
   [[ -n "$PWD_PARAM" ]] && TARGET_URL="${TARGET_URL}?pwd=${PWD_PARAM}"
   [[ -n "$TK_PARAM" ]] && TARGET_URL="${TARGET_URL}$([[ "$TARGET_URL" == *\?* ]] && echo '&' || echo '?')tk=${TK_PARAM}"
+elif [[ "$SOURCE_TYPE" == "edumix" ]]; then
+  # EduMix (mjphysics.lk): the real site in Chrome, in its own isolated
+  # persistent profile. The operator logs in by hand over the interactive
+  # preview - nothing here types a phone number, OTP or password. The URL
+  # was validated by the dashboard (app/edumix.py: https, mjphysics.lk
+  # only); re-checked here as defence in depth.
+  TARGET_URL="${EDUMIX_URL:-}"
+  BS=$'\\'
+  if [[ "$TARGET_URL" == *"$BS"* || ! "$TARGET_URL" =~ ^https://([a-z0-9-]+\.)*mjphysics\.lk(/[^[:space:]]*)?$ ]]; then
+    log "SOURCE_TYPE=edumix but EDUMIX_URL is missing or not an https://mjphysics.lk link - refusing to start"
+    exit 1
+  fi
 else
   if [[ -z "${WEBPAGE_URL:-}" ]]; then
     log "SOURCE_TYPE=webpage but WEBPAGE_URL is empty - refusing to start"
@@ -72,7 +84,13 @@ fi
 # profile from chrome-account.sh, where the human signed in over noVNC)
 # when one is bound; otherwise the shared stream profile as before.
 PROFILE_DIR="$HOME/.config/stream-chrome-profile"
-if [[ -n "${ACCOUNT_PROFILE_ID:-}" && "${ACCOUNT_PROFILE_ID}" =~ ^[a-z0-9][a-z0-9-]{0,39}$ \
+if [[ "$SOURCE_TYPE" == "edumix" ]]; then
+  # Isolated profile, owner-only: it holds the EduMix session cookies.
+  PROFILE_DIR="$HOME/.config/chrome-profiles/edumix"
+  mkdir -p "$PROFILE_DIR"
+  chmod 700 "$HOME/.config/chrome-profiles" "$PROFILE_DIR" 2>/dev/null || true
+  log "Using isolated EduMix profile"
+elif [[ -n "${ACCOUNT_PROFILE_ID:-}" && "${ACCOUNT_PROFILE_ID}" =~ ^[a-z0-9][a-z0-9-]{0,39}$ \
       && -d "$HOME/.config/chrome-profiles/${ACCOUNT_PROFILE_ID}" ]]; then
   PROFILE_DIR="$HOME/.config/chrome-profiles/${ACCOUNT_PROFILE_ID}"
   log "Using bound account profile ${ACCOUNT_PROFILE_ID}"
@@ -120,6 +138,9 @@ if [[ "$ZOOM_WEB_MODE" == "1" ]]; then
   # TARGET_URL carries pwd=/tk= for a zoom-web join - never logged, same
   # discipline as join-zoom.sh's deep link (see its comment on this).
   log "Starting Chrome kiosk: mode=zoom-web confno=${CONFNO}${TK_PARAM:+ (registrant token present)}"
+elif [[ "$SOURCE_TYPE" == "edumix" ]]; then
+  # Path only - a class URL's query string is never logged.
+  log "Starting Chrome kiosk: mode=edumix path=$(sed -E 's#^https://[^/]+##; s#\?.*$##' <<<"$TARGET_URL")"
 else
   log "Starting Chrome kiosk: mode=webpage url=${TARGET_URL} zoom=${ZOOM_LEVEL} reload=${RELOAD_SECONDS}s"
 fi

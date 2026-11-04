@@ -3,7 +3,7 @@
   "/": ("Monitor", "Overview"), "/logs": ("Monitor", "Logs"), "/audit": ("Monitor", "Audit"),
   "/studio": ("Broadcast", "Live Studio"), "/controls": ("Broadcast", "Controls"),
   "/overlay": ("Broadcast", "Text Overlays"), "/schedule": ("Broadcast", "Schedule"),
-  "/zoom": ("Sources", "Zoom"), "/remote": ("Sources", "Remote"), "/accounts": ("Sources", "Accounts"),
+  "/zoom": ("Sources", "Zoom"), "/edumix": ("Sources", "EduMix"), "/remote": ("Sources", "Remote"), "/accounts": ("Sources", "Accounts"),
   "/vnc": ("System", "Remote GUI"), "/settings": ("System", "Settings"), "/config": ("System", "Settings"),
 } -%}
 {%- set page_meta = PAGES.get(request.url.path, ("", "")) -%}
@@ -90,6 +90,7 @@
       <div class="nav-group">
         <div class="nav-group-label">Sources</div>
         {{ navitem("/zoom", "hg-zoom", "Zoom", request.url.path == '/zoom') }}
+        {{ navitem("/edumix", "hg-zoom", "EduMix", request.url.path == '/edumix') }}
         {{ navitem("/remote", "hg-remote", "Remote", request.url.path == '/remote') }}
         {{ navitem("/accounts", "hg-accounts", "Accounts", request.url.path == '/accounts') }}
       </div>

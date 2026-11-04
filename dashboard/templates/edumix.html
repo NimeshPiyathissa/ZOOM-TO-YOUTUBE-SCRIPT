@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon %}
+{% block title %}EduMix - Zoom Stream Dashboard{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{{ static_url('css/rack.css') }}"><link rel="stylesheet" href="{{ static_url('css/edumix.css') }}">{% endblock %}
+{% block content %}
+
+<header class="page-header">
+  <div>
+    <h1>EduMix Live</h1>
+    <p class="page-desc">Sign in to {{ edumix_host }} on the real site, open a class, and watch the player and connection state.</p>
+  </div>
+  <span class="badge badge-inactive" id="em-capture-badge" title="{{ capture.reason }}">{{ icon("lock", "icon-sm") }}View only &middot; capture off</span>
+</header>
+
+<div class="em-grid">
+
+  <!-- ============================================================ class + status -->
+  <section class="card em-class" aria-labelledby="em-class-h">
+    <h2 id="em-class-h" class="rack-title">{{ icon("link", "icon-sm") }}Class</h2>
+
+    <form id="em-form" class="em-form" autocomplete="off" novalidate>
+      <label class="label" for="em-url">MJPhysics class URL</label>
+      <div class="em-url-row">
+        <input class="input input-mono" id="em-url" type="url" inputmode="url" spellcheck="false" autocapitalize="off"
+               placeholder="https://{{ edumix_host }}/class/…" value="{{ edumix_source.url if edumix_source else '' }}" aria-describedby="em-url-hint">
+        <button class="btn btn-primary btn-touch" id="em-open" type="submit">{{ icon("play") }}Open class</button>
+      </div>
+      <div class="hint" id="em-url-hint">Only <span class="readout">https://{{ edumix_host }}</span> links are accepted. The link's query string is never logged.</div>
+      <div class="em-url-error" id="em-url-error" role="alert" hidden></div>
+    </form>
+
+    <div class="em-status" id="em-status" data-level="idle" role="status" aria-live="polite">
+      <div class="em-status-icon" id="em-status-icon">{{ icon("circle-help") }}</div>
+      <div class="em-status-body">
+        <div class="em-status-label" id="em-status-label">Checking…</div>
+        <div class="em-status-hint" id="em-status-hint"></div>
+      </div>
+    </div>
+
+    <div class="em-chips" aria-label="Connection details">
+      <span class="em-chip" id="em-chip-view" data-level="idle">{{ icon("monitor", "icon-sm") }}<span><b>Live view</b><i id="em-chip-view-t">connecting</i></span></span>
+      <span class="em-chip" id="em-chip-session" data-level="idle">{{ icon("shield-check", "icon-sm") }}<span><b>Session</b><i id="em-chip-session-t">unknown</i></span></span>
+      <span class="em-chip" id="em-chip-player" data-level="idle">{{ icon("video", "icon-sm") }}<span><b>Player</b><i id="em-chip-player-t">none</i></span></span>
+      <span class="em-chip" id="em-chip-net" data-level="idle">{{ icon("wifi", "icon-sm") }}<span><b>Network</b><i id="em-chip-net-t">unknown</i></span></span>
+    </div>
+
+    <div class="btn-row em-actions">
+      <button class="btn btn-secondary btn-touch" id="em-login">{{ icon("log-in") }}Login / Reauthenticate</button>
+      <button class="btn btn-secondary btn-touch" id="em-helper">{{ icon("keyboard") }}Sign-in helper</button>
+      <button class="btn btn-secondary btn-touch" id="em-reconnect">{{ icon("rotate-cw") }}Reconnect</button>
+      <button class="btn btn-danger btn-touch" id="em-stop">{{ icon("square") }}Stop</button>
+    </div>
+
+    <div class="em-options">
+      <label class="em-check"><input type="checkbox" id="em-opt-auto" checked><span>Open the class automatically once signed in</span></label>
+    </div>
+  </section>
+
+  <!-- ============================================================ preview -->
+  <section class="card em-preview-card" aria-labelledby="em-preview-h">
+    <h2 id="em-preview-h" class="rack-title">{{ icon("monitor", "icon-sm") }}Live view
+      <span class="rack-title-end hint m-0">the real site, in an isolated browser profile</span></h2>
+
+    <div class="em-toolbar">
+      <div class="segmented" id="em-fit-seg" role="group" aria-label="Preview fit">
+        <button class="seg-btn is-active" data-fit="fit" type="button" aria-pressed="true">Fit</button>
+        <button class="seg-btn" data-fit="fill" type="button" aria-pressed="false">Fill</button>
+        <button class="btn btn-ghost btn-sm" id="em-fit-reset" type="button">Reset</button>
+      </div>
+      <div class="em-toolbar-end">
+        <button class="btn btn-ghost btn-sm" id="em-player-fit" type="button" data-tooltip="Apply object-fit to the page's own video (keeps aspect ratio)">{{ icon("focus", "icon-sm") }}Player fit</button>
+        <button class="btn btn-ghost btn-sm" id="em-fullscreen" type="button" aria-label="Fullscreen preview">{{ icon("maximize", "icon-sm") }}Fullscreen</button>
+      </div>
+    </div>
+
+    <div class="em-stage-wrap" id="em-stage-wrap">
+      <div class="em-stage" id="em-stage" data-fit="fit">
+        <div class="em-screen" id="em-screen" tabindex="0" aria-label="Remote browser. Click to type into the page."></div>
+      </div>
+
+      <!-- State overlay: loading / offline / expired / error -->
+      <div class="em-overlay" id="em-overlay" data-kind="loading" role="status" aria-live="polite">
+        <div class="em-overlay-card">
+          <div class="em-spinner" id="em-spinner" aria-hidden="true"></div>
+          <div class="em-overlay-icon" id="em-overlay-icon" hidden></div>
+          <div class="em-overlay-title" id="em-overlay-title">Connecting to the live view…</div>
+          <div class="em-overlay-text" id="em-overlay-text"></div>
+          <div class="btn-row em-overlay-actions" id="em-overlay-actions"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="em-events" aria-label="Recent events">
+      <div class="em-events-h">Events</div>
+      <ol id="em-events" class="em-events-list"><li class="em-event-empty">Nothing yet.</li></ol>
+    </div>
+  </section>
+
+  <!-- ============================================================ youtube output (locked) -->
+  <section class="card em-output" aria-labelledby="em-output-h">
+    <h2 id="em-output-h" class="rack-title">{{ icon("youtube", "icon-sm") }}YouTube output
+      <span class="rack-title-end badge badge-inactive">{{ icon("lock", "icon-sm") }}Disabled</span></h2>
+    <p class="em-output-note" id="em-output-note">{{ capture.reason }}</p>
+    <fieldset class="em-output-form" disabled aria-describedby="em-output-note">
+      <div class="field"><label class="label" for="em-yt-title">Title</label><input class="input" id="em-yt-title" placeholder="Class title"></div>
+      <div class="field"><label class="label" for="em-yt-priv">Privacy</label>
+        <select class="input" id="em-yt-priv"><option>Unlisted</option><option>Private</option><option>Public</option></select></div>
+      <label class="em-check"><input type="checkbox" id="em-rights"{% if edumix_source and edumix_source.rights_confirmed %} checked{% endif %}><span>I operate this class and may retransmit it</span></label>
+      <div class="btn-row"><button class="btn btn-primary" type="button">{{ icon("broadcast") }}Start broadcast</button></div>
+    </fieldset>
+    <div class="hint">Unlocks after a real live class has been inspected and an authorized capture method is confirmed. No DRM, HDCP or other protection is ever bypassed.</div>
+  </section>
+</div>
+
+<!-- Sign-in helper: types into the REAL page's focused field over the live
+     view. Values are sent keystroke-by-keystroke and cleared at once;
+     nothing is posted to the dashboard, stored or logged. -->
+<div class="modal-backdrop" id="em-dialog" hidden>
+  <div class="modal em-modal" role="dialog" aria-modal="true" aria-labelledby="em-dialog-title">
+    <div class="modal-icon icon-well">{{ icon("keyboard") }}</div>
+    <h3 id="em-dialog-title">Sign in on the site</h3>
+    <p id="em-dialog-text">Click the phone-number field in the live view, then type here to send it to the page.</p>
+    <div class="field">
+      <label class="label" for="em-secret" id="em-secret-label">Text to send</label>
+      <div class="em-secret-row">
+        <input class="input input-mono" id="em-secret" type="password" inputmode="numeric" autocomplete="off" spellcheck="false" data-lpignore="true">
+        <button class="btn btn-ghost btn-icon" id="em-secret-eye" type="button" aria-label="Show text" aria-pressed="false">{{ icon("eye") }}</button>
+      </div>
+      <div class="hint">Sent straight to the browser one key at a time and wiped. It is never stored, logged or sent to the dashboard.</div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-secondary" id="em-dialog-close" type="button">Close</button>
+      <button class="btn btn-secondary" id="em-send-tab" type="button">Tab</button>
+      <button class="btn btn-primary" id="em-send" type="button">{{ icon("send") }}Send</button>
+      <button class="btn btn-primary" id="em-send-enter" type="button">Send &amp; Enter</button>
+    </div>
+  </div>
+</div>
+
+<script type="application/json" id="em-data-source">{{ edumix_source | tojson }}</script>
+{% endblock %}
+{% block scripts %}<script type="module" src="{{ static_url('js/edumix.js') }}"></script>{% endblock %}

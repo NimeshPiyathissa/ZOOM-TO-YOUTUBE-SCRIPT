@@ -32,6 +32,7 @@ from .youtube import YouTubeURLError
 from . import accounts as accounts_mod
 from .accounts import AccountError
 from . import audio_level
+from . import edumix, edumix_api
 from . import recording, settings_store, telegram
 
 BASE_DIR = pathlib.Path(__file__).resolve().parent.parent
@@ -303,6 +304,24 @@ async def remote_page(request: Request):
         "active_source_id": active["id"] if active else None,
         "sources_rev": sources_mod.sources_rev(),
         "accounts": accounts_mod.list_accounts(),
+    })
+
+
+app.include_router(edumix_api.router)
+
+
+@app.get("/edumix", response_class=HTMLResponse)
+async def edumix_page(request: Request):
+    """EduMix Live (mjphysics.lk): sign in on the real site through the
+    interactive preview, open a class, watch player/connection state. View
+    only - capture and YouTube output stay disabled (see docs/edumix.md)."""
+    session = _require_page(request)
+    if isinstance(session, RedirectResponse):
+        return session
+    return templates.TemplateResponse("edumix.html", {
+        "request": request, "csrf_token": session["csrf_token"], "username": session["username"],
+        "edumix_host": config.EDUMIX_HOST, "capture": edumix.capture_status(),
+        "edumix_source": edumix_api._source_view(edumix_api.get_edumix_source()),
     })
 
 
@@ -2879,4 +2898,5 @@ async def on_startup():
     from . import zoom_web, telegram
     zoom_web.start_cleanfeed_heartbeat()
     telegram.start_telegram_poller()
+    asyncio.create_task(edumix_api.supervisor.run())
 

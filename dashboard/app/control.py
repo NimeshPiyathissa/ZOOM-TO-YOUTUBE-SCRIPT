@@ -117,10 +117,27 @@ def _require_unit(unit: str) -> None:
         raise ControlError(f"unknown unit: {unit}")
 
 
+def edumix_capture_blocked() -> bool:
+    """True while the active source is EduMix and capture is still disabled
+    (config.EDUMIX_CAPTURE_ENABLED) - the encoder must not start."""
+    from . import edumix
+    return edumix.capture_blocked(read_current_source().get("SOURCE_TYPE", ""))
+
+
+def edumix_capture_blocked_for(source_type: str) -> bool:
+    from . import edumix
+    return edumix.capture_blocked(source_type)
+
+
 def unit_action(unit: str, verb: str) -> dict:
     _require_unit(unit)
     if verb not in VERBS:
         raise ControlError(f"unknown verb: {verb}")
+    if unit == "ffmpeg-stream" and verb in ("start", "restart") and edumix_capture_blocked():
+        raise ControlError(
+            "EduMix capture and YouTube broadcasting are disabled until a real live class has been "
+            "inspected and an authorized capture method is confirmed."
+        )
     argv = [SUDO, "-u", config.ZOOMBOT_USER, SYSTEMCTL, "--user", verb, f"{unit}.service"]
     proc = run_as_zoombot(argv, timeout=25)
     res = {
@@ -232,7 +249,7 @@ def pipeline_start() -> list[dict]:
     whatever's already in current-source.env rather than assuming zoom)."""
     env = read_current_source()
     source_type = env.get("SOURCE_TYPE", "zoom")
-    if source_type == "webpage":
+    if source_type in ("webpage", "edumix"):
         wanted_unit = "browser-source"
     elif source_type == "zoom":
         wanted_unit = "browser-source" if env.get("ZOOM_JOIN_VIA") == "web" else "zoom"
@@ -244,6 +261,8 @@ def pipeline_start() -> list[dict]:
             continue
         if unit == "audio-setup" and wanted_unit is None:
             continue
+        if unit == "ffmpeg-stream" and source_type == "edumix" and edumix_capture_blocked():
+            continue  # viewing only: no encoder for EduMix yet
         results.append(unit_action(unit, "start"))
         time.sleep(0.5)
     return results
@@ -262,6 +281,8 @@ SOURCE_ENV_KEYS = (
     "SOURCE_TYPE",
     "WEBPAGE_URL", "WEBPAGE_ZOOM", "WEBPAGE_RELOAD_SECONDS", "WEBPAGE_CLICK_TO_START",
     "DIRECT_URL", "DIRECT_MODE", "DIRECT_LOOP", "DIRECT_RECONNECT",
+    # EduMix: class URL for browser-source.sh (isolated edumix profile).
+    "EDUMIX_URL",
     # Part 3: Chrome profile of the bound Google account (see
     # app/accounts.py); read by browser-source.sh and
     # open-url-with-account.sh. Empty = shared stream profile.
@@ -378,6 +399,12 @@ def _source_env_lines(source: dict) -> dict[str, str]:
         values["WEBPAGE_ZOOM"] = str(options.get("zoom_level", 1.0))
         values["WEBPAGE_RELOAD_SECONDS"] = str(int(options.get("reload_seconds", 0)))
         values["WEBPAGE_CLICK_TO_START"] = "1" if options.get("click_to_start") else "0"
+    elif type_ == "edumix":
+        from . import edumix
+        values["EDUMIX_URL"] = edumix.validate_class_url(source["url"])
+        # Isolated persistent profile: never the shared stream profile or a
+        # Google account profile.
+        values["ACCOUNT_PROFILE_ID"] = config.EDUMIX_PROFILE_ID
     elif type_ == "direct":
         url = url_security.validate_url(source["url"], "direct")
         values["DIRECT_URL"] = url
@@ -502,7 +529,7 @@ def producer_unit_for(source: dict | None) -> str | None:
     if not source:
         return None
     type_ = source.get("type")
-    if type_ == "webpage":
+    if type_ in ("webpage", "edumix"):
         return "browser-source"
     if type_ != "zoom":
         return None
@@ -572,6 +599,14 @@ def start_source(source: dict) -> dict:
     ffmpeg_up = _ffmpeg_is_up()
     results: list[dict] = []
 
+    if type_ == "edumix" and edumix_capture_blocked_for(type_) and ffmpeg_up:
+        # The kiosk would put the EduMix login/class page on the live
+        # canvas. Refuse rather than broadcast it.
+        raise ControlError(
+            "The stream is live. EduMix is view-only for now (capture is disabled) - "
+            "stop the broadcast before switching to it."
+        )
+
     # Fastest path: same producer, just a new URL.
     if type_ == "webpage" and old_type == "webpage" and ffmpeg_up:
         try:
@@ -609,7 +644,9 @@ def start_source(source: dict) -> dict:
         results.append(unit_action(wanted_unit, "restart")); time.sleep(1)
         results.append(unit_action("x11vnc", "start"))
 
-    if needs_ffmpeg_restart or not ffmpeg_up:
+    if type_ == "edumix" and edumix_capture_blocked_for(type_):
+        pass  # view-only: the encoder stays off
+    elif needs_ffmpeg_restart or not ffmpeg_up:
         results.append(unit_action("ffmpeg-stream", "start"))
     return {"results": results, "rtmp_dropped": rtmp_dropped, "hot_swapped": False}
 
@@ -1255,7 +1292,7 @@ def browser_diagnosis() -> dict:
     """Why the kiosk browser isn't reachable over DevTools, as something
     the operator can act on. Called only after cdp.probe() failed."""
     source_type = read_current_source().get("SOURCE_TYPE", "")
-    if source_type != "webpage":
+    if source_type not in ("webpage", "edumix"):
         return {"connected": False, "code": "source_not_webpage",
                 "reason": f"The active source is a {source_type or 'unset'} source, so the kiosk browser isn't running.",
                 "fix": "Switch to a web page source to use these controls."}
@@ -1365,7 +1402,7 @@ def restart_progress() -> dict:
 def _units_for_active_source() -> list[str]:
     env = read_current_source()
     source_type = env.get("SOURCE_TYPE", "zoom")
-    if source_type == "webpage":
+    if source_type in ("webpage", "edumix"):
         wanted = "browser-source"
     elif source_type == "zoom":
         wanted = "browser-source" if env.get("ZOOM_JOIN_VIA") == "web" else "zoom"
@@ -1376,6 +1413,8 @@ def _units_for_active_source() -> list[str]:
         if unit in ("zoom", "browser-source") and unit != wanted:
             continue
         if unit == "audio-setup" and wanted is None:
+            continue
+        if unit == "ffmpeg-stream" and source_type == "edumix" and edumix_capture_blocked():
             continue
         units.append(unit)
     return units

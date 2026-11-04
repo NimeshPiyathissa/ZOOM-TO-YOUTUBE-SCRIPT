@@ -11,7 +11,7 @@ import sqlite3
 import time
 from urllib.parse import urlsplit
 
-from . import config, db, url_security, zoomlink
+from . import config, db, edumix, url_security, zoomlink
 from .env_store import ValidationError
 
 MEDIA_EXTENSIONS = (".m3u8", ".mp4", ".mkv", ".flv", ".ts", ".mov", ".webm")
@@ -220,6 +220,8 @@ def detect_type(url: str) -> str:
 
     if "zoom.us" in host:
         return "zoom"
+    if host == config.EDUMIX_HOST or host.endswith("." + config.EDUMIX_HOST):
+        return "edumix"
     if scheme in ("rtmp", "rtmps", "srt"):
         return "direct"
     if path.endswith(MEDIA_EXTENSIONS):
@@ -361,7 +363,19 @@ def _validate_direct_options(options: dict) -> dict:
     }
 
 
+def _validate_edumix_options(options: dict) -> dict:
+    # auto_navigate: go straight to the class once the session is valid.
+    # rights_confirmed: the operator's acknowledgement that they may
+    # retransmit this content - recorded now, enforced later when capture
+    # is enabled (config.EDUMIX_CAPTURE_ENABLED); it never enables capture.
+    return {
+        "auto_navigate": bool(options.get("auto_navigate", True)),
+        "rights_confirmed": bool(options.get("rights_confirmed", False)),
+    }
+
+
 _OPTION_VALIDATORS = {
+    "edumix": _validate_edumix_options,
     "zoom": _validate_zoom_options,
     "webpage": _validate_webpage_options,
     "direct": _validate_direct_options,
@@ -394,6 +408,11 @@ def validate_source(type_: str, url: str, options: dict) -> tuple[str, dict]:
                 zoomlink.validate_joinable(url)
             except zoomlink.ZoomLinkError as exc:
                 raise ValidationError(str(exc))
+    elif type_ == "edumix":
+        try:
+            url = edumix.validate_class_url(url)
+        except edumix.EduMixError as exc:
+            raise ValidationError(str(exc))
     else:
         try:
             url = url_security.validate_url(url, type_)

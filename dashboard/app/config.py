@@ -227,7 +227,7 @@ SCHEDULE_TIMEZONE = "Asia/Colombo"
 TRUST_FORWARDED_PROTO = True
 
 # --- sources (Change 1) ---
-SOURCE_TYPES = {"zoom", "webpage", "direct"}
+SOURCE_TYPES = {"zoom", "webpage", "direct", "edumix"}
 
 # Schemes ever allowed in a source URL, full stop - enforced in
 # app/url_security.py before any URL reaches ffmpeg/Chromium argv.
@@ -236,7 +236,25 @@ ALLOWED_URL_SCHEMES = {"http", "https", "rtmp", "rtmps", "srt"}
 SCHEMES_BY_TYPE = {
     "webpage": {"http", "https"},
     "direct": {"http", "https", "rtmp", "rtmps", "srt"},
+    "edumix": {"https"},
 }
+
+# --- EduMix / MJPhysics source ---
+# The only host an edumix source may point at (exact match or a subdomain
+# of it) - see app/edumix.py. The login happens on the real site, typed by
+# the operator over the interactive preview; nothing here is a credential.
+EDUMIX_HOST = "mjphysics.lk"
+# Isolated persistent Chrome profile under ~zoombot/.config/chrome-profiles/
+# that holds the EduMix session (cookies never leave that directory).
+EDUMIX_PROFILE_ID = "edumix"
+# Media capture and YouTube retransmission of an EduMix page stay OFF until
+# a real live class has been inspected and an authorized capture method is
+# confirmed (see docs/edumix.md). While False, the encoder will not start
+# for an edumix source - enforced in control.unit_action.
+EDUMIX_CAPTURE_ENABLED = False
+# Auto-reconnect backoff (seconds): base * 2**(attempt-1), capped, +-20% jitter.
+EDUMIX_BACKOFF_BASE_SECONDS = 2.0
+EDUMIX_BACKOFF_MAX_SECONDS = 60.0
 
 DIRECT_MODES = {"copy", "reencode"}
 # Codecs ffprobe may report that we consider safe to mux straight through
