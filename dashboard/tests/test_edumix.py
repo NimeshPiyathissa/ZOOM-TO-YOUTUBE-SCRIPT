@@ -49,8 +49,11 @@ def test_invalid_urls(raw):
 # ------------------------------------------------------------------ classify
 
 def snap(**kw):
+    """A signed-in page by default (the site's Logout control is the evidence)."""
+    markers = {"logout": True}
+    markers.update(kw.pop("markers", {}))
     base = {"url": "https://mjphysics.lk/dashboard", "ready": "complete", "online": True,
-            "login_form": False, "otp_form": False, "markers": {}, "videos": [], "frames": []}
+            "login_form": False, "otp_form": False, "inputs": 0, "markers": markers, "videos": [], "frames": []}
     base.update(kw)
     return base
 
@@ -76,6 +79,17 @@ def video(**kw):
     (snap(url="https://mjphysics.lk/live-class"), "no_live"),
     (snap(markers={"session_expired": True}), "session_expired"),
     (snap(markers={"error_text": True}), "error"),
+    # positive evidence needed: an unrecognised page without Logout is never "signed in"
+    (snap(markers={"logout": False}), "unknown"),
+    (snap(url="https://mjphysics.lk/", markers={"logout": False}), "unknown"),
+    # login/OTP detected from visible text + an input even when the field attributes give nothing away
+    (snap(url="https://mjphysics.lk/", markers={"logout": False, "login_text": True}, inputs=1), "login_required"),
+    (snap(url="https://mjphysics.lk/", markers={"logout": False, "login_text": True, "otp_text": True}, inputs=1), "awaiting_otp"),
+    (snap(markers={"login_text": True, "otp_text": True}, inputs=1), "authenticated"),   # signed-in page that merely mentions them
+    # phone field + a "Send OTP" button is still the LOGIN step (found with a real Chrome)
+    (snap(url="https://mjphysics.lk/login", login_form=True, inputs=1, markers={"logout": False, "login_text": True}), "login_required"),
+    (snap(url="https://mjphysics.lk/", login_form=True, inputs=1, markers={"logout": False, "login_text": True, "otp_text": False}), "login_required"),
+    (snap(url="https://mjphysics.lk/", inputs=1, markers={"logout": False, "otp_text": True}), "awaiting_otp"),
     (snap(markers={"drm_text": True}), "protected"),
     (snap(videos=[video()]), "playing"),
     (snap(videos=[video(paused=True)]), "paused"),
@@ -88,6 +102,23 @@ def video(**kw):
 ])
 def test_classify(s, state):
     assert edumix.classify(s) == state
+
+
+def test_protected_playback_blocks_capture_even_if_the_flag_were_on(monkeypatch):
+    assert edumix.capture_status("protected")["enabled"] is False
+    monkeypatch.setattr(config, "EDUMIX_CAPTURE_ENABLED", True)
+    assert edumix.capture_status("playing")["enabled"] is True          # the flag alone would allow it...
+    st = edumix.capture_status("protected")
+    assert st["enabled"] is False and "never" in st["reason"]           # ...but protected playback never does
+
+
+def test_status_reports_capture_disabled_for_protected_page(monkeypatch):
+    async def ev(expr, user_gesture=False):
+        import json
+        return {"value": json.dumps(snap(videos=[video(protected=True)]))}
+    monkeypatch.setattr(cdp, "evaluate", ev)
+    st = run(edumix.status())
+    assert st["state"] == "protected" and st["capture"]["enabled"] is False and st["needs_human"]
 
 
 def test_hard_failures_beat_soft_ones():
@@ -103,6 +134,16 @@ def test_every_state_is_described_and_human_flags():
     assert edumix.describe("session_expired")["needs_human"]
     assert edumix.describe("protected")["needs_human"]
     assert not edumix.describe("playing")["needs_human"]
+
+
+def test_probe_js_has_no_control_characters_and_keeps_word_boundaries():
+    """A literal backspace (from an unescaped word-boundary escape) once silently disabled the
+    Logout marker: every signed-in page then read as 'unknown'. Only a real browser noticed -
+    keep this guard."""
+    assert not [c for c in edumix.JS_PROBE if ord(c) < 32 and c not in "\n\t"]
+    assert r"\blog ?out\b" in edumix.JS_PROBE and r"\bresend\b" in edumix.JS_PROBE
+    # bare "otp" must NOT mark the OTP step: a login page's "Send OTP" button would read as verification
+    assert r"\botp\b" not in edumix.JS_PROBE
 
 
 def test_probe_js_never_reads_secrets():
@@ -344,6 +385,13 @@ def anon(tmp_path, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _fresh_probe_cache():
+    edumix.invalidate()
+    yield
+    edumix.invalidate()
+
+
+@pytest.fixture(autouse=True)
 def _fresh_supervisor():
     from app import deps
     edumix_api.supervisor.__init__()
@@ -450,7 +498,7 @@ def test_reconnect_navigates_or_restarts_browser(client, monkeypatch):
     monkeypatch.setattr(cdp, "probe", probe_down)
     monkeypatch.setattr(control, "unit_action", lambda u, v: units.append((u, v)) or {"ok": True})
     assert client.post("/api/edumix/reconnect", json={}, headers=client.csrf).json()["mode"] == "restart_browser"
-    assert units == [("browser-source", "restart")]
+    assert units == [("browser-source", "reset-failed"), ("browser-source", "restart")]   # clears any start-limit first
 
 
 def test_stop_pauses_supervisor_and_stops_only_the_browser(client, monkeypatch):
@@ -532,6 +580,7 @@ def sup(client, monkeypatch):
     monkeypatch.setattr(control, "start_source", lambda s: {"results": [], "rtmp_dropped": False, "hot_swapped": False})
     client.post("/api/edumix/open", json={"url": CLASS}, headers=client.csrf)
     edumix_api.supervisor.__init__()
+    edumix_api.supervisor.grace_until = 0.0
     log = {"nav": [], "units": [], "state": None, "path": "/dashboard"}
 
     async def fake_status(rc=None):
@@ -624,3 +673,97 @@ def test_status_snapshot_maps_cdp_failure_to_browser_down(monkeypatch):
     monkeypatch.setattr(cdp, "evaluate", boom)
     st = run(edumix.status())
     assert st["state"] == "browser_down" and st["level"] == "bad"
+
+
+def test_supervisor_does_not_kill_a_chrome_that_is_still_starting(sup):
+    """Open a class, Chrome takes ~30 s to come up: browser_down inside the grace window is left alone."""
+    s = edumix_api.supervisor
+    s.mark_started(now=1000.0)
+    sup["state"] = "browser_down"
+    for i in range(1, 8):                      # 7 checks across the first 35 s
+        run(s.tick(1000.0 + i * 5))
+    assert sup["units"] == []
+    for i in range(1, 12):                     # after the grace period it may recover the browser
+        run(s.tick(1060.0 + i * 120))
+    assert ("browser-source", "restart") in sup["units"]
+
+
+def test_restart_starts_a_new_grace_window(sup):
+    s = edumix_api.supervisor
+    sup["state"] = "browser_down"
+    t = 5000.0
+    while ("browser-source", "restart") not in sup["units"]:
+        t += 200
+        run(s.tick(t))
+    assert s.grace_until == t + config.EDUMIX_START_GRACE_SECONDS
+    for dt_ in (5, 20, 45):                    # still inside the window: no second restart
+        run(s.tick(t + dt_))
+    assert sup["units"].count(("browser-source", "restart")) == 1
+
+
+def test_unknown_state_is_never_acted_on_or_counted_as_signed_in(sup):
+    s = edumix_api.supervisor
+    sup["state"] = "unknown"
+    run(s.tick(100.0))
+    assert sup["nav"] == [] and sup["units"] == []
+    assert not db.get_setting(edumix_api.SETTING_LAST_AUTH)
+
+
+def test_status_probe_is_shared_and_bounded(monkeypatch):
+    """The page poll, the supervisor and every open tab share one DevTools probe per STATUS_TTL."""
+    import json
+    calls = []
+
+    async def ev(expr, user_gesture=False):
+        calls.append(1)
+        return {"value": json.dumps(snap())}
+    monkeypatch.setattr(cdp, "evaluate", ev)
+    for _ in range(25):                       # 25 callers inside one window
+        assert run(edumix.status())["state"] == "authenticated"
+    assert len(calls) == 1
+    edumix.invalidate()
+    run(edumix.status())
+    assert len(calls) == 2
+
+
+def test_actions_invalidate_the_probe_cache(monkeypatch):
+    import json
+    calls = []
+
+    async def ev(expr, user_gesture=False):
+        calls.append(expr[:12])
+        return {"value": json.dumps(snap()) if "objectFit" not in expr else 1}
+
+    async def nav(url): pass
+    monkeypatch.setattr(cdp, "evaluate", ev); monkeypatch.setattr(cdp, "navigate", nav)
+    run(edumix.status()); n = len(calls)
+    run(edumix.navigate_class(CLASS)); run(edumix.status())
+    assert len(calls) == n + 1                # navigating forced a fresh probe
+    run(edumix.navigate_login()); run(edumix.status()); assert len(calls) == n + 2
+    run(edumix.set_video_fit("fill")); run(edumix.status())
+    assert len(calls) == n + 4                # the fit call itself + a fresh probe
+
+
+def test_probe_failure_is_cached_briefly_too(monkeypatch):
+    calls = []
+
+    async def boom(expr, user_gesture=False):
+        calls.append(1); raise cdp.CDPError("down")
+    monkeypatch.setattr(cdp, "evaluate", boom)
+    assert run(edumix.status())["state"] == "browser_down"
+    assert run(edumix.status())["state"] == "browser_down"
+    assert len(calls) == 1
+
+
+def test_supervisor_clears_start_limit_before_every_restart(sup):
+    """browser-source has StartLimitBurst=5/300s: recovery must reset-failed first or it can lock itself out."""
+    s = edumix_api.supervisor
+    sup["state"] = "browser_down"
+    t = 9000.0
+    while sup["units"].count(("browser-source", "restart")) < 2:
+        t += 300
+        run(s.tick(t))
+    units = sup["units"]
+    for i, u in enumerate(units):
+        if u == ("browser-source", "restart"):
+            assert units[i - 1] == ("browser-source", "reset-failed")

@@ -11,6 +11,17 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 source ./lib.sh
 
+# EduMix (mjphysics.lk) is view-only until a real live class has been
+# inspected and an authorized capture method confirmed. The dashboard
+# already refuses to start this unit for it (control.unit_action); this is
+# the same rule enforced where the encoder actually starts, so a direct
+# `systemctl --user start ffmpeg-stream` can't put the page on air either.
+# Exit 0 (not an error): Restart=on-failure must not loop on it.
+if [[ "$SOURCE_TYPE" == "edumix" && "${EDUMIX_CAPTURE_ENABLED:-0}" != "1" ]]; then
+  log "SOURCE_TYPE=edumix: capture/broadcast is disabled - not starting the encoder"
+  exit 0
+fi
+
 # Direct-media sources never touch Xvfb, so don't block startup waiting
 # for a display that nothing is going to use.
 [[ "$SOURCE_TYPE" != "direct" ]] && wait_for_x

@@ -100,7 +100,7 @@ JS_PROBE = r"""(() => {
   const frames = Array.from(document.querySelectorAll("iframe")).slice(0, 6).map((f) => {
     try { return new URL(f.src, location.href).hostname; } catch (e) { return ""; }
   }).filter(Boolean);
-  const tel = Array.from(document.querySelectorAll("input")).filter((i) => vis(i));
+  const tel = Array.from(document.querySelectorAll("input")).filter((i) => vis(i) && i.type !== "hidden" && i.type !== "checkbox");
   return JSON.stringify({
     url: location.origin + location.pathname,
     title: (document.title || "").slice(0, 120),
@@ -113,7 +113,11 @@ JS_PROBE = r"""(() => {
       no_live: /no classes found|no upcoming live/.test(text),
       error_text: /something went wrong|failed to load|try again later/.test(text),
       drm_text: /protected content|drm|not supported on this device/.test(text),
+      logout: /\blog ?out\b|sign out/.test(text),
+      login_text: /\b(log ?in|sign ?in)\b|phone number|mobile number|send otp|get otp/.test(text),
+      otp_text: /one[- ]time|verification code|enter (the |your |6[- ]digit )?(code|otp)|\bresend\b/.test(text),
     },
+    inputs: tel.length,
     videos: videos, frames: frames,
   });
 })()"""
@@ -128,6 +132,7 @@ STATES: dict[str, tuple[str, str, str]] = {
     "browser_down":    ("bad", "Browser unreachable", "Chrome isn't answering. It is restarted automatically; use Reconnect if it stays down."),
     "network_down":    ("bad", "Network offline", "The browser reports no network. Reconnecting with backoff."),
     "loading":         ("info", "Loading", "The page is still loading."),
+    "unknown":         ("info", "Page not recognised", "This is neither the site's sign-in nor a signed-in page. Check the live view, or use Reconnect."),
     "login_required":  ("warn", "Sign-in needed", "Log in with your phone number in the live view below."),
     "awaiting_otp":    ("warn", "Enter the OTP", "Type the code you received into the live view. It is never stored."),
     "authenticated":   ("ok", "Signed in", "Session is valid."),
@@ -152,7 +157,9 @@ RECOVERABLE = {"browser_down", "network_down", "player_error", "error"}
 
 def classify(snap: dict | None) -> str:
     """Pure: probe snapshot -> state. None means the browser can't be
-    reached. Order matters: a hard failure beats a soft one."""
+    reached. Order matters: a hard failure beats a soft one, and "signed
+    in" needs positive evidence (the site's own Logout control) - an
+    unrecognised page is never assumed to be a valid session."""
     if snap is None:
         return "browser_down"
     if snap.get("online") is False:
@@ -162,10 +169,19 @@ def classify(snap: dict | None) -> str:
         return "loading"
     markers = snap.get("markers") or {}
     videos = snap.get("videos") or []
+    signed_in = bool(markers.get("logout"))
+    inputs = snap.get("inputs")
+    has_input = bool(inputs) if inputs is not None else (bool(snap.get("login_form")) or bool(snap.get("otp_form")))
 
+    # A phone field with a "Send OTP" button is the *login* step; only an OTP-style field
+    # (by attributes) or OTP-stage wording ("enter the code", "resend") is the verification step.
     if snap.get("otp_form"):
         return "awaiting_otp"
     if snap.get("login_form") or path.rstrip("/") in ("/login", "/auth", "/sign-in", "/signin"):
+        return "login_required"
+    if markers.get("otp_text") and has_input and not signed_in:
+        return "awaiting_otp"
+    if markers.get("login_text") and has_input and not signed_in:
         return "login_required"
     if markers.get("drm_text") or any(v.get("protected") for v in videos):
         return "protected"
@@ -188,6 +204,8 @@ def classify(snap: dict | None) -> str:
         return "session_expired"
     if markers.get("error_text"):
         return "error"
+    if not signed_in:
+        return "unknown"
     if markers.get("no_live") or path.rstrip("/") == "/live-class":
         return "no_live"
     if "/class/" in path or "/live" in path:
@@ -236,7 +254,7 @@ class Reconnector:
 
     def step(self, state: str, now: float, *, rand: float | None = None) -> str | None:
         if state not in RECOVERABLE:
-            if state in ("playing", "paused", "authenticated", "class_open", "no_live", "buffering", "player_loading"):
+            if state in ("playing", "paused", "authenticated", "class_open", "no_live", "buffering", "player_loading", "ended"):
                 self.reset()
             return None
         if self.attempt >= self.max_attempts:
@@ -265,9 +283,13 @@ def should_auto_navigate(state: str, current_path: str, target_path: str, auto: 
 
 # ------------------------------------------------------------------ capture gate
 
-def capture_status() -> dict:
+def capture_status(state: str | None = None) -> dict:
     """Capture/retransmission stays off until a live class has been
-    inspected and an authorized method confirmed."""
+    inspected and an authorized method confirmed - and, even once that flag
+    is on, never while the player reports protected playback."""
+    if state == "protected":
+        return {"enabled": False,
+                "reason": "Protected playback detected - capture and retransmission are never enabled for protected content."}
     if config.EDUMIX_CAPTURE_ENABLED:
         return {"enabled": True, "reason": ""}
     return {
@@ -297,17 +319,34 @@ def redact(text: str) -> str:
 
 # ------------------------------------------------------------------ Chrome (CDP)
 
-async def snapshot() -> dict | None:
+# One DevTools probe is shared by every caller for a moment: the page's poll
+# (every open tab), the supervisor, and the action endpoints all ask for
+# status, and each probe costs an HTTP round trip + a websocket to Chrome.
+# Bounding it to one per STATUS_TTL keeps the load flat however many viewers
+# there are. Anything that changes the page (navigate/reload/fit) invalidates it.
+STATUS_TTL = 1.5
+_cache: dict = {"at": 0.0, "snap": None}
+
+
+def invalidate() -> None:
+    _cache["at"] = 0.0
+
+
+async def snapshot(*, fresh: bool = False) -> dict | None:
     """Probe the kiosk page. None = Chrome/DevTools unreachable."""
     from . import cdp
+    now = time.monotonic()
+    if not fresh and _cache["at"] and now - _cache["at"] < STATUS_TTL:
+        return _cache["snap"]
     try:
         res = await cdp.evaluate(JS_PROBE)
+        snap = json.loads(res.get("value") or "null")
     except cdp.CDPError:
-        return None
-    try:
-        return json.loads(res.get("value") or "null")
+        snap = None
     except (TypeError, ValueError):
-        return None
+        snap = None
+    _cache["at"], _cache["snap"] = time.monotonic(), snap
+    return snap
 
 
 async def status(reconnector: Reconnector | None = None) -> dict:
@@ -318,7 +357,7 @@ async def status(reconnector: Reconnector | None = None) -> dict:
         "checked_at": time.time(),
         "page": {"path": urlsplit((snap or {}).get("url") or "").path, "title": (snap or {}).get("title", "")},
         "player": _player_summary(snap),
-        "capture": capture_status(),
+        "capture": capture_status(state),
     })
     if reconnector is not None:
         out["reconnect"] = reconnector.snapshot(time.time())
@@ -337,16 +376,19 @@ def _player_summary(snap: dict | None) -> dict:
 async def navigate_class(url: str) -> None:
     from . import cdp
     await cdp.navigate(validate_class_url(url))
+    invalidate()
 
 
 async def navigate_login() -> None:
     from . import cdp
     await cdp.navigate(login_url())
+    invalidate()
 
 
 async def reload_page() -> None:
     from . import cdp
     await cdp.evaluate("location.reload()")
+    invalidate()
 
 
 _FIT_MODES = {"fit": "contain", "fill": "cover", "reset": ""}
@@ -364,6 +406,7 @@ async def set_video_fit(mode: str) -> dict:
     js = (f"(() => {{ const v = document.querySelectorAll('video'); v.forEach(e => {{ e.style.objectFit = {val}; "
           f"e.style.background = {val} ? '#000' : ''; }}); return v.length; }})()")
     res = await cdp.evaluate(js)
+    invalidate()
     n = int(res.get("value") or 0)
     return {"applied": n > 0, "videos": n, "mode": mode,
             "note": "" if n else "No <video> element on the page itself (the player may live in an iframe) - use the preview's own Fit/Fill."}

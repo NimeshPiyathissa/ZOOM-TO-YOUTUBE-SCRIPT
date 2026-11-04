@@ -157,3 +157,9 @@
   .em-spinner { animation-duration: 2.4s; }
   .em-chip:hover { transform: none; }
 }
+
+/* Touch: the preview toolbar is used one-handed on tablets/phones - 40px targets. */
+@media (max-width: 1024px), (pointer: coarse) {
+  .em-toolbar .segmented .seg-btn, .em-toolbar .btn { min-height: 40px; }
+  .em-toolbar .segmented .seg-btn { padding-inline: var(--space-4); }
+}

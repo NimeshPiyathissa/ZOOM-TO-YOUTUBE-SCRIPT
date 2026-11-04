@@ -255,6 +255,9 @@ EDUMIX_CAPTURE_ENABLED = False
 # Auto-reconnect backoff (seconds): base * 2**(attempt-1), capped, +-20% jitter.
 EDUMIX_BACKOFF_BASE_SECONDS = 2.0
 EDUMIX_BACKOFF_MAX_SECONDS = 60.0
+# After the operator opens a class (or the supervisor restarts the browser),
+# a still-starting Chrome is not 'down': wait this long before acting on it.
+EDUMIX_START_GRACE_SECONDS = 60.0
 
 DIRECT_MODES = {"copy", "reencode"}
 # Codecs ffprobe may report that we consider safe to mux straight through

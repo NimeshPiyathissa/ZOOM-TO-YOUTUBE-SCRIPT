@@ -48,6 +48,18 @@ def get_edumix_source() -> dict | None:
     return None
 
 
+def _restart_browser() -> None:
+    """Restart the kiosk Chrome. The unit has StartLimitBurst=5 per 300 s, so repeated
+    recoveries could otherwise leave it refusing to start: clear that state first.
+    (Stopping/restarting kills Chrome and its helpers together - the unit uses the
+    default control-group KillMode - so nothing is left behind.)"""
+    try:
+        control.unit_action("browser-source", "reset-failed")
+    except control.ControlError:
+        pass
+    control.unit_action("browser-source", "restart")
+
+
 def _active_edumix() -> dict | None:
     s = sources_mod.get_active_source()
     return s if s and s["type"] == "edumix" else None
@@ -71,11 +83,13 @@ class Supervisor:
         self.navigated_this_episode = False
         self.paused = False            # operator pressed Stop: don't resurrect the browser
         self.last_action: dict | None = None
+        self.grace_until = 0.0         # a still-starting Chrome is not "down"
 
-    def mark_started(self) -> None:
+    def mark_started(self, now: float | None = None) -> None:
         self.paused = False
         self.navigated_this_episode = False
         self.reconnector.reset()
+        self.grace_until = (time.time() if now is None else now) + config.EDUMIX_START_GRACE_SECONDS
 
     async def tick(self, now: float | None = None) -> dict | None:
         src = _active_edumix()
@@ -107,6 +121,8 @@ class Supervisor:
                 log.warning("edumix auto-navigate failed: %s", edumix.redact(str(exc)))
             return st
 
+        if state == "browser_down" and now < self.grace_until:
+            return st
         action = self.reconnector.step(state, now)
         if action == "reload":
             try:
@@ -116,10 +132,11 @@ class Supervisor:
             self.last_action = {"action": "reload", "at": now}
         elif action == "restart_browser":
             try:
-                await run_in_threadpool(control.unit_action, "browser-source", "restart")
+                await run_in_threadpool(_restart_browser)
             except control.ControlError as exc:
                 log.warning("edumix browser restart failed: %s", edumix.redact(str(exc)))
             self.last_action = {"action": "restart_browser", "at": now}
+            self.grace_until = now + config.EDUMIX_START_GRACE_SECONDS
         return st
 
     async def run(self) -> None:
@@ -156,7 +173,7 @@ async def api_status(request: Request):
         st = await edumix.status(supervisor.reconnector)
     else:
         st = edumix.describe("stopped")
-        st.update({"capture": edumix.capture_status(), "page": {"path": "", "title": ""}, "player": {"present": False}})
+        st.update({"capture": edumix.capture_status("stopped"), "page": {"path": "", "title": ""}, "player": {"present": False}})
     last = await run_in_threadpool(db.get_setting, SETTING_LAST_AUTH, "")
     st["source"] = _source_view(src)
     st["active"] = bool(active)
@@ -254,7 +271,7 @@ async def api_reconnect(request: Request):
     except cdp.CDPError:
         mode = "restart_browser"
         try:
-            await run_in_threadpool(control.unit_action, "browser-source", "restart")
+            await run_in_threadpool(_restart_browser)
         except control.ControlError as exc:
             return _err(str(exc), 409)
     db.audit(session["username"], "edumix_reconnect", mode, deps.client_ip(request))

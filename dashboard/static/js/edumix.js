@@ -15,7 +15,8 @@ import { connectVnc, reconnectDelayMs, CLOSE_AUTH_FAILED } from '/static/js/vnc-
 
 const $ = (id) => document.getElementById(id);
 const post = (url, body) => apiFetch(url, { method: "POST", body: JSON.stringify(body || {}) });
-const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+const esc = (t) => String(t ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const say = (msg, type) => toast(esc(msg), type);     // toast() renders HTML - never pass it raw text
 
 const STATE_ICON = {
   ok: "check-circle-2", info: "info", warn: "alert-triangle", bad: "alert-circle", idle: "circle-help",
@@ -29,8 +30,9 @@ let vncAttempt = 0;
 let vncTimer = null;
 let fitMode = "fit";
 let pollFailures = 0;
-let helperShownForEpisode = false;
+let helperShownState = null;      // which sign-in step the helper dialog was last opened for
 let busy = false;
+let connGen = 0;                  // identifies the current VNC connection; callbacks from older ones are ignored
 let pausedHidden = false;       // tab hidden: view dropped on purpose, no auto-reconnect
 
 // ------------------------------------------------------------------ helpers
@@ -85,7 +87,11 @@ function applyFit() {
     const on = b.dataset.fit === fitMode;
     b.classList.toggle("is-active", on); b.setAttribute("aria-pressed", String(on));
   });
-  window.dispatchEvent(new Event("resize"));   // noVNC re-fits its canvas to the new container
+  // noVNC only rescales on growth when its container shrinks back (it skips the
+  // resize if it believes the client size is unchanged), so recompute explicitly:
+  // toggling scaleViewport re-measures the container and rescales right now.
+  if (rfb) { try { rfb.scaleViewport = false; rfb.scaleViewport = true; } catch (e) { /* not connected yet */ } }
+  window.dispatchEvent(new Event("resize"));
 }
 
 function connectView() {
@@ -93,14 +99,17 @@ function connectView() {
   try { rfb?.disconnect(); } catch (e) { /* already gone */ }
   $("em-screen").replaceChildren();
   vncState = "connecting"; renderOverlay();
+  const gen = ++connGen;
   rfb = connectVnc($("em-screen"), {
     scaleViewport: true,
     onStatus: (s) => {
+      if (gen !== connGen) return;                   // event from a connection we already replaced
       if (s === "connected") { vncState = "connected"; vncAttempt = 0; applyFit(); pushEvent("Live view connected", "ok"); }
       else if (s === "securityfailure") { vncState = "authfail"; }
       renderChips(); renderOverlay();
     },
     onDisconnect: (_clean, code) => {
+      if (gen !== connGen) return;
       if (pausedHidden) { vncState = "down"; return; }
       if (code === CLOSE_AUTH_FAILED || vncState === "authfail") { vncState = "authfail"; renderChips(); renderOverlay(); return; }
       vncState = "down"; renderChips(); renderOverlay();
@@ -241,16 +250,16 @@ function onTransition(prev, cur) {
   if (prev === cur) return;
   const lvl = status.level;
   if (prev !== null) pushEvent(status.label, lvl === "bad" ? "bad" : lvl === "warn" ? "warn" : lvl === "ok" ? "ok" : "info");
-  if (cur === "session_expired") toast("EduMix session expired - re-authenticate", "warn");
-  else if (cur === "protected") toast("Protected playback - capture is not available", "err");
-  else if (cur === "player_error") toast("The player reported an error", "err");
-  else if (cur === "network_down") toast("Network offline - reconnecting", "warn");
-  else if (cur === "browser_down" && prev !== null) toast("EduMix browser unreachable - recovering", "warn");
-  else if (prev && ["login_required", "awaiting_otp"].includes(prev) && ["authenticated", "class_open", "no_live", "playing"].includes(cur)) toast("Signed in to EduMix", "ok");
+  if (cur === "session_expired") say("EduMix session expired - re-authenticate", "warn");
+  else if (cur === "protected") say("Protected playback - capture is not available", "err");
+  else if (cur === "player_error") say("The player reported an error", "err");
+  else if (cur === "network_down") say("Network offline - reconnecting", "warn");
+  else if (cur === "browser_down" && prev !== null) say("EduMix browser unreachable - recovering", "warn");
+  else if (prev && ["login_required", "awaiting_otp"].includes(prev) && ["authenticated", "class_open", "no_live", "playing"].includes(cur)) say("Signed in to EduMix", "ok");
   if (["login_required", "awaiting_otp"].includes(cur)) {
-    if (!helperShownForEpisode) { helperShownForEpisode = true; openHelper(); }
+    if (helperShownState !== cur) { helperShownState = cur; openHelper(); }   // phone step, then again for the OTP step
   } else if (cur !== "browser_down" && cur !== "loading") {
-    helperShownForEpisode = false;
+    helperShownState = null;
     if (!$("em-dialog").hidden && ["authenticated", "class_open", "no_live", "playing"].includes(cur)) closeHelper();
   }
 }
@@ -264,7 +273,7 @@ async function poll() {
     onTransition(prevState, status.state);
     prevState = status.state;
     renderStatus();
-    setTimeout(poll, status.active ? 2500 : 6000);
+    setTimeout(poll, document.hidden ? 15000 : status.active ? 2500 : 6000);
   } catch (err) {
     pollFailures += 1;
     if (pollFailures === 1) pushEvent("Dashboard unreachable - retrying", "warn");
@@ -279,7 +288,7 @@ async function run(btn, fn) {
   if (busy) return;
   busy = true; renderControls();
   try { await (btn ? withLoading(btn, fn) : fn()); }
-  catch (err) { toast(err.message, "err"); pushEvent(err.message, "bad"); }
+  catch (err) { say(err.message, "err"); pushEvent(err.message, "bad"); }
   finally { busy = false; renderControls(); }
 }
 
@@ -306,12 +315,12 @@ async function doOpen(e) {
   await run($("em-open"), async () => {
     const res = await post("/api/edumix/open", { url: raw, auto_navigate: $("em-opt-auto").checked });
     pushEvent(res.hot_swapped ? "Navigating to the class" : "Starting the EduMix browser", "info");
-    helperShownForEpisode = false;
+    helperShownState = null;
     await refreshNow();
   });
 }
 async function doLogin() {
-  await run($("em-login"), async () => { await post("/api/edumix/login"); pushEvent("Opened the site's sign-in", "info"); helperShownForEpisode = false; await refreshNow(); });
+  await run($("em-login"), async () => { await post("/api/edumix/login"); pushEvent("Opened the site's sign-in", "info"); helperShownState = null; await refreshNow(); });
 }
 async function doReconnect() {
   await run($("em-reconnect"), async () => { const r = await post("/api/edumix/reconnect"); pushEvent(r.mode === "restart_browser" ? "Restarting the browser" : "Reconnecting to the class", "info"); await refreshNow(); });
@@ -327,9 +336,9 @@ async function refreshNow() {
 async function applyPlayerFit(mode) {
   try {
     const r = await post("/api/edumix/fit", { mode });
-    if (r.applied) toast(`Player ${mode === "reset" ? "fit reset" : "set to " + mode} (${r.videos} video${r.videos === 1 ? "" : "s"})`, "ok");
-    else toast(r.note || "No video on the page itself", "warn");
-  } catch (err) { toast(err.message, "warn"); }
+    if (r.applied) say(`Player ${mode === "reset" ? "fit reset" : "set to " + mode} (${r.videos} video${r.videos === 1 ? "" : "s"})`, "ok");
+    else say(r.note || "No video on the page itself", "warn");
+  } catch (err) { say(err.message, "warn"); }
 }
 
 // ------------------------------------------------------------------ sign-in helper
@@ -346,7 +355,9 @@ function openHelper() {
     : "Click the phone-number field in the live view, then type your number here and send it - or type straight into the view.";
   $("em-secret-label").textContent = st === "awaiting_otp" ? "One-time code" : "Phone number";
   $("em-secret").setAttribute("inputmode", "numeric");
-  const d = $("em-dialog"); d.hidden = false;
+  const d = $("em-dialog");
+  if (!d.hidden) return;                              // already open: just retitled for the new step
+  d.hidden = false;
   d._release = trapFocus(d, closeHelper);
   $("em-secret").focus();
 }
@@ -358,9 +369,9 @@ function closeHelper() {
 }
 async function sendSecret(extra) {
   const field = $("em-secret");
+  if (!rfb || vncState !== "connected") return say("Live view isn't connected - nothing was sent", "warn");
   const text = field.value;
-  field.value = "";                                   // wipe immediately - never retained
-  if (!rfb || vncState !== "connected") return toast("Live view isn't connected", "warn");
+  field.value = "";                                   // wipe before sending - never retained
   for (const ch of text) { rfb.sendKey(keysym(ch)); await sleep(18); }
   if (extra) rfb.sendKey(extra);
   field.focus();
@@ -387,7 +398,7 @@ $("em-dialog").addEventListener("click", (e) => { if (e.target === $("em-dialog"
 $("em-url").addEventListener("input", () => showUrlError(""));
 $("em-opt-auto").addEventListener("change", async (e) => {
   if (!status?.source) return;
-  try { await post("/api/edumix/options", { auto_navigate: e.target.checked }); } catch (err) { toast(err.message, "err"); }
+  try { await post("/api/edumix/options", { auto_navigate: e.target.checked }); } catch (err) { say(err.message, "err"); }
 });
 
 document.querySelectorAll("#em-fit-seg .seg-btn").forEach((b) => b.addEventListener("click", () => { fitMode = b.dataset.fit; applyFit(); }));
@@ -398,7 +409,7 @@ $("em-fullscreen").addEventListener("click", async () => {
   try {
     if (document.fullscreenElement) await document.exitFullscreen();
     else await wrap.requestFullscreen();
-  } catch (err) { toast("Fullscreen isn't available here", "warn"); }
+  } catch (err) { say("Fullscreen isn't available here", "warn"); }
 });
 document.addEventListener("fullscreenchange", () => { $("em-fullscreen").setAttribute("aria-pressed", String(!!document.fullscreenElement)); applyFit(); });
 new ResizeObserver(() => { if (fitMode === "fill") applyFit(); }).observe($("em-stage-wrap"));
