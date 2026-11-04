@@ -93,3 +93,26 @@ controls; a protected player is reported as **Protected playback** and left alon
 6. Smoke test with the stream **stopped**: open `/edumix`, paste a class URL, see the live view, sign in by hand.
 7. Confirm `Go Live` is refused while EduMix is the active source, and Zoom / webpage sources still go live.
 8. Enabling capture is a separate, explicit change (`EDUMIX_CAPTURE_ENABLED`) after a live class has been inspected.
+
+## Security notes from the pre-live review
+
+* **Session cookies at rest.** Chrome runs with `--password-store=basic` (no desktop keyring on this headless box),
+  so the cookie database in `~zoombot/.config/chrome-profiles/edumix` is protected only by file permissions
+  (`700`, owner `zoombot`) - Chrome's "basic" store is obfuscation, not strong encryption. The dashboard itself never
+  reads or copies it. Treat the VPS disk/snapshots as sensitive; use full-disk encryption on the instance, and do not
+  copy that profile off the box. A site-level "log out of all devices" revokes the session server-side.
+* **What the page probe reads.** Route, visible form *types*, `<video>` playback state, iframe hostnames,
+  `navigator.onLine`, and whether certain phrases (Logout, "session expired", ...) appear. It never reads input
+  values, cookies or storage, and returns no page text. A unit test guards this.
+* **What is logged.** Audit entries carry the URL *path* only. Phone/OTP typed via the helper go straight to the
+  browser as key events; a browser test confirms they appear in no HTTP request, storage, console or DOM.
+* **Capture gate has three layers:** `control.unit_action` (dashboard), `scripts/stream.sh` (where the encoder
+  actually starts) and a state-aware `capture_status()` (protected playback can never enable capture even if the
+  flag is later turned on). Enabling capture later must write `EDUMIX_CAPTURE_ENABLED=1` into the source env.
+
+## Performance notes
+
+* One DevTools probe costs ~15 ms of dashboard CPU and ~30 ms wall on a loaded 4 GB machine, and is shared
+  (1.5 s cache) by every open page and the supervisor.
+* `cdp.py` built a TLS context for every plain-http loopback call (~500 ms CPU each on a small machine); fixed in a
+  separate commit (`verify=False`, behaviour unchanged). It benefits the existing YouTube controls too.
