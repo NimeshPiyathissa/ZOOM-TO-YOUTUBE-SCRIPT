@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from urllib.parse import urlsplit
 
 import httpx
 import websockets
@@ -20,13 +21,24 @@ class CDPError(Exception):
     pass
 
 
+def _devtools_url(path: str) -> str:
+    """The only URL this module ever requests over HTTP: plain http to Chrome's loopback
+    DevTools port. Built and checked in one place so the verify=False below can never apply
+    to an https:// or remote endpoint, whatever a caller or config value does."""
+    url = f"http://127.0.0.1:{int(config.CHROME_DEBUG_PORT)}/json{path}"
+    parts = urlsplit(url)
+    if parts.scheme != "http" or parts.hostname != "127.0.0.1":
+        raise CDPError("refusing a non-loopback DevTools URL")
+    return url
+
+
 async def _get_json(path: str) -> object:
     """GET http://127.0.0.1:<port>/json<path>, with one quick retry: Chrome
     re-binds the port within a second or two after a restart, and this is
     also what makes every control call "reconnect automatically" - there
     is no long-lived connection to lose, each call discovers the current
     tab afresh."""
-    url = f"http://127.0.0.1:{config.CHROME_DEBUG_PORT}/json{path}"
+    url = _devtools_url(path)
     last: Exception | None = None
     for attempt in range(2):
         try:
