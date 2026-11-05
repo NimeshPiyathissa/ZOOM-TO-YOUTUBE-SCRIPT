@@ -34,7 +34,7 @@ document.getElementById("unit-list").addEventListener("click", async (e) => {
   if (!btn) return;
   await withLoading(btn, async () => {
     try {
-      await apiFetch(`/api/units/${btn.dataset.unit}/${btn.dataset.verb}`, { method: "POST" });
+      await unitActionFlow(btn.dataset.unit, btn.dataset.verb);
       toast(`${btn.dataset.unit}: ${btn.dataset.verb} sent`);
     } catch (err) { toast(err.message, "err"); }
   });

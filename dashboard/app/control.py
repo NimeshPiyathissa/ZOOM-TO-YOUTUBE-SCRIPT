@@ -136,11 +136,6 @@ def unit_action(unit: str, verb: str, *, grant=None) -> dict:
     _require_unit(unit)
     if verb not in VERBS:
         raise ControlError(f"unknown verb: {verb}")
-    if unit == "ffmpeg-stream" and verb in ("start", "restart"):
-        from . import broadcast
-        if not (isinstance(grant, broadcast.Grant) and grant.valid()):
-            raise ControlError("Starting the encoder needs an explicit Go Live confirmation. Nothing is started "
-                               "automatically - press Go Live and confirm.")
     if unit == "ffmpeg-stream" and verb == "stop":
         try:                                   # every stop path (button, pipeline, schedule...) is a DELIBERATE stop, not a crash
             from . import broadcast
@@ -152,6 +147,11 @@ def unit_action(unit: str, verb: str, *, grant=None) -> dict:
             "EduMix capture and YouTube broadcasting are disabled until a real live class has been "
             "inspected and an authorized capture method is confirmed."
         )
+    if unit == "ffmpeg-stream" and verb in ("start", "restart"):
+        from . import broadcast
+        if not (isinstance(grant, broadcast.Grant) and grant.valid()):
+            raise ControlError("Starting the encoder needs an explicit Go Live confirmation. Nothing is started "
+                               "automatically - press Go Live and confirm.")
     argv = [SUDO, "-u", config.ZOOMBOT_USER, SYSTEMCTL, "--user", verb, f"{unit}.service"]
     proc = run_as_zoombot(argv, timeout=25)
     res = {

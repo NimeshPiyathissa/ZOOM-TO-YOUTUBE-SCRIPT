@@ -257,10 +257,17 @@ def test_encoder_cannot_start_for_edumix(monkeypatch):
 
 
 def test_encoder_still_starts_for_other_sources(monkeypatch):
+    """...but only with an authorized grant (Go Live): without one nothing starts, whatever the source."""
+    from app import broadcast
     monkeypatch.setattr(control, "run_as_zoombot", lambda *a, **k: _Proc())
     for st in ("zoom", "webpage", "direct", ""):
         monkeypatch.setattr(control, "read_current_source", lambda st=st: {"SOURCE_TYPE": st})
-        assert control.unit_action("ffmpeg-stream", "start")["ok"]
+        with pytest.raises(control.ControlError, match="Go Live"):
+            control.unit_action("ffmpeg-stream", "start")
+        broadcast.reset_for_tests()
+        g = broadcast.issue_grant("op", "go_live", None, 1, broadcast.OFFLINE)
+        grant = broadcast.consume_grant(g["grant"], "op", "go_live", None, 1)
+        assert control.unit_action("ffmpeg-stream", "start", grant=grant)["ok"]
 
 
 # ------------------------------------------------------------------ sources + control integration
@@ -348,13 +355,13 @@ def test_start_source_edumix_refused_while_live(tmp_db, monkeypatch, fake_units)
     assert fake_units == []          # nothing was touched
 
 
-def test_start_source_zoom_still_starts_encoder(tmp_db, monkeypatch, fake_units):
-    """Regression: the edumix branch must not change other sources."""
+def test_start_source_for_other_sources_prepares_them_but_never_starts_the_encoder(tmp_db, monkeypatch, fake_units):
+    """Regression: the edumix branch must not change other sources - and no source start may put anything on air."""
     monkeypatch.setattr(control, "_ffmpeg_is_up", lambda: False)
     monkeypatch.setattr(control, "read_current_source", lambda: {"SOURCE_TYPE": "zoom"})
     sid = sources.create_source("W", "webpage", "https://example.com/", {})
     control.start_source(sources.get_source(sid))
-    assert ("ffmpeg-stream", "start") in fake_units
+    assert ("browser-source", "restart") in fake_units and ("ffmpeg-stream", "start") not in fake_units
 
 
 def test_pipeline_start_skips_encoder_for_edumix(monkeypatch):
@@ -548,9 +555,11 @@ def test_stream_go_live_blocked_for_edumix(client, monkeypatch):
     ran = []
     monkeypatch.setattr(control, "read_current_source", lambda: {"SOURCE_TYPE": "edumix"})
     monkeypatch.setattr(control, "run_as_zoombot", lambda *a, **k: ran.append(a) or _Proc())
-    r = client.post("/api/stream/go-live", headers=client.csrf)
-    assert r.status_code == 400 and "EduMix" in r.json()["error"]
-    assert ran == []
+    r = client.post("/api/broadcast/authorize", json={"purpose": "go_live", "ack_warnings": True}, headers=client.csrf)
+    assert r.status_code == 403 and r.json()["code"] == "edumix_locked" and "EduMix" in r.json()["error"]
+    r = client.post("/api/stream/go-live", json={"grant": "nope"}, headers=client.csrf)       # and no grant can exist anyway
+    assert r.status_code == 403
+    assert not [c for c in ran if any(v in str(c) for v in ("'start'", "'restart'", " start ", " restart "))]   # read-only 'show' calls only
 
 
 def test_page_renders_with_oxblood_shell(client):

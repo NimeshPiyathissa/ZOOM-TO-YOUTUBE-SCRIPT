@@ -23,15 +23,15 @@ document.getElementById("unit-list").addEventListener("click", async (e) => {
   if (!btn) return;
   await withLoading(btn, async () => {
     try {
-      await apiFetch(`/api/units/${btn.dataset.unit}/${btn.dataset.verb}`, { method: "POST" });
-      toast(`${btn.dataset.unit}: ${btn.dataset.verb} sent`);
+      await unitActionFlow(btn.dataset.unit, btn.dataset.verb);
     } catch (err) { toast(err.message, "err"); }
   });
 });
 
 async function streamAction(btn, action, confirmMsg) {
+  if (action === "go-live") { await withLoading(btn, goLive); return; }
+  if (action === "restart") { await withLoading(btn, restartEncoder); return; }
   if (confirmMsg && !(await confirmDialog(confirmMsg, { danger: action === "stop" }))) return;
-  if (action === "go-live" && !(await confirmGoLive())) return;
   await withLoading(btn, async () => {
     try { await apiFetch(`/api/stream/${action}`, { method: "POST" }); toast(`Stream: ${action} sent`); }
     catch (err) { toast(err.message, "err"); }

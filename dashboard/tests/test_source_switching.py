@@ -83,7 +83,7 @@ class _Recorder:
     def __init__(self):
         self.calls: list[tuple[str, str]] = []
 
-    def unit_action(self, unit, verb):
+    def unit_action(self, unit, verb, *, grant=None):
         self.calls.append((unit, verb))
         return {"ok": True, "unit": unit, "verb": verb}
 
@@ -113,7 +113,14 @@ WEB = {"type": "webpage", "url": "https://meet.google.com/abc", "options": {}}
 DIRECT = {"type": "direct", "url": "https://example.com/stream.m3u8", "options": {}}
 
 
-def test_zoom_from_cold_starts_chain_then_encoder(recorder):
+def _grant():
+    from app import broadcast
+    broadcast.reset_for_tests()
+    g = broadcast.issue_grant("op", "restart", None, 1, broadcast.LIVE)
+    return broadcast.consume_grant(g["grant"], "op", "restart", None, 1)
+
+
+def test_zoom_from_cold_starts_chain_but_never_the_encoder(recorder):
     recorder.pin(current_type="", ffmpeg_up=False)
     out = control.start_source(ZOOM)
     assert ("browser-source", "stop") in recorder.calls
@@ -121,9 +128,9 @@ def test_zoom_from_cold_starts_chain_then_encoder(recorder):
     for u in ("xvfb", "openbox", "audio-setup", "x11vnc"):
         assert (u, "start") in recorder.calls
     assert ("zoom", "restart") in recorder.calls              # restart, so a same-type switch actually rejoins
-    assert recorder.calls[-1] == ("ffmpeg-stream", "start")   # encoder was down: switching = going live
-    assert ("ffmpeg-stream", "stop") not in recorder.calls
-    assert out["rtmp_dropped"] is False and out["hot_swapped"] is False
+    assert recorder.calls[-1] == ("x11vnc", "start")
+    assert not [c for c in recorder.calls if c[0] == "ffmpeg-stream"]   # switching/joining NEVER puts the stream on air
+    assert out["rtmp_dropped"] is False and out["hot_swapped"] is False and out["encoder_started"] is False
 
 
 def test_zoom_to_webpage_while_live_keeps_encoder_running(recorder):
@@ -145,9 +152,16 @@ def test_webpage_to_zoom_while_live_keeps_encoder_running(recorder):
     assert out["rtmp_dropped"] is False
 
 
+def test_direct_while_live_without_a_grant_is_refused_before_anything_changes(recorder):
+    recorder.pin(current_type="zoom", ffmpeg_up=True)
+    with pytest.raises(control.ControlError, match="restart"):
+        control.start_source(DIRECT)
+    assert recorder.calls == []
+
+
 def test_direct_while_live_restarts_encoder_and_reports_drop(recorder):
     recorder.pin(current_type="zoom", ffmpeg_up=True)
-    out = control.start_source(DIRECT)
+    out = control.start_source(DIRECT, encoder_grant=_grant())
     assert ("ffmpeg-stream", "stop") in recorder.calls
     assert ("zoom", "stop") in recorder.calls and ("browser-source", "stop") in recorder.calls
     started = {u for u, v in recorder.calls if v in ("start", "restart")}
@@ -158,18 +172,17 @@ def test_direct_while_live_restarts_encoder_and_reports_drop(recorder):
 
 def test_leaving_direct_while_live_also_restarts_encoder(recorder):
     recorder.pin(current_type="direct", ffmpeg_up=True)
-    out = control.start_source(WEB)
+    out = control.start_source(WEB, encoder_grant=_grant())
     assert ("ffmpeg-stream", "stop") in recorder.calls
     assert recorder.calls.index(("browser-source", "restart")) < recorder.calls.index(("ffmpeg-stream", "start"))
     assert out["rtmp_dropped"] is True
 
 
-def test_direct_from_cold_does_not_report_drop(recorder):
+def test_direct_from_cold_does_not_report_drop_and_does_not_start_the_encoder(recorder):
     recorder.pin(current_type="", ffmpeg_up=False)
     out = control.start_source(DIRECT)
     assert recorder.calls[0] == ("ffmpeg-stream", "stop")     # harmless when already down
-    assert recorder.calls[-1] == ("ffmpeg-stream", "start")
-    assert out["rtmp_dropped"] is False
+    assert ("ffmpeg-stream", "start") not in recorder.calls and out["rtmp_dropped"] is False
 
 
 def test_webpage_to_webpage_while_live_navigates_in_place(recorder, monkeypatch):

@@ -716,14 +716,9 @@
 
   if (wmRestartBtn) {
     wmRestartBtn.addEventListener('click', async () => {
-      if (typeof window.confirmDialog === 'function') {
-        const ok = await window.confirmDialog('Restart the encoder to apply the watermark change? This briefly interrupts the live stream.');
-        if (!ok) return;
-      }
+      // Restarting needs the same explicit confirmation + one-time grant as going live (app.js restartEncoder()).
       try {
-        await fetch('/api/stream/restart', { method: 'POST', headers: { 'X-CSRF-Token': getCsrfToken() } });
-        if (typeof window.toast === 'function') window.toast('Encoder restart sent', 'success');
-        setTimeout(checkHardwareStatus, 3000);
+        if (await restartEncoder()) setTimeout(checkHardwareStatus, 3000);
       } catch (e) {
         if (typeof window.toast === 'function') window.toast('Restart failed', 'err');
       }

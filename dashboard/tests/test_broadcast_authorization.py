@@ -469,3 +469,54 @@ def test_stop_is_deliberate_not_an_error(client):
 def test_apply_restarts_skips_the_encoder(client):
     r = client.post("/api/config/apply-restarts", json={"units": ["ffmpeg-stream"]}, headers=client.csrf)
     assert r.status_code == 200 and r.json()["results"][0]["needs_go_live"] is True and client.starts == []
+
+
+# ------------------------------------------------------------------ failure reporting that used to live in test_status_actions
+
+def test_go_live_that_systemctl_refuses_is_an_error_not_success(client, monkeypatch):
+    def refuse(unit, verb, *, grant=None):
+        if unit == "ffmpeg-stream" and verb == "start":
+            return {"ok": False, "unit": unit, "verb": verb, "stderr": "Unit ffmpeg-stream.service not found."}
+        return {"ok": True, "unit": unit, "verb": verb, "stderr": ""}
+    monkeypatch.setattr(control, "unit_action", refuse)
+    a = authorize(client).json()["grant"]
+    r = client.post("/api/stream/go-live", json={"grant": a}, headers=client.csrf)
+    assert r.status_code == 400 and "not found" in r.json()["error"]
+    d = client.get("/api/state").json()["broadcast"]
+    assert d["state"] in ("ERROR", "OFFLINE", "READY")                              # never LIVE
+    assert client.written[-1] == "cleared"                                           # the one-time permission is wiped even on failure
+
+
+def test_go_live_that_dies_immediately_reports_why_and_redacts_the_key(client, monkeypatch):
+    from app import env_store, stats
+
+    def start_then_die(unit, verb, *, grant=None):
+        if unit == "ffmpeg-stream" and verb == "start":
+            client.encoder["phase"] = "FAILED"
+        return {"ok": True, "unit": unit, "verb": verb, "stderr": ""}
+    monkeypatch.setattr(control, "unit_action", start_then_die)
+    monkeypatch.setattr(stats, "stream_state", lambda s: {"last_error": "rtmps://a.rtmps.youtube.com:443/live2/abcdefghijklmnopqrstuvwx: Input/output error"})
+    a = authorize(client).json()["grant"]
+    r = client.post("/api/stream/go-live", json={"grant": a}, headers=client.csrf)
+    assert r.status_code == 400
+    msg = r.json()["error"]
+    assert "stopped again right away" in msg and "abcdefghijklmnopqrstuvwx" not in msg
+
+
+def test_stop_is_not_second_guessed(client, monkeypatch):
+    a = authorize(client).json()["grant"]
+    client.post("/api/stream/go-live", json={"grant": a}, headers=client.csrf)
+    polled = []
+    real = control.unit_show
+    monkeypatch.setattr(control, "unit_show", lambda u: polled.append(u) or real(u))
+    assert client.post("/api/stream/stop", headers=client.csrf).status_code == 200
+    # one read to reconcile state for the response is fine; stop must not run the start-verification loop
+    assert polled.count("ffmpeg-stream") <= 2
+
+
+def test_legacy_preflight_endpoint_still_lists_warnings(client, monkeypatch):
+    monkeypatch.setattr(control, "zoom_meeting_status", lambda: {"status": "not_joined", "detail": "Zoom is open at its home screen"})
+    w = client.get("/api/stream/preflight").json()["warnings"]
+    assert [x["code"] for x in w] == ["not_in_meeting"] and "home screen" in w[0]["text"]
+    monkeypatch.setattr(sources, "get_active_source", lambda: None)
+    assert [x["code"] for x in client.get("/api/stream/preflight").json()["warnings"]] == ["no_source"]

@@ -28,7 +28,7 @@ import json
 import re
 import time
 
-from . import cdp
+from . import cdp, zoom_cleanfeed, zoom_state
 
 # ---------------------------------------------------------------- status
 
@@ -73,16 +73,22 @@ TERMINAL = {"expired", "duplicate_join", "wrong_registrant", "join_failed", "rem
 # see the module docstring's fragility note. `in_meeting_chrome` looks
 # for the meeting toolbar/controls that only exist once actually in a
 # meeting; everything else is read from visible text.
-JS_STATE = """(() => {
-  const bodyText = (document.body && document.body.innerText || '').slice(0, 4000);
-  const inMeetingEl = document.querySelector(
-    '.footer-button-base, .meeting-client-inner, #wc-footer, [class*="footer__leave-btn"]'
-  );
+JS_STATE = r"""(() => {
+  const q = (sel) => document.querySelector(sel);
+  const labels = Array.from(document.querySelectorAll('button[aria-label]')).map((b) => b.getAttribute('aria-label') || '').filter((l) => l && l.length < 40).slice(0, 40);
+  const vids = Array.from(document.querySelectorAll('video'));
   return {
     url: location.href,
     title: document.title,
-    body_text: bodyText,
-    in_meeting_chrome: !!(inMeetingEl && inMeetingEl.offsetParent !== null),
+    body_text: ((document.body && document.body.innerText) || '').slice(0, 4000),
+    on_zoom: /zoom(gov)?\.(us|com)/.test(location.host),
+    leave_present: !!q('[class*="footer__leave-btn"], #wc-footer button[aria-label="Leave"], button[aria-label="Leave"]'),
+    footer_present: !!q('#wc-footer, [class*="footer__inner"], [class*="footer__btns-container"]'),
+    prejoin_form: !!q('#inputname, input[name="displayName"], input[aria-label*="your name" i], input[type="password"]'),
+    labels: labels,
+    playing_video: vids.some((v) => v.readyState >= 2 && !v.paused && !v.ended),
+    video_count: vids.length,
+    clean_feed: document.documentElement.getAttribute('data-zs-cleanfeed') === 'on',
   };
 })()"""
 
@@ -122,220 +128,7 @@ JS_AUTOPILOT_STEP = """(() => {
   return null;
 })()"""
 
-JS_CLEANFEED_INJECT = """(() => {
-  const CSS_TEXT = `
-    /* 1. Eliminate Top Header & All Sub-Headers */
-    .meeting-app-header, #header, .header, .topic, .meeting-info-header,
-    .meeting-info-icon__header, .meeting-topic,
-    [class*="header"], [class*="meeting-app-header"], [class*="header__"], [class*="meeting-header"],
-    .suspension-header, div[role="banner"], .meeting-client-head,
-    [id="header_container"], .header-container {
-        display: none !important;
-        height: 0 !important;
-        width: 0 !important;
-        opacity: 0 !important;
-        pointer-events: none !important;
-        visibility: hidden !important;
-        min-height: 0 !important;
-        max-height: 0 !important;
-        margin: 0 !important;
-        padding: 0 !important;
-        border: none !important;
-        overflow: hidden !important;
-    }
-
-    /* 2. Eliminate Bottom Control Bar & Floating Tools */
-    .footer, #wc-footer, .meeting-control-bar, .footer__control-bar,
-    [class*="footer"], div[role="toolbar"], #foot-bar,
-    .footer-bar, .room-footer, .more-button, .audio-option-menu,
-    .settings-dialog, .suspension-window, .security-option-menu,
-    .footer-button-base, .leave-btn-container, [class*="leave-btn"],
-    .meeting-client-inner .footer, [class*="meeting-control-bar"],
-    [class*="footer__control-bar"], [class*="footer-button"],
-    [id="footer_container"], .footer-container,
-    [id="livesdk__campaign"], [class*="livesdk"], [id*="livesdk"],
-    .livesdk__placement, .livesdk__invitation, .livesdk__Draggable {
-        display: none !important;
-        height: 0 !important;
-        width: 0 !important;
-        opacity: 0 !important;
-        pointer-events: none !important;
-        visibility: hidden !important;
-        min-height: 0 !important;
-        max-height: 0 !important;
-        margin: 0 !important;
-        padding: 0 !important;
-        border: none !important;
-        overflow: hidden !important;
-    }
-
-    /* 3. Strip Participant Tags & Badges */
-    .participant-name, .video-box__name-tag, [class*="speaker-bar"],
-    [class*="name-tag"], #speaker-box-name, .video-avatar__avatar-name,
-    .speaker-bar, .name-label, [class*="speaker-name"],
-    [class*="participant-name"], .speaker-active-name,
-    .can-hide.participant-name, .aria-label-participant-name {
-        display: none !important;
-        opacity: 0 !important;
-        pointer-events: none !important;
-        visibility: hidden !important;
-        height: 0 !important;
-        margin: 0 !important;
-        padding: 0 !important;
-    }
-
-    /* 4. Eliminate Black Bars & Force 100vw x 100vh Edge-to-Edge */
-    html, body, #root, #app, .main-layout, .meeting-client, .meeting-client-inner, .window-content,
-    .video-container, .gallery-video-container, .speaker-view, .single-view,
-    .full-screen-video, .video-player-container, #video-container, .video-box,
-    [id="content_container"], .zoom-newcontent, .total-main-content, [id="content"], .main-content,
-    .react-draggable, [class*="main-layout"], [class*="meeting-client"], [class*="video-container"] {
-        width: 100vw !important;
-        height: 100vh !important;
-        max-width: 100vw !important;
-        max-height: 100vh !important;
-        margin: 0 !important;
-        padding: 0 !important;
-        border: none !important;
-        overflow: hidden !important;
-        background-color: #000 !important;
-        background: #000 !important;
-        box-sizing: border-box !important;
-    }
-
-    /* Force active video container and canvas to fill the entire screen */
-    .speaker-active-video, .video-avatar-container, .speaker-view,
-    video, canvas, canvas.speaker-active-video__canvas, div[class*="active-video"] {
-        position: fixed !important;
-        top: 0 !important;
-        left: 0 !important;
-        width: 100vw !important;
-        height: 100vh !important;
-        max-width: 100vw !important;
-        max-height: 100vh !important;
-        object-fit: contain !important;
-        margin: 0 !important;
-        padding: 0 !important;
-        z-index: 1 !important;
-    }
-
-    ::-webkit-scrollbar {
-        display: none !important;
-        width: 0 !important;
-        height: 0 !important;
-    }
-  `;
-
-  // 1. Right-Click Context Lock
-  const suppress = (e) => {
-    if (e) {
-      if (typeof e.preventDefault === 'function') e.preventDefault();
-      if (typeof e.stopPropagation === 'function') e.stopPropagation();
-      if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
-    }
-    return false;
-  };
-  if (!window.__cleanfeed_events_bound) {
-    window.addEventListener('contextmenu', suppress, true);
-    document.addEventListener('contextmenu', suppress, true);
-    window.addEventListener('auxclick', (e) => { if (e && e.button === 2) suppress(e); }, true);
-    window.addEventListener('keydown', (e) => { if (e && (e.key === 'ContextMenu' || e.keyCode === 93)) suppress(e); }, true);
-    window.__cleanfeed_events_bound = true;
-  }
-
-  // 2. Ensure Style Element Exists & Contains Nuclear Rules
-  let styleEl = document.getElementById('zoom-cleanfeed-style');
-  if (!styleEl) {
-    styleEl = document.createElement('style');
-    styleEl.id = 'zoom-cleanfeed-style';
-    styleEl.textContent = CSS_TEXT;
-    (document.head || document.documentElement).appendChild(styleEl);
-  } else if (styleEl.textContent !== CSS_TEXT) {
-    styleEl.textContent = CSS_TEXT;
-  }
-
-  // 3. Programmatic DOM Purge & Fit
-  const HIDE_SEL = [
-    '.meeting-app-header', '#header', '.header', '.topic', '.meeting-info-header',
-    '.meeting-info-icon__header', '.meeting-topic',
-    '[class*="header"]', '[class*="meeting-app-header"]', '[class*="header__"]', '[class*="meeting-header"]',
-    '.suspension-header', 'div[role="banner"]', '.meeting-client-head',
-    '[id="header_container"]', '.header-container',
-    '.footer', '#wc-footer', '.meeting-control-bar', '.footer__control-bar',
-    '[class*="footer"]', 'div[role="toolbar"]', '#foot-bar',
-    '.footer-bar', '.room-footer', '.more-button', '.audio-option-menu',
-    '.settings-dialog', '.suspension-window', '.security-option-menu',
-    '.footer-button-base', '.leave-btn-container', '[class*="leave-btn"]',
-    '.meeting-client-inner .footer', '[class*="meeting-control-bar"]',
-    '[class*="footer__control-bar"]', '[class*="footer-button"]',
-    '[id="footer_container"]', '.footer-container',
-    '[id="livesdk__campaign"]', '[class*="livesdk"]', '[id*="livesdk"]',
-    '.livesdk__placement', '.livesdk__invitation', '.livesdk__Draggable',
-    '.participant-name', '.video-box__name-tag', '[class*="speaker-bar"]',
-    '[class*="name-tag"]', '#speaker-box-name', '.video-avatar__avatar-name',
-    '.speaker-bar', '.name-label', '[class*="speaker-name"]',
-    '[class*="participant-name"]', '.speaker-active-name',
-    '.can-hide.participant-name', '.aria-label-participant-name'
-  ].join(',');
-
-  const purge = () => {
-    try {
-      const els = document.querySelectorAll(HIDE_SEL);
-      for (let i = 0; i < els.length; i++) {
-        const el = els[i];
-        if (el && el.style) {
-          el.style.setProperty('display', 'none', 'important');
-          el.style.setProperty('opacity', '0', 'important');
-          el.style.setProperty('pointer-events', 'none', 'important');
-          el.style.setProperty('visibility', 'hidden', 'important');
-          el.style.setProperty('height', '0', 'important');
-        }
-      }
-      const vids = document.querySelectorAll('.speaker-active-video, .video-avatar-container, .speaker-view, video, canvas, canvas.speaker-active-video__canvas, div[class*="active-video"]');
-      for (let i = 0; i < vids.length; i++) {
-        const v = vids[i];
-        if (v && v.style) {
-          v.style.setProperty('position', 'fixed', 'important');
-          v.style.setProperty('top', '0', 'important');
-          v.style.setProperty('left', '0', 'important');
-          v.style.setProperty('width', '100vw', 'important');
-          v.style.setProperty('height', '100vh', 'important');
-          v.style.setProperty('max-width', '100vw', 'important');
-          v.style.setProperty('max-height', '100vh', 'important');
-          v.style.setProperty('object-fit', 'contain', 'important');
-          v.style.setProperty('margin', '0', 'important');
-          v.style.setProperty('padding', '0', 'important');
-          v.style.setProperty('z-index', '1', 'important');
-        }
-      }
-    } catch (_) {}
-  };
-
-  purge();
-
-  // 4. Persistent MutationObserver on document.documentElement
-  if (!window.__cleanfeed_observer) {
-    try {
-      window.__cleanfeed_observer = new MutationObserver(() => {
-        if (!document.getElementById('zoom-cleanfeed-style')) {
-          const s = document.createElement('style');
-          s.id = 'zoom-cleanfeed-style';
-          s.textContent = CSS_TEXT;
-          (document.head || document.documentElement).appendChild(s);
-        }
-        purge();
-      });
-      window.__cleanfeed_observer.observe(document.documentElement, {
-        childList: true,
-        subtree: true,
-        attributes: true,
-        attributeFilter: ['class', 'style']
-      });
-    } catch (_) {}
-  }
-
-  return { ok: true, has_style: !!document.getElementById('zoom-cleanfeed-style') };
-})()"""
+JS_CLEANFEED_INJECT = zoom_cleanfeed.INJECT_JS            # scoped to 'a meeting is on screen' - see zoom_cleanfeed.py
 
 
 async def apply_cleanfeed_async() -> dict:
@@ -407,16 +200,13 @@ async def _status_async() -> dict:
     page = result.get("value") or {}
     text = page.get("body_text", "")
     st, detail = _classify_text(text)
-    if st:
-        return {"status": st, "detail": detail, "terminal": st in TERMINAL, "authoritative": False, "dialogs": []}
-    if page.get("in_meeting_chrome"):
-        return {"status": "in_meeting", "detail": "Zoom's web client is showing the in-meeting toolbar.",
-                "terminal": False, "authoritative": False, "dialogs": []}
-    if "zoom.us" in (page.get("url") or ""):
-        return {"status": "connecting", "detail": "On a Zoom web client screen, not yet in the meeting.",
-                "terminal": False, "authoritative": False, "dialogs": []}
-    return {"status": "unknown", "detail": "Couldn't recognize the web client's current screen.",
-            "terminal": False, "authoritative": False, "dialogs": [], "raw_text": text[:300]}
+    verdict = zoom_state.classify_web(page, (st, detail) if st else None)
+    status = verdict["status"]
+    if status == "unknown":
+        return {**verdict, "detail": "Couldn't recognize the web client's current screen.",
+                "terminal": False, "authoritative": False, "dialogs": [], "raw_text": text[:300]}
+    return {**verdict, "terminal": status in TERMINAL, "authoritative": False, "dialogs": [],
+            "clean_feed_active": bool(page.get("clean_feed"))}
 
 
 def status() -> dict:

@@ -121,55 +121,8 @@ def test_state_endpoint_reports_meaning_for_every_unit(client, monkeypatch):
     assert next(s for s in d["services"] if s["unit"] == "dashboard")["status"]["kind"] == "active"
 
 
-def test_go_live_that_systemctl_refuses_is_an_error_not_success(client, monkeypatch):
-    monkeypatch.setattr(control, "unit_action", lambda unit, verb: {"ok": False, "unit": unit, "verb": verb, "stderr": "Unit ffmpeg-stream.service not found."})
-    r = client.post("/api/stream/go-live", headers=client.csrf)
-    assert r.status_code == 400 and "not found" in r.json()["error"]
-
-
-def test_go_live_that_dies_immediately_reports_why_and_redacts_the_key(client, monkeypatch):
-    monkeypatch.setattr(control, "unit_action", lambda unit, verb: {"ok": True, "unit": unit, "verb": verb, "stderr": ""})
-    monkeypatch.setattr(control, "unit_show", lambda unit: show(unit, "failed", "failed", "FAILED"))
-    monkeypatch.setattr(stats, "stream_state", lambda s: {"last_error": "rtmps://a.rtmps.youtube.com:443/live2/abcd-efgh-ijkl-mnop-qrst: Input/output error"})
-    monkeypatch.setattr("asyncio.sleep", _no_sleep)
-    from app import env_store
-    monkeypatch.setattr(env_store, "read_parsed", lambda: {"YT_STREAM_KEY": "abcd-efgh-ijkl-mnop-qrst"})
-    r = client.post("/api/stream/go-live", headers=client.csrf)
-    assert r.status_code == 400
-    msg = r.json()["error"]
-    assert "stopped again right away" in msg and "abcd-efgh-ijkl-mnop-qrst" not in msg
-
-
-def test_go_live_that_stays_up_succeeds(client, monkeypatch):
-    monkeypatch.setattr(control, "unit_action", lambda unit, verb: {"ok": True, "unit": unit, "verb": verb, "stderr": ""})
-    monkeypatch.setattr(control, "unit_show", lambda unit: show(unit, "active", "running", "LIVE", main_pid=9))
-    monkeypatch.setattr("asyncio.sleep", _no_sleep)
-    r = client.post("/api/stream/go-live", headers=client.csrf)
-    assert r.status_code == 200 and r.json()["ok"] is True
-
-
-def test_stop_is_not_second_guessed(client, monkeypatch):
-    monkeypatch.setattr(control, "unit_action", lambda unit, verb: {"ok": True, "unit": unit, "verb": verb, "stderr": ""})
-    monkeypatch.setattr(control, "unit_show", lambda unit: (_ for _ in ()).throw(AssertionError("stop must not poll")))
-    assert client.post("/api/stream/stop", headers=client.csrf).status_code == 200
-
-
 async def _no_sleep(*a, **k):
     return None
-
-
-def test_preflight_warns_when_nothing_is_selected_and_when_zoom_is_not_in_a_meeting(client, monkeypatch):
-    monkeypatch.setattr(sources, "get_active_source", lambda: None)
-    w = client.get("/api/stream/preflight").json()["warnings"]
-    assert [x["code"] for x in w] == ["no_source"]
-
-    monkeypatch.setattr(sources, "get_active_source", lambda: {"id": 1, "type": "zoom", "options": {"join_method": "client"}})
-    monkeypatch.setattr(control, "zoom_meeting_status", lambda: {"status": "not_joined", "detail": "Zoom is open at its home screen"})
-    w = client.get("/api/stream/preflight").json()["warnings"]
-    assert [x["code"] for x in w] == ["not_in_meeting"] and "home screen" in w[0]["text"]
-
-    monkeypatch.setattr(control, "zoom_meeting_status", lambda: {"status": "in_meeting", "detail": ""})
-    assert client.get("/api/stream/preflight").json()["warnings"] == []
 
 
 def test_preflight_requires_login(tmp_path, monkeypatch):

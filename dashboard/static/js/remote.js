@@ -56,8 +56,9 @@ if (rBrbBtn) {
 }
 
 async function streamAction(btn, action, confirmMsg) {
+  if (action === "go-live") { await withLoading(btn, goLive); return; }
+  if (action === "restart") { await withLoading(btn, restartEncoder); return; }
   if (confirmMsg && !(await confirmDialog(confirmMsg, { danger: action !== "go-live" }))) return;
-  if (action === "go-live" && !(await confirmGoLive())) return;
   await withLoading(btn, async () => {
     try { await post(`/api/stream/${action}`); toast(`Stream: ${action.replace("-", " ")} sent`); }
     catch (err) { toast(err.message, "err"); }
@@ -774,10 +775,10 @@ function renderMeetingOnlyBtn(s) {
   });
 }
 const moPending = document.getElementById("z-mo-pending");
-async function applyMeetingOnlyRemote(enabled, fit, restart = false) {
+async function applyMeetingOnlyRemote(enabled, fit, restart = false, grant = null) {
   const s = sourceById(activeSourceId); if (!s) return;
   try {
-    const body = { enabled, fit: fit || (s.options || {}).meeting_only_fit || "fit", restart };
+    const body = { enabled, fit: fit || (s.options || {}).meeting_only_fit || "fit", restart, ...(grant ? { grant } : {}) };
     let r = await post("/api/zoom/meeting-only", body);
     const win = r.window || {};
     const bits = [enabled ? "Meeting only on" : "Meeting only off"];
@@ -785,8 +786,9 @@ async function applyMeetingOnlyRemote(enabled, fit, restart = false) {
     if (r.restart_needed) {
       // Live: crop/fit lives in ffmpeg's filter graph, so applying it means
       // an encoder restart - ask first, it drops the stream for a few seconds.
-      if (await confirmDialog("The live stream's encoder has to restart for this crop/fit to apply - the stream drops for a few seconds and YouTube reconnects. Restart it now?", { confirmText: "Restart stream" })) {
-        r = await post("/api/zoom/meeting-only", { ...body, restart: true });
+      const g = await authorizeBroadcast("restart");
+      if (g) {
+        r = await post("/api/zoom/meeting-only", { ...body, restart: true, grant: g });
         bits.push(r.restarted ? "stream restarted" : "restart failed");
       } else bits.push("applies on next stream restart");
     }
@@ -797,9 +799,10 @@ async function applyMeetingOnlyRemote(enabled, fit, restart = false) {
 }
 document.getElementById("z-mo-restart").addEventListener("click", (e) => withLoading(e.currentTarget, async () => {
   const s = sourceById(activeSourceId); if (!s) return;
-  if (!(await confirmDialog("Restart the encoder now? The stream drops for a few seconds and YouTube reconnects.", { confirmText: "Restart stream" }))) return;
+  const g = await authorizeBroadcast("restart");
+  if (!g) return;
   const o = s.options || {};
-  await applyMeetingOnlyRemote(!!o.meeting_only, o.meeting_only_fit || "fit", true);
+  await applyMeetingOnlyRemote(!!o.meeting_only, o.meeting_only_fit || "fit", true, g);
 }));
 apiFetch("/api/zoom/meeting-only").then((r) => { moPending.hidden = !r.pending_restart; }).catch(() => {});
 document.getElementById("z-meeting-only").addEventListener("click", (e) => withLoading(e.currentTarget, () => {

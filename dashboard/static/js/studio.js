@@ -93,6 +93,7 @@
   let statePollTimer = null;
   let previewPollTimer = null;
   let pendingAction = null; // "go-live" | "stop"
+  let pendingWarnings = false;
   let cachedStreamKey = "";
   let isKeyRevealed = false;
   let peakHoldL = -120;
@@ -188,10 +189,14 @@
     pendingAction = action;
     if (action === "go-live") {
       modalTitle.textContent = "Confirm Going Live";
-      const warnings = await goLiveWarnings();
+      let info = {};
+      try { info = await apiFetch("/api/broadcast/preflight"); } catch (err) { /* the authorize call below reports any real problem */ }
+      pendingWarnings = (info.warnings || []).length > 0;
+      const dest = info.destination || {};
       modalBody.textContent =
-        "You are about to start the live stream encoder (ffmpeg-stream) and broadcast directly to YouTube Live. Verify that your Zoom or Web Kiosk source is ready." +
-        (warnings.length ? " Heads-up: " + warnings.join(" ") : "");
+        "You are about to start broadcasting to YouTube Live. Source: " + (info.source ? `${info.source.name} (${info.source.type})` : "none selected") +
+        ". Destination: " + (dest.platform || "YouTube") + " - " + (dest.host || "") + " (stream key " + (dest.stream_key || "unknown") + ")." +
+        ((info.warnings || []).length ? " Heads-up: " + info.warnings.map((w) => w.text).join(" ") : "");
       modalConfirmBtn.textContent = "Confirm & Go Live";
       modalConfirmBtn.className = "btn btn-primary btn-touch";
       modalIcon.className = "studio-modal-icon icon-go-live";
@@ -222,12 +227,19 @@
 
     const endpoint = action === "go-live" ? "/api/stream/go-live" : "/api/stream/stop";
     try {
+      let payload = {};
+      if (action === "go-live") {
+        // The modal above WAS the confirmation: trade it for a one-time grant (server-enforced, 60 s, single use).
+        const a = await apiFetch("/api/broadcast/authorize", { method: "POST", body: JSON.stringify({ purpose: "go_live", ack_warnings: pendingWarnings }) });
+        payload = { grant: a.grant };
+      }
       const res = await fetch(endpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "X-CSRF-Token": getCsrfToken(),
         },
+        body: JSON.stringify(payload),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || data.ok === false) throw new Error(data.error || data.detail || data.stderr || "Action failed");

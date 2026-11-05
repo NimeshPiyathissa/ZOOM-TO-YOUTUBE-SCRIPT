@@ -36,6 +36,7 @@ from .accounts import AccountError
 from . import audio_level
 from . import status as unit_status
 from . import broadcast
+from . import zoom_state
 from . import framing
 from . import edumix, edumix_api
 from . import recording, settings_store, telegram
@@ -961,43 +962,53 @@ async def _web_join_followup(source_id: int, timeout: float = 75.0) -> None:
         _join_options_last.update({"state": "error", "error": str(exc)[:200], "finished_at": time.time()})
 
 
-async def _auto_fallback_watcher(source_id: int, client_timeout: float = 40.0) -> None:
-    """join_method=auto: the join already started on the desktop client
-    (control.zoom_join resolves auto to "client" for the first attempt -
-    see producer_unit_for). Watches zoom_meeting_status() for
-    `client_timeout` seconds. Falls back to the web client only when the
-    client attempt produced NO verifiable signal at all in that window -
-    never reached in_meeting, never reached any terminal status either -
-    which means the desktop client itself failed to get off the ground
-    (crash-looping, or launched but never produced a readable window).
-    Any terminal status (passcode/expired/locked/registration_required/
-    removed/waiting_room/join_failed/...) is a property of the meeting
-    itself, not the join mechanism, so it is NOT a fallback trigger - the
-    web client would hit the identical wall and a fallback there would
-    just burn a join attempt for nothing."""
+async def _auto_fallback_watcher(source_id: int) -> None:
+    """join_method=auto: the join already started on the desktop client (control.zoom_join resolves auto to "client" for
+    the first attempt - see producer_unit_for). This watches the client and falls back to the web client ONLY on positive
+    evidence that the desktop path failed (zoom_state.fallback_decision): the client is gone / reported a launch error, or
+    it is readable and still on its home screen well after the join request. "Not confirmed" is NOT a failure: a desktop
+    client whose window cannot be read (no AT-SPI) used to be abandoned after 40 s and stopped even though it had joined.
+    Now such a client is simply left alone and reported as 'unconfirmed'. Terminal states that belong to the meeting itself
+    (passcode, expired, locked, ...) never trigger a fallback either. Nothing here ever starts the encoder."""
     from . import zoom_web
+    start = time.time()
     _join_options_last.clear()
-    _join_options_last.update({"source_id": source_id, "state": "watching_client", "started_at": time.time()})
+    _join_options_last.update({"source_id": source_id, "state": "watching_client", "started_at": start,
+                               "reason": "giving the desktop client time to join"})
     try:
-        deadline = time.time() + client_timeout
-        while time.time() < deadline:
+        while True:
             await asyncio.sleep(4)
+            elapsed = time.time() - start
             st = await run_in_threadpool(control.zoom_meeting_status)
-            if st.get("status") == "in_meeting":
-                s = sources_mod.get_source(source_id)
+            try:
+                unit = await run_in_threadpool(control.unit_show, "zoom")
+                unit_active = unit["phase"] in (control.PHASE_LIVE, control.PHASE_STARTING)
+            except control.ControlError:
+                unit_active = False
+            desktop = zoom_state.classify_desktop(st, unit_active)
+            decision = zoom_state.fallback_decision(desktop, elapsed=elapsed, auto_mode=True)
+            _join_options_last.update({"reason": decision["reason"], "desktop_state": desktop["status"],
+                                       "desktop_confidence": desktop["confidence"], "checked_at": time.time()})
+            action = decision["action"]
+            if action == "done":
                 await run_in_threadpool(sources_mod.set_last_join_method, source_id, "client")
-                if s:
-                    report = await run_in_threadpool(control.zoom_apply_join_options, s)
-                    _join_options_last.update({"state": "done", "report": report, "finished_at": time.time()})
+                if desktop["status"] == "in_meeting":
+                    s = sources_mod.get_source(source_id)
+                    if s:
+                        report = await run_in_threadpool(control.zoom_apply_join_options, s)
+                        _join_options_last.update({"state": "done", "report": report, "finished_at": time.time()})
+                else:
+                    _join_options_last.update({"state": "abandoned", "status": desktop["status"], "finished_at": time.time()})
                 return
-            if st.get("terminal"):
-                await run_in_threadpool(sources_mod.set_last_join_method, source_id, "client")
-                _join_options_last.update({"state": "abandoned", "status": st.get("status"), "finished_at": time.time()})
+            if action == "stop_watching":
+                _join_options_last.update({"state": "unconfirmed", "status": desktop["status"], "finished_at": time.time()})
+                db.audit(None, "zoom_join_unconfirmed", f"source_id={source_id} {decision['reason']}"[:160])
                 return
+            if action == "fallback":
+                break
 
-        # No signal at all within the window - fall back to the web client,
-        # continuing the same operator-initiated join (switch_zoom_join_via
-        # deliberately doesn't touch ZOOM_JOIN_EPOCH/rejoin counters).
+        # Positive evidence that the desktop path failed - continue the same operator-initiated join on the web client
+        # (switch_zoom_join_via deliberately doesn't touch ZOOM_JOIN_EPOCH/rejoin counters).
         s = sources_mod.get_source(source_id)
         if not s:
             _join_options_last.update({"state": "abandoned", "reason": "source no longer exists", "finished_at": time.time()})
@@ -1012,9 +1023,11 @@ async def _auto_fallback_watcher(source_id: int, client_timeout: float = 40.0) -
         )
         await run_in_threadpool(sources_mod.set_last_join_method, source_id, "web")
         db.audit(None, "zoom_auto_fallback",
-                 f"source_id={source_id} web_ok={result.get('ok')} status={(result.get('status') or {}).get('status')}")
+                 f"source_id={source_id} web_ok={result.get('ok')} status={(result.get('status') or {}).get('status')} "
+                 f"reason={decision['reason']}"[:200])
         _join_options_last.update({"state": "done" if result.get("ok") else "web_failed",
-                                   "result": result, "fell_back": True, "finished_at": time.time()})
+                                   "result": result, "fell_back": True, "fallback_reason": decision["reason"],
+                                   "finished_at": time.time()})
     except Exception as exc:  # noqa: BLE001 - background task must not die silently
         _join_options_last.update({"state": "error", "error": str(exc)[:200], "finished_at": time.time()})
 

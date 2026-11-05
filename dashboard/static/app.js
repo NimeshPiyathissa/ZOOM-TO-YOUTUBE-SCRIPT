@@ -36,16 +36,64 @@ async function apiFetch(url, opts = {}) {
   return data;
 }
 
-// Go Live asks the server what would be broadcast right now (no source, Zoom not in a meeting) and, only if
-// there is something worth knowing, asks before starting. The server never refuses on these: it is the operator's call.
-async function goLiveWarnings() {
-  try { return ((await apiFetch("/api/stream/preflight")).warnings || []).map((w) => w.text); }
+// ---------------------------------------------------------------- broadcast authorization (UI side)
+//
+// The SERVER decides whether anything may go on air (app/broadcast.py): going live needs a 60 s, single-use grant that
+// is only issued after this confirmation, and the encoder script refuses to run without it. Nothing in the UI - a join,
+// a source switch, a refresh, a schedule - can start a broadcast; only goLive() below, which the operator clicks.
+const bcEsc = (t) => String(t ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+async function goLiveWarnings() {                      // kept for pages that only want the warning texts
+  try { return ((await apiFetch("/api/broadcast/preflight")).warnings || []).map((w) => w.text); }
   catch (err) { return []; }
 }
-async function confirmGoLive() {
-  const warnings = await goLiveWarnings();
-  if (!warnings.length) return true;
-  return confirmDialog(warnings.join(" ") + " Go live anyway?", { confirmText: "Go live anyway" });
+
+function broadcastDialogText(info, purpose) {
+  const src = info.source ? `${bcEsc(info.source.name)} <span class="hint">(${bcEsc(info.source.type)})</span>` : "<strong>no source selected</strong>";
+  const dest = info.destination || {};
+  const key = dest.stream_key === "configured" ? "stream key set" : dest.stream_key === "missing" ? "<strong>no stream key</strong>" : "stream key unknown";
+  const warn = (info.warnings || []).map((w) => `<br><strong>Heads-up:</strong> ${bcEsc(w.text)}`).join("");
+  const lead = purpose === "restart"
+    ? "Restart the encoder? The stream drops for a few seconds and YouTube reconnects."
+    : "Start broadcasting to YouTube now?";
+  return `${lead}<br><br><strong>Source:</strong> ${src}<br><strong>Destination:</strong> ${bcEsc(dest.platform || "YouTube")} - ${bcEsc(dest.host || "")} (${key})${warn}`;
+}
+
+// Shows the confirmation (source + destination, no secrets) and, only if confirmed, returns a one-time grant (or null).
+async function authorizeBroadcast(purpose = "go_live") {
+  let info;
+  try { info = await apiFetch("/api/broadcast/preflight"); }
+  catch (err) { toast(err.message, "err"); return null; }
+  if (purpose === "go_live" && ["LIVE", "STARTING", "STOPPING"].includes(info.state)) { toast(`The broadcast is already ${info.state.toLowerCase()}.`, "warn"); return null; }
+  if (purpose === "restart" && info.state !== "LIVE") { toast("The encoder is not live - there is nothing to restart. Use Go Live.", "warn"); return null; }
+  if (!(await confirmDialog(broadcastDialogText(info, purpose), { confirmText: purpose === "restart" ? "Restart encoder" : "Go live", danger: purpose === "restart" }))) return null;
+  try {
+    const a = await apiFetch("/api/broadcast/authorize", { method: "POST", body: JSON.stringify({ purpose, ack_warnings: (info.warnings || []).length > 0 }) });
+    return a.grant;
+  } catch (err) { toast(err.message, "err"); return null; }
+}
+
+async function goLive() {
+  const grant = await authorizeBroadcast("go_live");
+  if (!grant) return false;
+  try { await apiFetch("/api/stream/go-live", { method: "POST", body: JSON.stringify({ grant }) }); toast("Stream: go live sent"); return true; }
+  catch (err) { toast(err.message, "err"); return false; }
+}
+
+async function restartEncoder() {
+  const grant = await authorizeBroadcast("restart");
+  if (!grant) return false;
+  try { await apiFetch("/api/stream/restart", { method: "POST", body: JSON.stringify({ grant }) }); toast("Stream: encoder restarted"); return true; }
+  catch (err) { toast(err.message, "err"); return false; }
+}
+
+// Service-card buttons: the encoder's start/restart always go through the confirmation; everything else is a plain call.
+async function unitActionFlow(unit, verb) {
+  if (unit === "ffmpeg-stream" && verb === "start") return goLive();
+  if (unit === "ffmpeg-stream" && verb === "restart") return restartEncoder();
+  await apiFetch(`/api/units/${unit}/${verb}`, { method: "POST" });
+  toast(`${unit}: ${verb} sent`);
+  return true;
 }
 
 // ---------------------------------------------------------------- icons
