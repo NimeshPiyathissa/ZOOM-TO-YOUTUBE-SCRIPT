@@ -2,6 +2,7 @@
 paths, allowlisted names, and non-sensitive defaults."""
 from __future__ import annotations
 
+import os
 import pathlib
 
 # --- Identities / paths on the VPS ---
@@ -258,6 +259,14 @@ EDUMIX_BACKOFF_MAX_SECONDS = 60.0
 # After the operator opens a class (or the supervisor restarts the browser),
 # a still-starting Chrome is not 'down': wait this long before acting on it.
 EDUMIX_START_GRACE_SECONDS = 60.0
+
+# True only inside the Windows local-development server (app/localdev.py install()): the live view then
+# mirrors a real desktop Chrome window instead of the noVNC session. Never set on a deployment.
+LOCAL_DEV = False
+
+# True when the supervision loop runs in its own process (app/edumix_worker.py, systemd/edumix-worker.service); the
+# dashboard then only writes intent to the durable job row and must not also run an in-process supervisor.
+EDUMIX_WORKER_EXTERNAL = os.environ.get("EDUMIX_WORKER_EXTERNAL", "").lower() in ("1", "true", "yes")
 
 DIRECT_MODES = {"copy", "reencode"}
 # Codecs ffprobe may report that we consider safe to mux straight through

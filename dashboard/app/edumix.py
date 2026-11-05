@@ -118,6 +118,7 @@ JS_PROBE = r"""(() => {
       otp_text: /one[- ]time|verification code|enter (the |your |6[- ]digit )?(code|otp)|\bresend\b/.test(text),
     },
     inputs: tel.length,
+    tl: text.length,
     videos: videos, frames: frames,
   });
 })()"""
@@ -138,7 +139,8 @@ STATES: dict[str, tuple[str, str, str]] = {
     "authenticated":   ("ok", "Signed in", "Session is valid."),
     "class_open":      ("ok", "Class page open", "Signed in. Waiting for a player on this page."),
     "no_live":         ("info", "No live class", "The site lists no live class right now."),
-    "session_expired": ("warn", "Session expired", "The site says this lesson's access window or your session has ended. Re-authenticate, or request more time on the site yourself."),
+    "session_expired": ("warn", "Session expired", "The site signed you out. Sign in again with your phone number and OTP."),
+    "access_expired":  ("warn", "Class access expired", "You are still signed in, but the site says access to this class or lesson has ended. Requesting more time is an account action for you to take on the site; the console never presses it."),
     "player_loading":  ("info", "Player loading", "A player is present but has not started."),
     "buffering":       ("info", "Buffering", "The player is waiting for data."),
     "playing":         ("ok", "Playing", "The player is playing."),
@@ -150,7 +152,7 @@ STATES: dict[str, tuple[str, str, str]] = {
 }
 
 # Which states a person must resolve - the supervisor never acts on these.
-NEEDS_HUMAN = {"login_required", "awaiting_otp", "session_expired", "protected"}
+NEEDS_HUMAN = {"login_required", "awaiting_otp", "session_expired", "access_expired", "protected"}
 # Which states the supervisor retries with backoff.
 RECOVERABLE = {"browser_down", "network_down", "player_error", "error"}
 
@@ -201,10 +203,17 @@ def classify(snap: dict | None) -> str:
     if snap.get("frames") and "/class/" in path:
         return "player_loading"
     if markers.get("session_expired"):
-        return "session_expired"
+        # The site's "Session Expired / Request more time" panel is shown to a SIGNED-IN student when the access
+        # window of one class or recorded lesson ends. Only the absence of the Logout control means the login itself
+        # is gone. (The preview connection is never an input here, so a dropped mirror can't cause either state.)
+        return "access_expired" if signed_in else "session_expired"
     if markers.get("error_text"):
         return "error"
     if not signed_in:
+        # A single-page app that has not rendered yet has no Logout, no inputs and (almost) no text: that is
+        # "loading", not an unrecognised page (the real mjphysics.lk login takes a moment to appear).
+        if not has_input and int(snap.get("tl", 999)) < 30:
+            return "loading"
         return "unknown"
     if markers.get("no_live") or path.rstrip("/") == "/live-class":
         return "no_live"
@@ -349,9 +358,25 @@ async def snapshot(*, fresh: bool = False) -> dict | None:
     return snap
 
 
+_EXPIRY_STATES = ("session_expired", "access_expired")
+EXPIRY_CONFIRMATIONS = 2          # consecutive probes that must agree before an expiry is reported
+_expiry = {"state": None, "n": 0}
+
+
+def confirm_expiry(state: str) -> str:
+    """One probe that happens to contain the site's expiry wording (a transient overlay, a page mid-render) must not
+    flip the console to "expired": report it as `loading` until EXPIRY_CONFIRMATIONS consecutive probes agree."""
+    if state not in _EXPIRY_STATES:
+        _expiry.update(state=None, n=0)
+        return state
+    _expiry["n"] = _expiry["n"] + 1 if _expiry["state"] == state else 1
+    _expiry["state"] = state
+    return state if _expiry["n"] >= EXPIRY_CONFIRMATIONS else "loading"
+
+
 async def status(reconnector: Reconnector | None = None) -> dict:
     snap = await snapshot()
-    state = classify(snap)
+    state = confirm_expiry(classify(snap))
     out = describe(state)
     out.update({
         "checked_at": time.time(),
@@ -410,3 +435,58 @@ async def set_video_fit(mode: str) -> dict:
     n = int(res.get("value") or 0)
     return {"applied": n > 0, "videos": n, "mode": mode,
             "note": "" if n else "No <video> element on the page itself (the player may live in an iframe) - use the preview's own Fit/Fill."}
+
+
+# ------------------------------------------------------------------ player-only view
+
+# Makes the page's OWN player element fill Chrome's viewport so that a screencast frame is the player and nothing else
+# (no sidebars, no scrolling, no empty space). Purely cosmetic and reversible: one <style> element plus one data
+# attribute. It never touches the media, the player's code, cookies or storage, and never defeats a player restriction.
+# If the player sits inside a transformed ancestor (position:fixed would not reach the viewport) it reverts itself and
+# reports applied:false so the preview falls back to the whole page instead of showing something half-sized.
+JS_PLAYER_ON = r"""(() => {
+  const SID = "zs-player-only-style";
+  const area = (e) => { const r = e.getBoundingClientRect(); return r.width * r.height; };
+  const big = (e) => { const r = e.getBoundingClientRect(); return r.width > 80 && r.height > 60 && getComputedStyle(e).visibility !== "hidden"; };
+  const undo = () => {
+    const st = document.getElementById(SID); if (st) st.remove();
+    document.querySelectorAll("[data-zs-player]").forEach((e) => e.removeAttribute("data-zs-player"));
+  };
+  undo();
+  let kind = "video", c = Array.from(document.querySelectorAll("video")).filter(big);
+  if (!c.length) { kind = "iframe"; c = Array.from(document.querySelectorAll("iframe")).filter(big); }
+  if (!c.length) return JSON.stringify({ applied: false, reason: "no player element on the page" });
+  c.sort((a, b) => area(b) - area(a));
+  c[0].setAttribute("data-zs-player", "1");
+  const st = document.createElement("style"); st.id = SID;
+  st.textContent = "html,body{overflow:hidden!important;background:#000!important}" +
+    "[data-zs-player]{position:fixed!important;inset:0!important;width:100vw!important;height:100vh!important;" +
+    "max-width:none!important;max-height:none!important;margin:0!important;padding:0!important;border:0!important;" +
+    "transform:none!important;z-index:2147483647!important;background:#000!important}";
+  document.documentElement.appendChild(st);
+  const r = c[0].getBoundingClientRect();
+  if (Math.abs(r.width - innerWidth) > 3 || Math.abs(r.height - innerHeight) > 3) {
+    undo();
+    return JSON.stringify({ applied: false, reason: "the player sits inside a transformed container" });
+  }
+  return JSON.stringify({ applied: true, kind: kind, w: innerWidth, h: innerHeight });
+})()"""
+
+JS_PLAYER_OFF = r"""(() => {
+  const st = document.getElementById("zs-player-only-style"); if (st) st.remove();
+  document.querySelectorAll("[data-zs-player]").forEach((e) => e.removeAttribute("data-zs-player"));
+  return JSON.stringify({ applied: false });
+})()"""
+
+
+async def set_player_only(on: bool) -> dict:
+    from . import cdp
+    res = await cdp.evaluate(JS_PLAYER_ON if on else JS_PLAYER_OFF)
+    try:
+        out = json.loads(res.get("value") or "{}")
+    except (TypeError, ValueError):
+        out = {}
+    out.setdefault("applied", False)
+    out["mode"] = "player" if on else "page"
+    invalidate()
+    return out

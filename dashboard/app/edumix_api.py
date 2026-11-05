@@ -17,10 +17,10 @@ import time
 from urllib.parse import urlsplit
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from starlette.concurrency import run_in_threadpool
 
-from . import cdp, config, control, db, deps, edumix
+from . import cdp, config, control, db, deps, edumix, jobs, screencast, studio
 from . import sources as sources_mod
 from .env_store import ValidationError
 
@@ -30,7 +30,7 @@ router = APIRouter()
 SOURCE_NAME = "EduMix Live"
 SETTING_LAST_AUTH = "edumix_last_authenticated_at"
 _AUTHENTICATED_FAMILY = {"authenticated", "class_open", "no_live", "player_loading", "buffering",
-                         "playing", "paused", "ended", "session_expired"}
+                         "playing", "paused", "ended", "access_expired"}
 
 
 def _err(msg: str, status: int = 400) -> JSONResponse:
@@ -58,6 +58,7 @@ def _restart_browser() -> None:
     except control.ControlError:
         pass
     control.unit_action("browser-source", "restart")
+    edumix.invalidate()
 
 
 def _active_edumix() -> dict | None:
@@ -89,6 +90,7 @@ class Supervisor:
         self.paused = False
         self.navigated_this_episode = False
         self.reconnector.reset()
+        edumix.invalidate()            # the page must not show a pre-action status
         self.grace_until = (time.time() if now is None else now) + config.EDUMIX_START_GRACE_SECONDS
 
     async def tick(self, now: float | None = None) -> dict | None:
@@ -101,9 +103,9 @@ class Supervisor:
         prev, state = self.state, st["state"]
         self.state, self.last_status = state, st
 
-        if state in _AUTHENTICATED_FAMILY and state != "session_expired":
+        if state in _AUTHENTICATED_FAMILY:
             await run_in_threadpool(db.set_setting, SETTING_LAST_AUTH, str(int(now)))
-        if state in ("login_required", "awaiting_otp", "session_expired", "browser_down"):
+        if state in ("login_required", "awaiting_otp", "session_expired", "access_expired", "browser_down"):
             self.navigated_this_episode = False
 
         if self.paused:
@@ -171,6 +173,9 @@ async def api_status(request: Request):
     active = _active_edumix()
     if active:
         st = await edumix.status(supervisor.reconnector)
+        if supervisor.paused and st["state"] == "browser_down":
+            # The operator pressed Stop: that is "stopped", not an error to recover from.
+            st.update(edumix.describe("stopped"))
     else:
         st = edumix.describe("stopped")
         st.update({"capture": edumix.capture_status("stopped"), "page": {"path": "", "title": ""}, "player": {"present": False}})
@@ -181,6 +186,22 @@ async def api_status(request: Request):
     st["session_last_ok"] = int(last) if str(last).isdigit() else None
     st["last_action"] = supervisor.last_action
     return st
+
+
+@router.get("/api/edumix/job")
+async def api_job(request: Request):
+    """Server-side truth for the current job: survives dashboard restarts and closed tabs, so a reopened dashboard
+    re-attaches to it. `worker_alive` is false when no worker heartbeat has arrived recently."""
+    deps.require_session_api(request)
+    job = await run_in_threadpool(jobs.current)
+    if not job:
+        return {"job": None, "worker_alive": False}
+    ok, why = jobs.recovery_decision(job)
+    keep = ("id", "class_path", "desired", "resume_on_boot", "broadcast", "created_at", "stopped_by", "completed_at",
+            "heartbeat", "state", "status", "last_error")
+    return {"job": {k: job[k] for k in keep}, "worker_alive": jobs.worker_alive(job),
+            "worker_external": config.EDUMIX_WORKER_EXTERNAL, "reboot_recovery": {"eligible": ok, "reason": why},
+            "capture": edumix.capture_status(job.get("state"))}
 
 
 @router.post("/api/edumix/open")
@@ -231,6 +252,7 @@ async def api_open(request: Request):
             return _err(str(exc), 409)
         sources_mod.set_active_source_id(sid)
     supervisor.mark_started()
+    await run_in_threadpool(jobs.open_job, url)
     db.audit(session["username"], "edumix_open", _path_only(url), deps.client_ip(request))
     return {"ok": True, "hot_swapped": hot or outcome.get("hot_swapped", False), "source": _source_view(src)}
 
@@ -287,8 +309,10 @@ async def api_stop(request: Request):
     deps.require_csrf(request, session)
     deps.require_rate_limit(session, "edumix_stop", max_calls=6, window_seconds=30)
     supervisor.paused = True
+    await run_in_threadpool(jobs.request_stop, session["username"])
     try:
         res = await run_in_threadpool(control.unit_action, "browser-source", "stop")
+        edumix.invalidate()
     except control.ControlError as exc:
         return _err(str(exc), 409)
     db.audit(session["username"], "edumix_stop", ip=deps.client_ip(request))
@@ -331,3 +355,70 @@ async def api_options(request: Request):
              f"auto_navigate={opts.get('auto_navigate')} rights_confirmed={opts.get('rights_confirmed')}",
              deps.client_ip(request))
     return {"ok": True, "source": _source_view(sources_mod.get_source(src["id"]))}
+
+
+# ------------------------------------------------------------------ player-only screencast preview
+
+@router.get("/api/edumix/preview/stream")
+async def api_preview_stream(request: Request, fps: int = 12, q: int = 55, w: int = 1280):
+    """MJPEG stream (multipart/x-mixed-replace) of the player. Event-driven: a frame is sent only when the page
+    repaints. Closing the tab (or hiding it: the client drops the stream) stops the capture; playback is unaffected."""
+    deps.require_session_api(request)
+    try:
+        viewer = screencast.hub.add_viewer(fps, q, w)
+    except RuntimeError:
+        return _err("Too many preview viewers are open", 429)
+
+    async def gen():
+        try:
+            while True:
+                if await request.is_disconnected():
+                    break
+                jpg = await viewer.next(timeout=1.0)
+                if jpg is not None:
+                    yield screencast.multipart_part(jpg)
+        finally:
+            screencast.hub.remove_viewer(viewer)
+
+    return StreamingResponse(gen(), media_type="multipart/x-mixed-replace; boundary=frame",
+                             headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
+
+
+@router.get("/api/edumix/preview/stats")
+async def api_preview_stats(request: Request):
+    deps.require_session_api(request)
+    return screencast.hub.snapshot()
+
+
+@router.post("/api/edumix/preview/player-mode")
+async def api_player_mode(request: Request):
+    """Player-only (the page's player fills the viewport) or whole page. Safe to repeat; reverts itself if the
+    player can't be isolated. The browser's login/OTP pages are always shown as the whole page."""
+    session = deps.require_session_api(request)
+    deps.require_csrf(request, session)
+    deps.require_rate_limit(session, "edumix_player_mode", max_calls=20, window_seconds=20)
+    body = await request.json()
+    on = bool(body.get("on"))
+    screencast.hub.player_only = on
+    try:
+        res = await edumix.set_player_only(on)
+    except cdp.CDPError as exc:
+        return _err(str(exc), 409)
+    screencast.hub.stats["player_only_applied"] = bool(res.get("applied")) if on else None
+    return res
+
+
+@router.get("/api/edumix/studio")
+async def api_studio(request: Request):
+    """One read-only payload for the Studio health panel: host/browser/dashboard resources, preview transport
+    stats, and the durable worker job. Cheap enough to poll every few seconds."""
+    deps.require_session_api(request)
+    res = await run_in_threadpool(studio.sample)
+    job = await run_in_threadpool(jobs.current)
+    res["preview"] = screencast.hub.snapshot()
+    res["worker"] = {"external": config.EDUMIX_WORKER_EXTERNAL, "alive": jobs.worker_alive(job),
+                     "job_id": (job or {}).get("id"), "desired": (job or {}).get("desired"),
+                     "heartbeat_age": round(time.time() - job["heartbeat"], 1) if job and job.get("heartbeat") else None,
+                     "recovery": jobs.recovery_decision(job)[1]}
+    res["capture"] = edumix.capture_status(None)
+    return res

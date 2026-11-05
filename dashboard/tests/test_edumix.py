@@ -77,8 +77,15 @@ def video(**kw):
     (snap(url="https://mjphysics.lk/class/abc"), "class_open"),
     (snap(url="https://mjphysics.lk/live-class", markers={"no_live": True}), "no_live"),
     (snap(url="https://mjphysics.lk/live-class"), "no_live"),
-    (snap(markers={"session_expired": True}), "session_expired"),
+    (snap(markers={"session_expired": True}), "access_expired"),                       # signed in: class access ended
+    (snap(markers={"session_expired": True, "logout": False}, tl=500), "session_expired"),   # signed out for real
     (snap(markers={"error_text": True}), "error"),
+    # a single-page app that has not rendered yet (no Logout, no inputs, ~no text) is "loading", not "unknown"
+    (snap(url="https://mjphysics.lk/", tl=0, markers={"logout": False}), "loading"),
+    (snap(url="https://mjphysics.lk/", tl=12, markers={"logout": False}), "loading"),
+    (snap(url="https://mjphysics.lk/", tl=400, markers={"logout": False}), "unknown"),
+    # the REAL mjphysics.lk login (observed): /login, one phone field (id=phone), a Login button
+    (snap(url="https://mjphysics.lk/login", login_form=True, inputs=1, tl=48, markers={"logout": False, "login_text": True}), "login_required"),
     # positive evidence needed: an unrecognised page without Logout is never "signed in"
     (snap(markers={"logout": False}), "unknown"),
     (snap(url="https://mjphysics.lk/", markers={"logout": False}), "unknown"),
@@ -767,3 +774,103 @@ def test_supervisor_clears_start_limit_before_every_restart(sup):
     for i, u in enumerate(units):
         if u == ("browser-source", "restart"):
             assert units[i - 1] == ("browser-source", "reset-failed")
+
+
+def test_status_after_operator_stop_reads_stopped_not_an_error(client, monkeypatch):
+    monkeypatch.setattr(control, "start_source", lambda s: {"results": [], "rtmp_dropped": False, "hot_swapped": False})
+    client.post("/api/edumix/open", json={"url": CLASS}, headers=client.csrf)
+
+    async def boom(expr, user_gesture=False): raise cdp.CDPError("no browser")
+    monkeypatch.setattr(cdp, "evaluate", boom)
+    assert client.get("/api/edumix/status").json()["state"] == "browser_down"        # a crash is still an error
+    monkeypatch.setattr(control, "unit_action", lambda u, v: {"ok": True})
+    client.post("/api/edumix/stop", json={}, headers=client.csrf)
+    edumix.invalidate()
+    j = client.get("/api/edumix/status").json()
+    assert j["state"] == "stopped" and j["level"] == "idle" and j["active"] is True
+
+
+def test_expiry_needs_consecutive_confirmation():
+    edumix._expiry.update(state=None, n=0)
+    assert edumix.confirm_expiry("access_expired") == "loading"        # first sighting: not reported
+    assert edumix.confirm_expiry("access_expired") == "access_expired"
+    assert edumix.confirm_expiry("playing") == "playing"               # any other state resets the count
+    assert edumix.confirm_expiry("session_expired") == "loading"
+    assert edumix.confirm_expiry("access_expired") == "loading"        # a different expiry kind restarts it
+    edumix._expiry.update(state=None, n=0)
+
+
+def test_access_expired_is_not_a_login_problem():
+    assert edumix.describe("access_expired")["needs_human"]
+    assert "access_expired" in edumix_api._AUTHENTICATED_FAMILY       # the login is still valid
+    assert "session_expired" not in edumix_api._AUTHENTICATED_FAMILY
+
+
+# ------------------------------------------------------------------ source worker lifecycle (real Supervisor, mocked page)
+
+def test_worker_recovers_a_dead_browser_with_backoff_then_restarts_it(sup):
+    from app import edumix_worker, jobs
+    w = edumix_worker.Worker(edumix_api.supervisor)
+    sup["state"] = "browser_down"
+    t = 1000.0
+    run(w.tick(t))                                                 # new job adopted
+    edumix_api.supervisor.grace_until = 0.0
+    for i in range(1, 40):
+        run(w.tick(t + i * 70))
+        if ("browser-source", "restart") in sup["units"]:
+            break
+    assert ("browser-source", "restart") in sup["units"]           # escalated from reload attempts to a restart
+    assert jobs.current()["state"] == "browser_down"               # health is visible to the dashboard meanwhile
+    sup["state"] = "playing"
+    run(w.tick(t + 5000))
+    assert jobs.current()["state"] == "playing" and jobs.worker_alive(jobs.current())
+
+
+def test_worker_gives_up_after_bounded_attempts_and_does_not_loop_forever(sup):
+    from app import edumix_worker
+    w = edumix_worker.Worker(edumix_api.supervisor)
+    sup["state"] = "network_down"
+    run(w.tick(1000.0))
+    for i in range(1, 400):
+        run(w.tick(1000.0 + i * 70))
+    restarts = sup["units"].count(("browser-source", "restart"))
+    assert restarts <= 4                                           # bounded: it stops trying, it does not hammer the box
+    assert edumix_api.supervisor.reconnector.snapshot(1000.0 + 400 * 70)["gave_up"]
+
+
+def test_worker_never_acts_on_states_a_person_must_resolve(sup):
+    from app import edumix_worker
+    w = edumix_worker.Worker(edumix_api.supervisor)
+    for st in ("login_required", "awaiting_otp", "session_expired", "access_expired", "protected"):
+        sup["state"] = st; sup["path"] = "/login"
+        before = (list(sup["units"]), list(sup["nav"]))
+        for i in range(8):
+            run(w.tick(2000.0 + i * 100))
+        after = (list(sup["units"]), list(sup["nav"]))
+        assert after == before, st                                  # no restart, no navigation, no OTP/login automation
+
+
+def test_worker_restart_keeps_the_stop(sup):
+    from app import edumix_worker, jobs
+    w1 = edumix_worker.Worker(edumix_api.supervisor)
+    sup["state"] = "playing"
+    run(w1.tick(1000.0))
+    jobs.request_stop("admin")
+    w2 = edumix_worker.Worker(edumix_api.supervisor)                # worker process restarted (crash/redeploy)
+    sup["state"] = "browser_down"
+    for i in range(10):
+        run(w2.tick(3000.0 + i * 100))
+    assert ("browser-source", "restart") not in sup["units"]         # the explicit Stop survives a worker restart
+
+
+def test_job_endpoint_reattaches_after_dashboard_restart(client, sup):
+    from app import edumix_worker
+    w = edumix_worker.Worker(edumix_api.supervisor)
+    sup["state"] = "playing"
+    run(w.tick(1000.0))
+    d = client.get("/api/edumix/job").json()                       # a "reopened dashboard" only reads durable state
+    assert d["job"]["desired"] == "running" and d["job"]["class_path"].startswith("/class/")
+    assert d["job"]["broadcast"] is False and d["capture"]["enabled"] is False
+    assert "token" not in str(d).lower() and "cookie" not in str(d).lower()
+    client.post("/api/edumix/stop", headers=client.csrf)
+    assert client.get("/api/edumix/job").json()["job"]["desired"] == "stopped"

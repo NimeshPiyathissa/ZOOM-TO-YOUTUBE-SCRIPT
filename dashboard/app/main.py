@@ -320,7 +320,7 @@ async def edumix_page(request: Request):
         return session
     return templates.TemplateResponse("edumix.html", {
         "request": request, "csrf_token": session["csrf_token"], "username": session["username"],
-        "edumix_host": config.EDUMIX_HOST, "capture": edumix.capture_status(),
+        "edumix_host": config.EDUMIX_HOST, "capture": edumix.capture_status(), "local_dev": config.LOCAL_DEV,
         "edumix_source": edumix_api._source_view(edumix_api.get_edumix_source()),
     })
 
@@ -2898,5 +2898,6 @@ async def on_startup():
     from . import zoom_web, telegram
     zoom_web.start_cleanfeed_heartbeat()
     telegram.start_telegram_poller()
-    asyncio.create_task(edumix_api.supervisor.run())
+    if not config.EDUMIX_WORKER_EXTERNAL:
+        asyncio.create_task(edumix_api.supervisor.run())
 
