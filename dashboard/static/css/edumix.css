@@ -9,13 +9,14 @@
 .em-grid {
   --em-ok: var(--success); --em-warn: var(--warning); --em-bad: var(--danger); --em-info: var(--champagne); --em-idle: var(--text-faint);
   display: grid; gap: var(--space-5); grid-template-columns: minmax(0, 1fr);
-  grid-template-areas: "class" "preview" "output";
+  grid-template-areas: "class" "preview" "studio" "output";
 }
 @media (min-width: 1100px) {
-  .em-grid { grid-template-columns: minmax(340px, 2fr) minmax(0, 3fr); grid-template-areas: "class preview" "output preview"; align-items: start; }
+  .em-grid { grid-template-columns: minmax(340px, 2fr) minmax(0, 3fr); grid-template-areas: "class preview" "studio preview" "output preview"; align-items: start; }
 }
 .em-class { grid-area: class; display: grid; gap: var(--space-4); align-content: start; }
 .em-preview-card { grid-area: preview; display: grid; gap: var(--space-3); align-content: start; min-width: 0; }
+.em-studio { grid-area: studio; display: grid; gap: var(--space-3); align-content: start; }
 .em-output { grid-area: output; display: grid; gap: var(--space-3); align-content: start; }
 .em-grid > .card { animation: rise-in var(--duration-slow) var(--ease-out) both; }
 .em-grid > .card:nth-child(2) { animation-delay: 60ms; }
@@ -163,3 +164,18 @@
   .em-toolbar .segmented .seg-btn, .em-toolbar .btn { min-height: 40px; }
   .em-toolbar .segmented .seg-btn { padding-inline: var(--space-4); }
 }
+
+/* ---------------------------------------------------------------- local (Windows) mode: the live view is a mirror image */
+.em-local-img { display: block; width: 100%; height: 100%; object-fit: contain; background: #070405; user-select: none; pointer-events: none; }
+.em-grid[data-view="local"] .em-screen { cursor: default; }
+
+/* ---------------------------------------------------------------- Studio health (readouts in Geist Mono, no animation) */
+.em-readouts { display: grid; gap: var(--space-2); margin: 0; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); }
+.em-readouts > div { padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); background: var(--surface-2); border: var(--border-w) solid var(--border); min-width: 0; }
+.em-readouts dt { font-size: var(--text-xs); letter-spacing: var(--tracking-wide); text-transform: uppercase; color: var(--text-faint); }
+.em-readouts dd { margin: 2px 0 0; font-family: var(--font-mono, "Geist Mono", ui-monospace, monospace); font-size: var(--text-sm); color: var(--text); overflow-wrap: anywhere; }
+.em-readout-wide { grid-column: 1 / -1; }
+.em-meters { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; opacity: .55; }
+.em-meter { display: flex; align-items: center; gap: var(--space-2); font-family: var(--font-mono, "Geist Mono", ui-monospace, monospace); font-size: var(--text-xs); color: var(--text-faint); }
+.em-meter i { display: block; width: 120px; height: 6px; border-radius: 3px; background: var(--surface-3, var(--border)); }
+#em-view-seg { margin-right: var(--space-2); }

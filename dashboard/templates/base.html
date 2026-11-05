@@ -147,6 +147,7 @@
       </div>
     </header>
 {% endif %}
+    {% if local_dev %}<div class="local-dev-banner" role="note">Local development mode &middot; Linux services (Zoom, encoder, systemd) are simulated here. Nothing on this page touches production.</div>{% endif %}
     <main id="main" class="{{ 'page' if username else '' }}" tabindex="-1">
       {% block content %}{% endblock %}
     </main>

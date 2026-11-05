@@ -9,10 +9,11 @@
     <h1>EduMix Live</h1>
     <p class="page-desc">Sign in to {{ edumix_host }} on the real site, open a class, and watch the player and connection state.</p>
   </div>
+  {% if local_dev %}<span class="badge badge-inactive" id="em-local-badge" title="Linux services are simulated; the browser is a real Chrome window on this computer.">{{ icon("monitor", "icon-sm") }}Local Windows mode</span>{% endif %}
   <span class="badge badge-inactive" id="em-capture-badge" title="{{ capture.reason }}">{{ icon("lock", "icon-sm") }}View only &middot; capture off</span>
 </header>
 
-<div class="em-grid">
+<div class="em-grid" data-view="{{ 'local' if local_dev else 'vnc' }}">
 
   <!-- ============================================================ class + status -->
   <section class="card em-class" aria-labelledby="em-class-h">
@@ -59,9 +60,13 @@
   <!-- ============================================================ preview -->
   <section class="card em-preview-card" aria-labelledby="em-preview-h">
     <h2 id="em-preview-h" class="rack-title">{{ icon("monitor", "icon-sm") }}Live view
-      <span class="rack-title-end hint m-0">the real site, in an isolated browser profile</span></h2>
+      <span class="rack-title-end hint m-0" id="em-view-hint">the real site, in an isolated browser profile</span></h2>
 
     <div class="em-toolbar">
+      <div class="segmented" id="em-view-seg" role="group" aria-label="What the preview shows">
+        <button class="seg-btn is-active" data-view="player" type="button" aria-pressed="true" data-tooltip="Only the class player, no site chrome">Player</button>
+        <button class="seg-btn" data-view="page" type="button" aria-pressed="false" data-tooltip="The whole page (needed to sign in)">Page</button>
+      </div>
       <div class="segmented" id="em-fit-seg" role="group" aria-label="Preview fit">
         <button class="seg-btn is-active" data-fit="fit" type="button" aria-pressed="true">Fit</button>
         <button class="seg-btn" data-fit="fill" type="button" aria-pressed="false">Fill</button>
@@ -93,6 +98,25 @@
     <div class="em-events" aria-label="Recent events">
       <div class="em-events-h">Events</div>
       <ol id="em-events" class="em-events-list"><li class="em-event-empty">Nothing yet.</li></ol>
+    </div>
+  </section>
+
+  <!-- ============================================================ studio health -->
+  <section class="card em-studio" aria-labelledby="em-studio-h">
+    <h2 id="em-studio-h" class="rack-title">{{ icon("activity", "icon-sm") }}Studio health
+      <span class="rack-title-end hint m-0"><span class="em-chip" id="st-health" data-level="idle"><span id="st-health-t">measuring…</span></span></span></h2>
+    <dl class="em-readouts">
+      <div><dt>Preview</dt><dd><span id="st-fps">-</span> fps · <span id="st-kbps">-</span> kbps · <span id="st-geo">-</span></dd></div>
+      <div><dt>Viewers / dropped / reconnects</dt><dd><span id="st-viewers">-</span> / <span id="st-drop">-</span> / <span id="st-recon">-</span></dd></div>
+      <div><dt>Browser</dt><dd><span id="st-bproc">-</span> proc · <span id="st-bcpu">-</span> · <span id="st-bram">-</span></dd></div>
+      <div><dt>Dashboard</dt><dd><span id="st-dcpu">-</span> · <span id="st-dram">-</span></dd></div>
+      <div><dt>This computer / server</dt><dd>CPU <span id="st-hcpu">-</span> · RAM <span id="st-hmem">-</span></dd></div>
+      <div><dt>Source worker</dt><dd><span id="st-worker">-</span> · heartbeat <span id="st-hb">-</span></dd></div>
+      <div class="em-readout-wide"><dt>After a server restart</dt><dd id="st-recovery">-</dd></div>
+    </dl>
+    <div class="em-meters" aria-label="Audio meters (locked)">
+      <div class="em-meter"><span>L</span><i></i></div><div class="em-meter"><span>R</span><i></i></div>
+      <span class="hint m-0">Audio meters unlock with capture. Nothing is being captured or broadcast.</span>
     </div>
   </section>
 

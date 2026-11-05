@@ -395,3 +395,10 @@ body:not(:has(.app-shell)) { overflow-x: hidden; }
   .nav-indicator { transition: none; }
   .card::after, .card-3d::after { transition: none; }
 }
+
+/* Local Windows development banner (only rendered when the dev server sets local_dev) */
+.local-dev-banner {
+  margin: var(--space-3) var(--space-5) 0; padding: var(--space-2) var(--space-4); border-radius: var(--radius-md);
+  border: var(--border-w) dashed color-mix(in srgb, var(--champagne) 55%, var(--border)); color: var(--text-dim);
+  background: color-mix(in srgb, var(--champagne) 8%, transparent); font-size: var(--text-xs); letter-spacing: var(--tracking-wide);
+}

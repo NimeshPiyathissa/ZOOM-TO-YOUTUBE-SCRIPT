@@ -18,6 +18,10 @@ const post = (url, body) => apiFetch(url, { method: "POST", body: JSON.stringify
 const esc = (t) => String(t ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const say = (msg, type) => toast(esc(msg), type);     // toast() renders HTML - never pass it raw text
 
+// Local Windows mode: the "live view" mirrors a real Chrome window on this computer (JPEG frames over DevTools)
+// instead of a noVNC session; the window itself is where you type your phone number and OTP.
+const LOCAL = document.querySelector(".em-grid")?.dataset.view === "local";
+
 const STATE_ICON = {
   ok: "check-circle-2", info: "info", warn: "alert-triangle", bad: "alert-circle", idle: "circle-help",
 };
@@ -64,6 +68,7 @@ function pushEvent(text, level = "info") {
 // ------------------------------------------------------------------ live view (noVNC)
 
 function desktopAspect() {
+  if (usesStream(shownView || userView)) return lastAspect;   // known from the decoded frame, never a transient naturalWidth of 0
   const c = $("em-screen").querySelector("canvas");
   return c && c.width > 0 && c.height > 0 ? c.width / c.height : 16 / 9;
 }
@@ -94,7 +99,59 @@ function applyFit() {
   window.dispatchEvent(new Event("resize"));
 }
 
+// Player-only preview: an event-driven MJPEG stream. Chrome pushes a frame only when the page repaints, and ONE
+// server-side capture serves every open tab. A hidden tab closes its stream, which stops the capture; the class
+// itself keeps playing on the server. (Local Windows mode always uses this; on the VPS the "Page" view is noVNC.)
+let lastAspect = 16 / 9;
+let streamTimer = null, streamWatch = null, streamFails = 0;
+let userView = "player";          // what the operator picked: "player" (only the player) or "page" (whole page, interactive)
+let shownView = null;             // what is actually on screen
+let postedKey = "";               // last player-mode request sent to the server
+const usesStream = (view) => LOCAL || view === "player";
+
+function streamUrl() {
+  const w = Math.min(1920, Math.max(640, Math.round($("em-stage-wrap").clientWidth * Math.min(window.devicePixelRatio || 1, 1.5))));
+  return `/api/edumix/preview/stream?fps=15&q=60&w=${w}&t=${Date.now()}`;
+}
+function stopStream() {
+  clearTimeout(streamTimer); clearInterval(streamWatch);
+  const i = $("em-screen").querySelector("img.em-local-img");
+  if (i) i.removeAttribute("src");                    // closing the request lets the server stop capturing
+}
+function connectStreamView() {
+  stopStream();
+  const screen = $("em-screen");
+  screen.replaceChildren();
+  const img = document.createElement("img");
+  img.className = "em-local-img"; img.alt = "Live view of the EduMix player"; img.draggable = false;
+  screen.append(img);
+  vncState = "connecting"; renderChips(); renderOverlay();
+  const gen = ++connGen;
+  if (!status?.active) { streamTimer = setTimeout(connectStreamView, 1500); return; }   // nothing to show until a class is open
+  const fail = () => {
+    if (gen !== connGen || pausedHidden) return;
+    streamFails += 1;
+    if (vncState === "connected") { vncState = "down"; pushEvent("Live view lost - reconnecting", "warn"); }
+    renderChips(); renderOverlay();
+    clearInterval(streamWatch);
+    streamTimer = setTimeout(connectStreamView, reconnectDelayMs(streamFails, { baseMs: 1000, maxMs: 10000 }));
+  };
+  img.onerror = fail;
+  let lastW = 0;
+  streamWatch = setInterval(() => {
+    if (gen !== connGen || !img.naturalWidth) return;
+    lastAspect = img.naturalWidth / img.naturalHeight;     // never a transient 0: guarded above
+    streamFails = 0;
+    if (vncState !== "connected") { vncState = "connected"; applyFit(); pushEvent("Live view connected", "ok"); renderChips(); renderOverlay(); }
+    else if (img.naturalWidth !== lastW && fitMode === "fill") applyFit();
+    lastW = img.naturalWidth;
+  }, 600);
+  img.src = streamUrl();
+}
+
 function connectView() {
+  if (usesStream(shownView || userView)) return connectStreamView();
+  stopStream();
   clearTimeout(vncTimer);
   try { rfb?.disconnect(); } catch (e) { /* already gone */ }
   $("em-screen").replaceChildren();
@@ -123,8 +180,38 @@ function connectView() {
 
 // ------------------------------------------------------------------ rendering
 
+// Which view should be on screen: the site's sign-in / OTP pages (and anything unrecognised) always need the whole
+// page; once there is a player the operator's choice applies.
+function wantedView() {
+  if (!status) return null;
+  const needsPage = ["login_required", "awaiting_otp", "unknown", "error", "browser_down", "stopped"].includes(status.state);
+  return needsPage ? "page" : userView;
+}
+function updateViewButtons() {
+  document.querySelectorAll("#em-view-seg .seg-btn").forEach((b) => {
+    const on = b.dataset.view === (shownView || userView);
+    b.classList.toggle("is-active", on); b.setAttribute("aria-pressed", String(on));
+  });
+}
+async function syncView() {
+  const want = wantedView();
+  if (!want) return;
+  const key = `${want}|${!!status.active}|${status.state === "browser_down"}`;
+  if (status.active && key !== postedKey) {                 // tell the server whether the player should fill Chrome's viewport
+    postedKey = key;
+    try { await post("/api/edumix/preview/player-mode", { on: want === "player" }); } catch (e) { /* retried on the next change */ }
+  }
+  if (want === shownView) return;
+  const prev = shownView;
+  shownView = want;
+  updateViewButtons();
+  if (prev && usesStream(prev) && usesStream(want) && vncState === "connected") return;   // same stream, only the page mode changed
+  connectView();
+}
+
 function renderStatus() {
   if (!status) return;
+  syncView();
   const lvl = status.level || "idle";
   setLevel("em-status", lvl);
   $("em-status-icon").innerHTML = icon(STATE_ICON[lvl] || "info");
@@ -150,7 +237,7 @@ function renderChips() {
   let sess = ["idle", "unknown"];
   if (["login_required", "awaiting_otp"].includes(st)) sess = ["warn", "sign-in needed"];
   else if (st === "session_expired") sess = ["warn", "expired"];
-  else if (["authenticated", "class_open", "no_live", "player_loading", "buffering", "playing", "paused", "ended"].includes(st)) sess = ["ok", `valid · ${ago(s.session_last_ok)}`];
+  else if (["authenticated", "access_expired", "class_open", "no_live", "player_loading", "buffering", "playing", "paused", "ended"].includes(st)) sess = ["ok", `valid · ${ago(s.session_last_ok)}`];
   else if (s.session_last_ok) sess = ["idle", `last valid ${ago(s.session_last_ok)}`];
   setLevel("em-chip-session", sess[0]); setText("em-chip-session-t", sess[1]);
 
@@ -202,8 +289,11 @@ function renderOverlay() {
     kind = "loading"; title = "Connecting…"; text = "";
   } else if (!status.active) {
     kind = "idle"; iconName = "globe"; title = "No class open";
-    text = "Paste an MJPhysics class URL above and press Open class. If you aren't signed in, the site's own login appears here.";
-  } else if (vncState !== "connected") {
+    text = LOCAL
+      ? "Paste an MJPhysics class URL above and press Open class. A Chrome window with the real site opens on your desktop - sign in there if asked."
+      : "Paste an MJPhysics class URL above and press Open class. If you aren't signed in, the site's own login appears here.";
+  } else if (vncState !== "connected" && !(LOCAL && ["browser_down", "stopped"].includes(st))) {
+    // (local mode: when the browser itself is gone its mirror is gone too - show the recovery action below instead)
     kind = vncState === "down" ? "offline" : "loading";
     iconName = vncState === "down" ? "wifi-off" : "";
     title = vncState === "down" ? "Live view disconnected" : "Connecting to the live view…";
@@ -217,12 +307,20 @@ function renderOverlay() {
   } else if (st === "session_expired") {
     kind = "warn"; iconName = "lock-keyhole"; title = "Session expired";
     text = status.hint; actions = [["Re-authenticate", "btn-primary", doLogin]];
+  } else if (st === "access_expired") {
+    kind = "warn"; iconName = "clock"; title = "Class access expired";
+    text = status.hint;                               // still signed in: no re-authentication offered
   } else if (st === "protected") {
     kind = "error"; iconName = "shield-check"; title = "Protected playback";
     text = status.hint;
   } else if (st === "player_error" || st === "error") {
     kind = "error"; iconName = "alert-circle"; title = status.label; text = status.hint;
     actions = [["Reconnect", "btn-primary", doReconnect]];
+  } else if (LOCAL && ["login_required", "awaiting_otp"].includes(st)) {
+    kind = "note"; iconName = "keyboard";
+    title = st === "awaiting_otp" ? "Enter the OTP in the browser window" : "Sign in in the browser window";
+    text = "A Chrome window with the real MJPhysics site is open on your desktop. Type your phone number and the OTP there - they never pass through this dashboard.";
+    actions = [["Bring browser to front", "btn-primary", doFocus]];
   } else if (st === "loading") {
     kind = "loading"; title = "Loading the page…";
   } else if (st === "no_live") {
@@ -251,13 +349,14 @@ function onTransition(prev, cur) {
   const lvl = status.level;
   if (prev !== null) pushEvent(status.label, lvl === "bad" ? "bad" : lvl === "warn" ? "warn" : lvl === "ok" ? "ok" : "info");
   if (cur === "session_expired") say("EduMix session expired - re-authenticate", "warn");
+  else if (cur === "access_expired") say("Access to this class has ended on the site", "warn");
   else if (cur === "protected") say("Protected playback - capture is not available", "err");
   else if (cur === "player_error") say("The player reported an error", "err");
   else if (cur === "network_down") say("Network offline - reconnecting", "warn");
   else if (cur === "browser_down" && prev !== null) say("EduMix browser unreachable - recovering", "warn");
   else if (prev && ["login_required", "awaiting_otp"].includes(prev) && ["authenticated", "class_open", "no_live", "playing"].includes(cur)) say("Signed in to EduMix", "ok");
   if (["login_required", "awaiting_otp"].includes(cur)) {
-    if (helperShownState !== cur) { helperShownState = cur; openHelper(); }   // phone step, then again for the OTP step
+    if (!LOCAL && helperShownState !== cur) { helperShownState = cur; openHelper(); }   // phone step, then again for the OTP step
   } else if (cur !== "browser_down" && cur !== "loading") {
     helperShownState = null;
     if (!$("em-dialog").hidden && ["authenticated", "class_open", "no_live", "playing"].includes(cur)) closeHelper();
@@ -328,6 +427,9 @@ async function doReconnect() {
 async function doStop() {
   if (!(await confirmDialog("Stop the EduMix browser? Your saved session stays in its isolated profile.", { confirmText: "Stop", danger: true }))) return;
   await run($("em-stop"), async () => { await post("/api/edumix/stop"); pushEvent("EduMix browser stopped", "info"); await refreshNow(); });
+}
+async function doFocus() {
+  try { await post("/api/edumix/local/focus"); } catch (err) { say(err.message, "warn"); }
 }
 async function refreshNow() {
   try { status = await apiFetch("/api/edumix/status"); prevState = status.state; renderStatus(); } catch (e) { /* poll loop reports it */ }
@@ -417,11 +519,47 @@ window.addEventListener("online", () => { pushEvent("Browser back online", "ok")
 window.addEventListener("offline", () => { pushEvent("This device went offline", "warn"); renderChips(); });
 // Don't hold a VNC session (and its x11vnc poll rate) for a hidden tab.
 document.addEventListener("visibilitychange", () => {
-  if (document.hidden) { pausedHidden = true; clearTimeout(vncTimer); try { rfb?.disconnect(); } catch (e) { /* gone */ } }
+  if (document.hidden) { pausedHidden = true; clearTimeout(vncTimer); stopStream(); try { rfb?.disconnect(); } catch (e) { /* gone */ } }
   else if (pausedHidden) { pausedHidden = false; vncAttempt = 0; connectView(); }
 });
 window.addEventListener("beforeunload", () => { try { rfb?.disconnect(); } catch (e) { /* gone */ } });
 
+document.querySelectorAll("#em-view-seg .seg-btn").forEach((b) => b.addEventListener("click", () => {
+  userView = b.dataset.view; postedKey = ""; syncView();
+}));
+if (LOCAL) {
+  $("em-helper").hidden = true;                       // typing happens in the real browser window, not through the dashboard
+  $("em-view-hint").textContent = "mirror of the Chrome window on your desktop - sign in there";
+}
 renderOverlay();
+shownView = userView;
 connectView();
 poll();
+studioPoll();
+
+
+// ------------------------------------------------------------------ Studio health (read-only; polled slowly, never while hidden)
+
+const fmt = (v, unit = "") => (v === null || v === undefined ? "-" : `${v}${unit}`);
+function renderStudio(d) {
+  const pv = d.preview || {}, br = d.browser || {}, h = d.host || {}, w = d.worker || {};
+  setText("st-fps", fmt(pv.fps)); setText("st-kbps", fmt(pv.kbps)); setText("st-viewers", fmt(pv.viewers));
+  setText("st-drop", fmt(pv.dropped)); setText("st-recon", fmt(pv.reconnects));
+  setText("st-geo", pv.geometry && pv.geometry.w ? `${pv.geometry.w}×${pv.geometry.h}` : "-");
+  setText("st-bproc", fmt(br.processes)); setText("st-bcpu", fmt(br.cpu_percent, "%")); setText("st-bram", fmt(br.rss_mb, " MB"));
+  setText("st-dcpu", fmt(d.dashboard?.cpu_percent, "%")); setText("st-dram", fmt(d.dashboard?.rss_mb, " MB"));
+  setText("st-hcpu", fmt(h.cpu_percent, "%")); setText("st-hmem", h.mem_percent === undefined ? "-" : `${h.mem_percent}% · ${h.mem_available_mb} MB free`);
+  setText("st-worker", w.external ? (w.alive ? "running" : "not reporting") : "in dashboard");
+  setText("st-hb", w.heartbeat_age === null || w.heartbeat_age === undefined ? "-" : `${w.heartbeat_age}s ago`);
+  setText("st-recovery", w.recovery || "-");
+  const hl = d.health || { level: "idle", text: "" };
+  setLevel("st-health", hl.level); setText("st-health-t", hl.text);
+  // A stream that thinks it is connected but whose server capture is gone (server restarted): reconnect it.
+  if (usesStream(shownView || userView) && vncState === "connected" && pv.viewers === 0) connectView();
+}
+async function studioPoll() {
+  if (!document.hidden) {
+    try { renderStudio(await apiFetch("/api/edumix/studio")); } catch (e) { /* the status poll reports connectivity */ }
+  }
+  setTimeout(studioPoll, document.hidden ? 15000 : 4000);
+}
