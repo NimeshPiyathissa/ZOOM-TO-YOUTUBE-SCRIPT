@@ -1,0 +1,25 @@
+[Unit]
+Description=EduMix source worker (supervises the managed browser; never starts an encoder)
+# Independent of dashboard.service: restarting or stopping the dashboard must not stop this loop.
+# NOT installed or enabled by anything yet - see docs/edumix-vps.md (staging first, explicit approval).
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=dashboard
+WorkingDirectory=/home/dashboard/app
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/dashboard/app/venv/bin/python -m app.edumix_worker
+Restart=on-failure
+RestartSec=10
+Nice=5
+CPUWeight=100
+MemoryMax=300M
+KillSignal=SIGTERM
+TimeoutStopSec=15
+
+[Install]
+WantedBy=multi-user.target
