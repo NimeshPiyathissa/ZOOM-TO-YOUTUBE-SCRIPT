@@ -88,6 +88,15 @@ def _get_encoder_cpu(pid: int | None) -> float | None:
         return None
 
 
+FRESH_SECONDS = 5.0              # ffmpeg writes a progress line about once a second; older than this the numbers are not "now"
+
+
+def drop_percent(dropped: int, frames: int) -> float:
+    """Dropped frames as a share of everything encoded+dropped so far (0 when nothing has been encoded yet)."""
+    total = frames + dropped
+    return round(100.0 * dropped / total, 2) if total > 0 and dropped > 0 else 0.0
+
+
 def ffmpeg_progress(show: dict) -> dict | None:
     """Returns live FFmpeg progress, or None if there's no reason to
     trust the log file as current: the unit must actually be LIVE (real
@@ -125,8 +134,10 @@ def ffmpeg_progress(show: dict) -> dict | None:
                 "speed": speed,
                 "dup": int(dup.group(1)) if dup else 0,
                 "drop": int(drop.group(1)) if drop else 0,
+                "drop_pct": drop_percent(int(drop.group(1)) if drop else 0, int(m.group(1))),
                 "warning": speed < 1.0,
                 "age_seconds": round(age, 1),
+                "fresh": age <= FRESH_SECONDS,
                 "encoder_cpu": _get_encoder_cpu(show.get("main_pid")),
             }
     return None

@@ -264,7 +264,24 @@ function renderMeetingOnly() {
   setSeg($("zm-meeting-only-fit-seg"), o.meeting_only_fit || "fit");
   $("zm-mo-auto-row").hidden = !o.meeting_only;
   $("zm-mo-auto").checked = !!o.meeting_only_auto;
+  const badge = $("zm-mo-badge");
+  badge.hidden = !a;
+  if (a) badge.textContent = `Saved framing for "${a.name}": ${o.meeting_only ? "Meeting only, " + (o.meeting_only_fit === "fill" ? "Fill" : "Fit") + (o.meeting_only_auto ? ", auto borders" : "") : "off (whole screen)"}. Remembered for this meeting only.`;
+  refreshFillWarning(o);
   if (o.meeting_only && o.meeting_only_auto && o.meeting_only_region) $("zm-mo-measure-out").textContent = `Using the measured area ${o.meeting_only_region} (x:y:width:height).`;
+}
+let _fillAt = 0;
+async function refreshFillWarning(o) {
+  const el = $("zm-mo-fillwarn");
+  if (!(o.meeting_only && o.meeting_only_fit === "fill")) { el.hidden = true; return; }
+  if (Date.now() - _fillAt < 6000) return;            // the framing endpoint grabs the screen: never poll it
+  _fillAt = Date.now();
+  try {
+    const r = await apiFetch("/api/zoom/framing");
+    const c = r.fill_crop;
+    el.hidden = !r.fill_warn;
+    if (r.fill_warn) el.textContent = `Fill crops about ${c.lost_pct}% of the meeting area (${c.horizontal_pct}% from the sides, ${c.vertical_pct}% from top/bottom). Slides, a whiteboard edge or the teacher may be cut - use Fit to keep everything.`;
+  } catch (err) { el.hidden = true; }
 }
 function paintMeetingOnlyPending(pending) { $("zm-mo-pending").hidden = !pending; }
 async function postMeetingOnly(restart, extra = {}) {

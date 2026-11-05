@@ -24,15 +24,26 @@ def tmp_db(tmp_path, monkeypatch):
 
 
 LINK = "https://us06web.zoom.us/j/81234567890?pwd=AbC123xyz"
+# A link WITHOUT pwd= is the one that exercises the separate passcode field: a pwd= in the link is authoritative and a
+# separate passcode is dropped (commit 6563bba). Those tests used LINK and so stopped meaning what they said.
+PLAIN = "https://us06web.zoom.us/j/81234567890"
+
+
+def test_link_pwd_is_authoritative_and_a_separate_passcode_is_dropped(tmp_db):
+    sid = sources.create_source("T", "zoom", LINK, {"passcode": "447722"})
+    assert sources.get_source(sid)["options"]["passcode"] == ""
+    assert "pwd=AbC123xyz" in sources.get_source(sid)["url"]
 
 
 def test_public_view_masks_everything(tmp_db):
-    sid = sources.create_source("Town hall", "zoom", LINK + "#success", {"passcode": "447722", "bot_name": "Bot"})
+    sid = sources.create_source("Town hall", "zoom", PLAIN + "#success", {"passcode": "447722", "bot_name": "Bot"})
     internal = sources.get_source(sid)
-    assert internal["url"] == LINK                       # normalized: fragment gone, secret kept
+    assert internal["url"] == PLAIN                      # normalized: fragment gone
     assert internal["options"]["passcode"] == "447722"
     pub = sources.public_view(internal)
-    assert "AbC123xyz" not in pub["url"] and "pwd=•••" in pub["url"]
+    sid_pwd = sources.create_source("With pwd", "zoom", LINK, {})
+    pwd_pub = sources.public_view(sources.get_source(sid_pwd))
+    assert "AbC123xyz" not in pwd_pub["url"] and "pwd=•••" in pwd_pub["url"]
     assert "passcode" not in pub["options"] and "join_url" not in pub["options"]
     assert pub["options"]["has_passcode"] and pub["options"]["passcode_masked"] == "••••••"
     assert pub["meeting_id_formatted"] == "812 3456 7890"
@@ -41,14 +52,14 @@ def test_public_view_masks_everything(tmp_db):
 
 
 def test_edit_from_public_view_keeps_secrets(tmp_db):
-    sid = sources.create_source("Town hall", "zoom", LINK, {"passcode": "447722"})
+    sid = sources.create_source("Town hall", "zoom", PLAIN, {"passcode": "447722"})
     pub = sources.public_view(sources.get_source(sid))
     # what an edit form submits: the redacted URL, no passcode field
     opts = dict(pub["options"]); opts.pop("has_passcode"); opts.pop("passcode_masked"); opts.pop("has_join_url"); opts.pop("join_url_redacted")
     opts["bot_name"] = "Renamed bot"
     sources.update_source(sid, "Town hall 2", "zoom", pub["url"], opts)
     s = sources.get_source(sid)
-    assert s["url"] == LINK and s["options"]["passcode"] == "447722" and s["options"]["bot_name"] == "Renamed bot"
+    assert s["url"] == PLAIN and s["options"]["passcode"] == "447722" and s["options"]["bot_name"] == "Renamed bot"
     # an explicit new passcode replaces it
     sources.update_source(sid, "Town hall 2", "zoom", "", {"passcode": "999"})
     assert sources.get_source(sid)["options"]["passcode"] == "999"
@@ -56,9 +67,9 @@ def test_edit_from_public_view_keeps_secrets(tmp_db):
 
 def test_reveal_and_rev(tmp_db):
     r0 = sources.sources_rev()
-    sid = sources.create_source("A", "zoom", LINK, {"passcode": "1"})
+    sid = sources.create_source("A", "zoom", PLAIN, {"passcode": "1"})
     assert sources.sources_rev() == r0 + 1
-    assert sources.reveal_secrets(sid) == {"url": LINK, "passcode": "1", "join_url": ""}
+    assert sources.reveal_secrets(sid) == {"url": PLAIN, "passcode": "1", "join_url": ""}
     sources.set_active_source_id(sid); assert sources.sources_rev() == r0 + 2
     sources.mark_joined(sid); assert sources.sources_rev() == r0 + 3 and sources.get_source(sid)["last_joined_at"]
     copy_id = sources.duplicate_source(sid)
@@ -87,7 +98,7 @@ def test_zoom_missing_says_exactly_what(tmp_db):
 ])
 def test_zoom_option_validation(tmp_db, opts, msg):
     with pytest.raises(ValidationError, match=msg):
-        sources.create_source("X", "zoom", LINK, opts)
+        sources.create_source("X", "zoom", PLAIN, opts)
 
 
 def test_vanity_must_be_resolved_first(tmp_db):

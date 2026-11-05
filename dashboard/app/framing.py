@@ -72,6 +72,26 @@ def decide(size: tuple[int, int], band_top: int, band_bottom: int, rect: tuple[i
     return out
 
 
+def fill_crop(size: tuple[int, int], band_top: int, band_bottom: int, region: str | None, target: tuple[int, int] = (16, 9)) -> dict:
+    """What Fill throws away: Fill scales the picked area to COVER the 16:9 output, so whatever does not match that shape is
+    cropped. Returns percentages of the area's width/height lost (0 when the shape already matches), so the UI can warn
+    before a whiteboard, slide edge or the teacher is cut."""
+    W, H = size
+    try:
+        rw, rh = (int(v) for v in region.split(":")[2:4]) if region else (W, H - band_top - band_bottom)
+    except ValueError:
+        rw, rh = W, H - band_top - band_bottom
+    if rw <= 0 or rh <= 0:
+        return {"horizontal_pct": 0.0, "vertical_pct": 0.0, "lost_pct": 0.0}
+    ar, tar = rw / rh, target[0] / target[1]
+    h = round(max(0.0, 1 - tar / ar) * 100, 1) if ar > tar else 0.0
+    v = round(max(0.0, 1 - ar / tar) * 100, 1) if ar < tar else 0.0
+    return {"horizontal_pct": h, "vertical_pct": v, "lost_pct": round(100 - (100 - h) * (100 - v) / 100, 1)}
+
+
+FILL_WARN_PCT = 5.0                    # above this the UI shows a visible "Fill crops N%" warning
+
+
 def changed_materially(old: str | None, new: str | None, tolerance: int = 16) -> bool:
     """True when two 'x:y:w:h' regions differ by more than `tolerance` px on any value (or one is missing)."""
     if (old or None) == (new or None):

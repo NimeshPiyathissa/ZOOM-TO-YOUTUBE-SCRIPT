@@ -51,8 +51,10 @@ ExecStart=%h/zoom-stream/scripts/stream.sh
 # to stop. (Side effect, accepted: a SIGTERM from anything other than
 # systemd is also treated as a deliberate stop.)
 SuccessExitStatus=255
-Restart=on-failure
-RestartSec=5
+# V2: NO automatic restart. A crash leaves the unit "failed" (diagnostics kept) and the dashboard shows an error; the next
+# broadcast needs a fresh, explicit Go Live (a one-time permission that scripts/stream.sh checks - see broadcast_gate in
+# lib.sh). stream.sh would refuse a restart anyway; this makes the unit say so too.
+Restart=no
 
-[Install]
-WantedBy=default.target
+# Deliberately no [Install] section: this unit must never start at boot or from `systemctl enable`. It starts only when the
+# dashboard's Go Live starts it. (On a machine where it was enabled earlier, run `systemctl --user disable ffmpeg-stream`.)

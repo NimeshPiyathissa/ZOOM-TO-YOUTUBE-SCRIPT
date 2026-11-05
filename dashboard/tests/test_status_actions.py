@@ -117,7 +117,7 @@ def test_state_endpoint_reports_meaning_for_every_unit(client, monkeypatch):
     d = client.get("/api/state").json()
     kinds = {u["unit"]: u["status"]["kind"] for u in d["units"]}
     assert kinds["ffmpeg-stream"] == "off_air" and kinds["browser-source"] == "idle" and kinds["zoom"] == "active"
-    assert {s["unit"] for s in d["services"]} == {"dashboard", "caddy", "edumix-worker"}
+    assert {s["unit"] for s in d["services"]} == {"dashboard", "caddy", "edumix-worker", "zoom-meeting", "youtube-broadcast"}
     assert next(s for s in d["services"] if s["unit"] == "dashboard")["status"]["kind"] == "active"
 
 

@@ -28,7 +28,7 @@ from . import config
 LABELS = {
     "active": "Active", "on_air": "On air", "starting": "Starting", "retrying": "Restarting", "error": "Error",
     "stopped": "Stopped", "idle": "Idle", "off_air": "Off air", "not_configured": "Not configured",
-    "disconnected": "Disconnected",
+    "disconnected": "Disconnected", "connecting": "Connecting", "unknown": "Unknown", "failed": "Failed",
 }
 
 TITLES = {
@@ -126,6 +126,47 @@ def classify_system(name: str, systemd_state: str, *, job: dict | None = None, n
             return _result("disconnected", "The worker is running but has not reported for over 30 s.")
         return _result("active", "Supervising the open EduMix class.")
     return _result("active", f"{name} is running.")
+
+
+# ---------------------------------------------------------------- pipeline indicators (meeting, YouTube, last error)
+
+_ZOOM: dict = {"at": 0.0, "verdict": None}
+ZOOM_FRESH_SECONDS = 90.0
+
+
+def remember_zoom(verdict: dict | None, now: float | None = None) -> None:
+    """Called whenever a Zoom status check ran anyway (the Zoom page polls it); /api/state never triggers one itself."""
+    _ZOOM.update(at=time.time() if now is None else now, verdict=verdict)
+
+
+def pipeline_indicators(broadcast_state: dict | None, now: float | None = None) -> list[dict]:
+    """Meeting state and YouTube/encoder-session state, as rows shaped like system services. The meeting row is only as
+    fresh as the last Zoom status check: when it is old it says UNKNOWN instead of repeating a stale answer."""
+    now = time.time() if now is None else now
+    rows = []
+    v = _ZOOM["verdict"]
+    if v is None or now - _ZOOM["at"] > ZOOM_FRESH_SECONDS:
+        zs = _result("unknown", "Meeting state has not been checked recently. Open the Zoom page to refresh it.")
+    else:
+        kind = {"in_meeting": "active", "not_running": "idle", "not_joined": "idle", "connecting": "connecting", "prejoin": "connecting",
+                "waiting_room": "connecting", "unknown": "unknown"}.get(v.get("status"), "error" if v.get("status") else "unknown")
+        zs = _result(kind, f"{v.get('detail') or v.get('status')} (confidence: {v.get('confidence', 'n/a')}, {int(now - _ZOOM['at'])}s ago)")
+    rows.append({"unit": "zoom-meeting", "title": "Zoom meeting", "systemd": "", "scope": "derived", "status": zs})
+    b = broadcast_state or {}
+    st = b.get("state")
+    err = b.get("last_error") or {}
+    if st == "ERROR":
+        ys = _result("failed", "The broadcast stopped unexpectedly and was NOT restarted: %s" % (err.get("reason") or "see Logs"))
+    elif st in ("LIVE",):
+        ys = _result("on_air", "Streaming to YouTube; started by an authorized Go Live.")
+    elif st in ("STARTING", "STOPPING"):
+        ys = _result("starting", f"Broadcast is {st.lower()}.")
+    elif st in ("READY", "OFFLINE"):
+        ys = _result("off_air", "Not broadcasting. Nothing goes on air until you press Go Live.")
+    else:
+        ys = _result("unknown", "Broadcast state unavailable.")
+    rows.append({"unit": "youtube-broadcast", "title": "YouTube broadcast", "systemd": "", "scope": "derived", "status": ys})
+    return rows
 
 
 def system_services(now: float | None = None) -> list[dict]:

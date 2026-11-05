@@ -233,3 +233,22 @@ def test_watcher_ignores_a_blank_screen_and_does_nothing_when_auto_is_off(api, m
     monkeypatch.setattr(framing, "measure", spy)
     run(_framing_watch_tick())
     assert not calls                                                           # no measuring when Auto is off
+
+
+# ---------------------------------------------------------------- Fill-crop warning
+def test_fill_crop_matching_shape_loses_nothing():
+    c = framing.fill_crop((1920, 1080), 56, 96, "0:56:1920:1080", (1920, 1080))
+    assert c["lost_pct"] == 0.0
+
+
+def test_fill_crop_wide_area_loses_sides_and_tall_area_loses_top_bottom():
+    wide = framing.fill_crop((1920, 1080), 56, 96, "0:0:1920:800", (1920, 1080))     # 2.4:1 into 16:9
+    assert wide["horizontal_pct"] > 25 and wide["vertical_pct"] == 0
+    tall = framing.fill_crop((1920, 1080), 56, 96, "0:0:1200:1080", (1920, 1080))    # 1.11:1 into 16:9
+    assert tall["vertical_pct"] > 30 and tall["horizontal_pct"] == 0
+
+
+def test_fill_crop_default_band_and_bad_region_do_not_crash():
+    assert framing.fill_crop((1920, 1080), 56, 96, None, (1920, 1080))["lost_pct"] >= 0
+    assert framing.fill_crop((1920, 1080), 56, 96, "junk", (1920, 1080))["lost_pct"] >= 0
+    assert framing.FILL_WARN_PCT > 0

@@ -543,7 +543,7 @@ function phaseBadgeClass(phase, unit) {
 // systemd words only if the server did not send `status` (an older backend).
 const STATUS_BADGE = {
   active: "badge-active", on_air: "badge-live", starting: "badge-activating", retrying: "badge-activating",
-  disconnected: "badge-activating", error: "badge-failed", stopped: "badge-failed",
+  disconnected: "badge-activating", connecting: "badge-activating", unknown: "badge-inactive", failed: "badge-failed", error: "badge-failed", stopped: "badge-failed",
   idle: "badge-inactive", off_air: "badge-inactive", not_configured: "badge-inactive",
 };
 function unitBadge(u) {

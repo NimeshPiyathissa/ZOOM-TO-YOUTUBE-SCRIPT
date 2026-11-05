@@ -69,6 +69,16 @@
     </div>
   </section>
 
+  <div id="bcast-error-banner" hidden class="banner banner-error grid-col-full" role="alert">
+    {{ icon("alert-triangle") }}
+    <div>
+      <div id="bcast-error-headline">The broadcast stopped unexpectedly.</div>
+      <div class="hint mt-1 mono" id="bcast-error-detail"></div>
+      <div class="hint mt-1">It was not restarted automatically. Check the cause, then press Go Live yourself. <a href="/logs">Open the logs</a>.</div>
+      <button type="button" id="bcast-error-dismiss" class="btn btn-secondary btn-sm mt-2">Dismiss</button>
+    </div>
+  </div>
+
   <div id="error-banner" hidden class="banner banner-error grid-col-full" role="alert">
     {{ icon("alert-triangle") }}
     <div>

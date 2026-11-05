@@ -53,7 +53,7 @@ def test_vnc_page_authenticated(client):
     html = res.text
     assert "Remote GUI" in html
     assert "vnc-screen" in html
-    assert "vnc-config" in html
+    assert "vnc-config" not in html                  # the VNC password is no longer embedded; the server-side proxy authenticates (4ba8592)
     assert "vnc.js" in html
     assert "DISPLAY :99" in html
 

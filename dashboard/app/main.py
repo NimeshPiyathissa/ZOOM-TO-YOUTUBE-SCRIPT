@@ -563,7 +563,7 @@ async def api_state(request: Request):
         "ffmpeg": stats.ffmpeg_progress(stream_show),
         "system": stats.system_stats(),
         "units": units,
-        "services": await run_in_threadpool(unit_status.system_services),
+        "services": await run_in_threadpool(unit_status.system_services) + unit_status.pipeline_indicators(broadcast_state),
         "active_source": active_source_view,
         "producer_unit": producer_unit,
         "broadcast": broadcast_state,
@@ -1154,7 +1154,12 @@ async def api_zoom_framing(request: Request):
                                           m.get("region") if options.get("meeting_only_auto") else None)
     except ValueError:
         flt = ""
-    return {"measure": m, "meeting_only": bool(options.get("meeting_only")), "fit": options.get("meeting_only_fit", "fit"),
+    try:
+        crop = framing.fill_crop((w, h), 56, 96, m.get("region") if options.get("meeting_only_auto") else None, (w, h))
+    except (ValueError, NameError):
+        crop = None
+    return {"fill_crop": crop, "fill_warn": bool(crop and crop["lost_pct"] > framing.FILL_WARN_PCT),
+            "measure": m, "meeting_only": bool(options.get("meeting_only")), "fit": options.get("meeting_only_fit", "fit"),
             "auto": bool(options.get("meeting_only_auto")), "saved_region": options.get("meeting_only_region") or "",
             "filter": flt, "pending_restart": await run_in_threadpool(control.encoder_filter_stale)}
 
@@ -2699,7 +2704,25 @@ async def api_zoom_status(request: Request):
     """Meeting status + mic/camera readback. Every field is a best-effort
     heuristic (authoritative=False) - see control.zoom_meeting_status."""
     deps.require_session_api(request)
-    return await run_in_threadpool(control.zoom_meeting_status)
+    st = await run_in_threadpool(control.zoom_meeting_status)
+    try:
+        unit = await run_in_threadpool(control.unit_show, "zoom")
+        unit_active = unit["phase"] in (control.PHASE_LIVE, control.PHASE_STARTING)
+    except control.ControlError:
+        unit_active = False
+    verdict = st if st.get("confidence") else zoom_state.classify_desktop(st, unit_active)      # the web path already carries its own
+    unit_status.remember_zoom(verdict)
+    return {**st, "confidence": verdict.get("confidence"), "confirmed": verdict.get("confirmed"), "evidence": verdict.get("evidence")}
+
+
+@app.post("/api/broadcast/acknowledge-error")
+async def api_broadcast_ack_error(request: Request):
+    """Dismisses the last-crash record shown on the Overview. It does not start or restart anything."""
+    session = deps.require_session_api(request)
+    deps.require_csrf(request, session)
+    broadcast.acknowledge_error()
+    db.audit(session["username"], "broadcast_error_ack", ip=deps.client_ip(request))
+    return {"ok": True}
 
 
 @app.post("/api/zoom/control")

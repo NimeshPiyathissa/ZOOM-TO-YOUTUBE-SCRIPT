@@ -203,7 +203,7 @@ function renderHeroChips(ff, hasData) {
   const dropped = document.getElementById("hero-chip-dropped");
   if (bitrate) bitrate.textContent = Math.round(ff.bitrate_kbps) + " kbps";
   if (fps) fps.textContent = ff.fps + " fps";
-  if (dropped) dropped.textContent = ff.drop + " dropped";
+  if (dropped) dropped.textContent = ff.drop + " dropped" + (ff.drop_pct ? ` (${ff.drop_pct}%)` : "") + (ff.fresh === false ? " · stale" : "");
 }
 
 function renderFfmpeg(ff, phase, sourceType, sourceHealth) {
@@ -280,10 +280,27 @@ async function renderAccount() {
   } catch (err) { /* transient */ }
 }
 
+function renderBroadcastError(b) {
+  const el = document.getElementById("bcast-error-banner");
+  if (!el) return;
+  const err = b && b.state === "ERROR" ? (b.last_error || {}) : null;
+  el.hidden = !err;
+  if (!err) return;
+  const mins = err.ran_seconds ? ` after ${Math.round(err.ran_seconds / 60)} min on air` : "";
+  document.getElementById("bcast-error-headline").textContent = `The broadcast stopped unexpectedly${mins}.`;
+  document.getElementById("bcast-error-detail").textContent = [err.reason, err.source_name && `source: ${err.source_name}`].filter(Boolean).join(" - ");
+}
+document.addEventListener("click", async (e) => {
+  if (!e.target.closest("#bcast-error-dismiss")) return;
+  try { await apiFetch("/api/broadcast/acknowledge-error", { method: "POST" }); document.getElementById("bcast-error-banner").hidden = true; }
+  catch (err) { toast(err.message, "err"); }
+});
+
 async function pollState() {
   try {
     const data = await apiFetch("/api/state");
     renderState(data.stream);
+    renderBroadcastError(data.broadcast);
     renderActiveSource(data.active_source);
     renderUnits(data.units);
     renderSystemServices(document.getElementById("system-services"), data.services);
