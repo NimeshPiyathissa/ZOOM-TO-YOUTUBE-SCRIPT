@@ -115,6 +115,11 @@ button.zm-ctl:focus-visible { outline: 2px solid var(--accent-ring); outline-off
 .zm-apply-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); margin-top: var(--space-3); }
 .zm-meeting-only { margin-top: var(--space-3); display: grid; gap: var(--space-2); }
 .zm-meeting-only .zm-seg { align-self: flex-start; }
+/* The Fit / Fill labels are long: on a narrow screen let them wrap onto their own rows instead of clipping off the edge. */
+@media (max-width: 640px) {
+  .zm-meeting-only .zm-seg { align-self: stretch; display: grid; grid-template-columns: 1fr; }
+  .zm-meeting-only .zm-seg .seg-btn { white-space: normal; text-align: center; }
+}
 @media (max-width: 480px) { .zm-controls { grid-template-columns: 1fr 1fr; } .zm-ctl-view { grid-column: 1 / -1; } }
 
 /* segmented, tighter for these tiles */

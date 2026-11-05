@@ -43,6 +43,36 @@ async def _display_size() -> str:
     return "1280x720"  # last-resort fallback, matches the documented default
 
 
+def meeting_only_filter(out_w: int, out_h: int, fit: str = "fit", top: int = 56, bottom: int = 96) -> str:
+    """Python twin of scripts/lib.sh build_meeting_only_filter(): the crop/scale the ENCODER applies in
+    "Meeting only" mode, so the dashboard preview shows what the broadcast will actually look like (same
+    arithmetic, same even-number rounding). tests/test_meeting_filter.py pins the two to the same strings."""
+    max_trim = out_h // 6                          # never trim away more than a sixth per edge
+    top, bottom = min(top, max_trim), min(bottom, max_trim)
+    top, bottom = top // 2 * 2, bottom // 2 * 2
+    rw, rh = out_w, (out_h - top - bottom) // 2 * 2
+    if fit == "fill":
+        if rw * out_h > rh * out_w:                # meeting area wider than the output: trim the sides
+            ch = rh
+            cw = rh * out_w // out_h
+        else:                                      # taller: trim top/bottom
+            cw = rw
+            ch = rw * out_h // out_w
+        cw, ch = cw // 2 * 2, ch // 2 * 2
+        cx = (rw - cw) // 2 // 2 * 2
+        cy = top + (rh - ch) // 2 // 2 * 2
+        return f"crop={cw}:{ch}:{cx}:{cy},scale={out_w}:{out_h}:flags=lanczos,setsar=1"
+    return (f"crop={rw}:{rh}:0:{top},scale={out_w}:{out_h}:force_original_aspect_ratio=decrease:flags=lanczos,"
+            f"pad={out_w}:{out_h}:(ow-iw)/2:(oh-ih)/2:black,setsar=1")
+
+
+def _trim(value, default: int) -> int:
+    try:
+        return int(value) if str(value).strip().isdigit() else default
+    except (TypeError, ValueError):
+        return default
+
+
 class PreviewManager:
     """The frontend just polls GET /api/preview.jpg every few seconds
     while the Overview tab is visible. Each poll 'touches' this manager;
@@ -54,6 +84,7 @@ class PreviewManager:
         self._last_touch = 0.0
         self._task: asyncio.Task | None = None
         self._lock = asyncio.Lock()
+        self._mo_cache: tuple[float, dict] = (0.0, {})
 
     async def touch(self) -> None:
         self._last_touch = time.time()
@@ -67,16 +98,42 @@ class PreviewManager:
             await self._capture_once()
             await asyncio.sleep(INTERVAL_SECONDS)
 
+    async def _meeting_only(self, video_size: str) -> str:
+        """The encoder's Meeting-only crop for the current Zoom source ("" when it is off), so the preview
+        matches the broadcast output. Reads current-source.env at most every 10 s."""
+        now = time.time()
+        if now - self._mo_cache[0] > 10:
+            try:
+                from . import control
+                src = await asyncio.get_event_loop().run_in_executor(None, control.read_current_source)
+            except Exception:
+                src = {}
+            self._mo_cache = (now, src)
+        src = self._mo_cache[1]
+        if src.get("SOURCE_TYPE") != "zoom" or src.get("ZOOM_MEETING_ONLY") != "1":
+            return ""
+        try:
+            w, h = (int(v) for v in video_size.split("x"))
+        except ValueError:
+            return ""
+        fit = "fill" if src.get("ZOOM_MEETING_ONLY_FIT") == "fill" else "fit"
+        return meeting_only_filter(w, h, fit, _trim(src.get("ZOOM_MEETING_ONLY_TRIM_TOP"), 56),
+                                   _trim(src.get("ZOOM_MEETING_ONLY_TRIM_BOTTOM"), 96))
+
     async def _capture_once(self) -> None:
         tmp_path = PREVIEW_PATH.with_suffix(".tmp.jpg")
         video_size = await _display_size()
+        vf = "scale=640:-1"
+        mo = await self._meeting_only(video_size)
+        if mo:
+            vf = f"{mo},{vf}"
         argv = [
             "/usr/bin/nice", "-n", "19",
             "/usr/bin/ionice", "-c", "3",
             "/usr/bin/ffmpeg", "-hide_banner", "-loglevel", "error",
             "-f", "x11grab", "-video_size", video_size, "-draw_mouse", "0",
             "-i", config.DISPLAY_NUM,
-            "-vframes", "1", "-vf", "scale=640:-1",
+            "-vframes", "1", "-vf", vf,
             "-q:v", "6", "-y", str(tmp_path),
         ]
         try:
