@@ -1489,11 +1489,20 @@ def reboot_readiness() -> list[dict]:
 
     for unit in config.UNIT_ORDER:
         info = unit_show(unit)
-        enabled = info.get("unit_file_state") == "enabled"
+        state = info.get("unit_file_state")
+        if unit == "ffmpeg-stream":
+            # Deliberately NOT started at boot: a broadcast must only ever begin when an operator presses Go Live
+            # (a stopped stream coming back by itself after a reboot would put whatever is on screen on air).
+            # Manual start/stop is unaffected by "disabled". Either state is fine; only a missing unit is not.
+            ok_state = state not in (None, "", "not-found")
+            checks.append({"check": "ffmpeg-stream.service present (starts only on Go Live)", "ok": ok_state,
+                           "detail": "" if ok_state else f"unit_file_state={state or 'unknown'}"})
+            continue
+        enabled = state == "enabled"
         checks.append({
             "check": f"{unit}.service enabled",
             "ok": enabled,
-            "detail": "" if enabled else f"unit_file_state={info.get('unit_file_state', 'unknown')}",
+            "detail": "" if enabled else f"unit_file_state={state or 'unknown'}",
         })
 
     try:

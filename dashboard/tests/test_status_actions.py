@@ -176,3 +176,19 @@ def test_preflight_requires_login(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "DB_PATH", tmp_path / "anon.db")
     db.init_db()
     assert TestClient(app).get("/api/stream/preflight").status_code == 401
+
+
+def test_boot_readiness_accepts_a_manual_start_encoder_but_not_a_missing_one(monkeypatch):
+    def units(ffmpeg_state):
+        return lambda unit: show(unit, "active", "running", "LIVE",
+                                 unit_file_state=ffmpeg_state if unit == "ffmpeg-stream" else "enabled")
+    for state, expect in (("disabled", True), ("enabled", True), ("not-found", False), ("", False)):
+        monkeypatch.setattr(control, "unit_show", units(state))
+        checks = control.reboot_readiness()
+        enc = next(c for c in checks if c["check"].startswith("ffmpeg-stream"))
+        assert enc["ok"] is expect, (state, enc)
+        others = [c for c in checks if c["check"].endswith(".service enabled") and not c["check"].startswith("dashboard") and not c["check"].startswith("caddy")]
+        assert others and all(c["ok"] for c in others)             # every other unit must still be enabled at boot
+    monkeypatch.setattr(control, "unit_show", lambda unit: show(unit, "active", "running", "LIVE", unit_file_state="disabled"))
+    checks = control.reboot_readiness()
+    assert not next(c for c in checks if c["check"] == "xvfb.service enabled")["ok"]
