@@ -581,7 +581,7 @@ def _set_slate() -> dict:
     return {"ok": proc.returncode == 0, "action": "slate"}
 
 
-def start_source(source: dict) -> dict:
+def start_source(source: dict, start_encoder: bool = True) -> dict:
     """Switch to `source`, keeping the RTMP connection up whenever that's
     physically possible:
 
@@ -596,7 +596,9 @@ def start_source(source: dict) -> dict:
       different, so the encoder must restart. The caller is told via
       rtmp_dropped=True (the UI confirms first while live) and a slate is
       shown for the gap.
-    Returns {"results": [...], "rtmp_dropped": bool, "hot_swapped": bool}."""
+    `start_encoder=False` ("Join only"): bring the source up and join, but never start ffmpeg-stream - the meeting can
+    be checked on the dashboard before anything is sent to YouTube. A running encoder is still handled as above.
+    Returns {"results": [...], "rtmp_dropped": bool, "hot_swapped": bool, "failed": [...], "encoder_started": bool}."""
     type_ = source["type"]
     old_type = read_current_source().get("SOURCE_TYPE", "")
     ffmpeg_up = _ffmpeg_is_up()
@@ -649,9 +651,15 @@ def start_source(source: dict) -> dict:
 
     if type_ == "edumix" and edumix_capture_blocked_for(type_):
         pass  # view-only: the encoder stays off
-    elif needs_ffmpeg_restart or not ffmpeg_up:
+    elif needs_ffmpeg_restart and ffmpeg_up:
+        results.append(unit_action("ffmpeg-stream", "start"))           # it was stopped above for a direct-media change
+    elif not ffmpeg_up and (start_encoder or needs_ffmpeg_restart):
         results.append(unit_action("ffmpeg-stream", "start"))
-    return {"results": results, "rtmp_dropped": rtmp_dropped, "hot_swapped": False}
+    # systemctl refusing a start/restart used to vanish here; report it so the UI can say so.
+    failed = [{"unit": r.get("unit"), "verb": r.get("verb"), "error": r.get("stderr") or "systemctl failed"}
+              for r in results if r.get("ok") is False and r.get("verb") in ("start", "restart")]
+    started = any(r.get("unit") == "ffmpeg-stream" and r.get("verb") == "start" and r.get("ok") for r in results)
+    return {"results": results, "rtmp_dropped": rtmp_dropped, "hot_swapped": False, "failed": failed, "encoder_started": started}
 
 
 def rotate_vnc_password(new_password: str) -> dict:

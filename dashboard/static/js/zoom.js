@@ -475,7 +475,7 @@ async function save(thenJoin) {
     toast(editingId ? "Meeting updated" : "Meeting saved");
     await refreshSources(true);
     resetEditor();
-    if (thenJoin && saved) await switchTo(saved.id);
+    if (thenJoin && saved) await switchTo(saved.id, false);      // "Save & join" never starts the stream on its own
   } catch (e2) { err.hidden = false; err.textContent = e2.message; }
 }
 $("zm-save").addEventListener("click", (e) => withLoading(e.currentTarget, () => save(false)));
@@ -562,7 +562,8 @@ function renderLibrary() {
       <div class="zm-card-revealed hint mono" data-revealed="${m.id}" hidden></div>
       ${missing}${warnings}${reg}
       <div class="zm-card-actions">
-        <button class="btn ${isActive ? "btn-secondary" : "btn-primary"} btn-sm" data-act="switch" data-id="${m.id}" ${m.missing && m.missing.length ? "disabled" : ""}>${icon("play", "icon-sm")}${isActive ? "Active" : "Join"}</button>
+        <button class="btn ${isActive ? "btn-secondary" : "btn-primary"} btn-sm" data-act="switch" data-id="${m.id}" ${m.missing && m.missing.length ? "disabled" : ""} title="${isLive() ? "Switch the live stream to this meeting" : "Join this meeting AND start the encoder (goes on air)"}">${icon("play", "icon-sm")}${isActive ? "Active" : "Join"}</button>
+        ${isLive() ? "" : `<button class="btn btn-secondary btn-sm" data-act="join-only" data-id="${m.id}" ${m.missing && m.missing.length ? "disabled" : ""} title="Join the meeting without starting the encoder - nothing is sent to YouTube">${icon("eye", "icon-sm")}Join only</button>`}
         <button class="btn btn-secondary btn-sm" data-act="edit" data-id="${m.id}">${icon("pencil", "icon-sm")}Edit</button>
         <button class="btn btn-ghost btn-sm" data-act="dup" data-id="${m.id}">${icon("copy", "icon-sm")}Duplicate</button>
         <button class="btn btn-ghost btn-sm zm-danger" data-act="del" data-id="${m.id}" aria-label="Delete ${esc(m.name)}">${icon("trash-2", "icon-sm")}</button>
@@ -591,13 +592,13 @@ $("zm-library").addEventListener("click", async (e) => {
   const b = e.target.closest("[data-act]"); if (!b) return;
   const id = Number(b.dataset.id);
   const run = {
-    switch: () => switchTo(id), edit: () => startEdit(id), dup: () => duplicate(id), del: () => remove(id),
+    switch: () => switchTo(id), "join-only": () => switchTo(id, false), edit: () => startEdit(id), dup: () => duplicate(id), del: () => remove(id),
     reveal: () => reveal(id), register: () => openRegistration(id), "save-joinurl": () => saveJoinUrl(id),
   }[b.dataset.act];
   if (run) await withLoading(b, run);
 });
 
-async function switchTo(id) {
+async function switchTo(id, goLive = true) {
   const m = meetings.find((x) => x.id === id); if (!m) return;
   let preview = null; try { preview = await apiFetch(`/api/sources/${id}/switch-preview`); } catch (err) { /* generic confirm below */ }
   if (preview && preview.missing && preview.missing.length) { toast("Can't join yet - missing " + preview.missing.join("; "), "err"); return; }
@@ -607,9 +608,13 @@ async function switchTo(id) {
       : `Switch to "${m.name}" while LIVE? The stream stays connected; viewers see the slate while Zoom joins.`;
     if (!(await confirmDialog(msg, { confirmText: "Switch and join" }))) return;
   }
+  if (!isLive() && goLive && !(await confirmDialog(
+    `Joining "${m.name}" also starts the encoder: it goes on air to YouTube as soon as Zoom joins. To look at the meeting first without streaming, cancel and use "Join only".`,
+    { confirmText: "Join and go on air" }))) return;
   try {
-    const r = await post(`/api/sources/${id}/switch`);
-    toast(r.rtmp_dropped ? `Joining "${m.name}" - encoder restarted` : `Joining "${m.name}"`);
+    const r = await post(`/api/sources/${id}/switch`, goLive ? {} : { go_live: false });
+    if (r.failed && r.failed.length) toast(`Joining "${m.name}" - but ${r.failed.map((f) => `${f.unit} ${f.verb} failed: ${f.error}`).join("; ")}`, "err");
+    else toast(!goLive ? `Joining "${m.name}" - not on air (encoder untouched)` : r.rtmp_dropped ? `Joining "${m.name}" - encoder restarted` : `Joining "${m.name}"`);
     await refreshSources(true); setTimeout(pollStatus, 1500); setTimeout(pollJoinOptions, 6000);
     window.scrollTo({ top: 0, behavior: "smooth" });
   } catch (err) { toast(err.message, "err"); }

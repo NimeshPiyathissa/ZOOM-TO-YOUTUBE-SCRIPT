@@ -705,6 +705,8 @@ async def _zoom_action(action: str, request: Request):
     active = sources_mod.get_active_source()
     try:
         result = await run_in_threadpool(control.zoom_join, action, active)
+        if not result.get("ok", True):
+            raise control.ControlError(result.get("stderr") or f"Zoom {action} failed - see Logs")
     except control.ControlError as exc:
         return _api_error(exc)
     if action in ("join", "rejoin") and active:
@@ -1850,7 +1852,12 @@ async def api_sources_switch(source_id: int, request: Request):
     if not s:
         raise HTTPException(status_code=404, detail="source not found")
     try:
-        outcome = await run_in_threadpool(control.start_source, s)
+        body = await request.json()
+    except Exception:
+        body = {}
+    go_live = not (isinstance(body, dict) and body.get("go_live") is False)      # default unchanged: Join also starts the encoder
+    try:
+        outcome = await run_in_threadpool(control.start_source, s, go_live)
     except control.ControlError as exc:
         return _api_error(exc)
     sources_mod.set_active_source_id(source_id)
@@ -1859,7 +1866,8 @@ async def api_sources_switch(source_id: int, request: Request):
         join_via = "web" if control.producer_unit_for(s) == "browser-source" else "client"
         _schedule_zoom_followup(s, join_via)
     db.audit(session["username"], "source_switch",
-             f"{s['name']} hot={outcome['hot_swapped']} dropped={outcome['rtmp_dropped']}", deps.client_ip(request))
+             f"{s['name']} hot={outcome['hot_swapped']} dropped={outcome['rtmp_dropped']} go_live={go_live} "
+             f"encoder_started={outcome.get('encoder_started')}", deps.client_ip(request))
     return outcome
 
 
