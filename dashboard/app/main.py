@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import functools
+import weakref
 import datetime as dt
 import hashlib
 import json
@@ -33,6 +35,7 @@ from . import accounts as accounts_mod
 from .accounts import AccountError
 from . import audio_level
 from . import status as unit_status
+from . import broadcast
 from . import framing
 from . import edumix, edumix_api
 from . import recording, settings_store, telegram
@@ -550,6 +553,10 @@ async def api_state(request: Request):
 
     producer_unit = control.producer_unit_for(active_source)
     unit_status.annotate_units(units, producer_unit, active_source["type"] if active_source else None)
+    producer_ready = None
+    if active_source is not None:
+        producer_ready = True if not producer_unit else any(u["unit"] == producer_unit and u["phase"] == control.PHASE_LIVE for u in units)
+    broadcast_state = broadcast.snapshot(stream_show, producer_ready)
     return {
         "stream": stats.stream_state(stream_show),
         "ffmpeg": stats.ffmpeg_progress(stream_show),
@@ -558,6 +565,7 @@ async def api_state(request: Request):
         "services": await run_in_threadpool(unit_status.system_services),
         "active_source": active_source_view,
         "producer_unit": producer_unit,
+        "broadcast": broadcast_state,
         "source_health": source_health,
         "server_time": time.time(),
     }
@@ -575,13 +583,14 @@ async def api_preview(request: Request):
 
 # ---------------------------------------------------------------- api: unit / pipeline / stream control
 
-async def _checked_unit_action(unit: str, verb: str) -> dict:
+async def _checked_unit_action(unit: str, verb: str, grant=None) -> dict:
     """control.unit_action() plus the two things the UI used to hide:
     * systemctl refusing the command (ok=false used to come back as HTTP 200, so the page said "sent");
     * a start/restart that is accepted but dies within a few seconds (a bad .env value, a missing source...),
       which used to look exactly like success until the next poll showed "Stopped" with no explanation.
+    Starting/restarting the ENCODER needs `grant` (see app/broadcast.py); control.unit_action enforces it.
     Raises control.ControlError with a human reason; returns the action result otherwise."""
-    result = await run_in_threadpool(control.unit_action, unit, verb)
+    result = await run_in_threadpool(functools.partial(control.unit_action, unit, verb, grant=grant))
     if not result.get("ok"):
         raise control.ControlError(result.get("stderr") or f"systemctl {verb} {unit} failed")
     if verb in ("start", "restart"):
@@ -609,12 +618,178 @@ async def _checked_unit_action(unit: str, verb: str) -> dict:
     return result
 
 
+# ---------------------------------------------------------------- broadcast authorization (app/broadcast.py)
+
+_loop_locks: "weakref.WeakKeyDictionary" = weakref.WeakKeyDictionary()
+
+
+def _bl() -> asyncio.Lock:
+    """One start/stop/restart decision at a time per event loop (production has exactly one loop; the per-loop map only
+    keeps test clients, which spin up a loop per request, from sharing a lock across loops). Double starts are ALSO
+    impossible without it: a grant can be consumed once, atomically (broadcast.consume_grant)."""
+    loop = asyncio.get_running_loop()
+    lock = _loop_locks.get(loop)
+    if lock is None:
+        lock = _loop_locks[loop] = asyncio.Lock()
+    return lock
+
+
+def _bcast_error(exc: "broadcast.BroadcastError") -> JSONResponse:
+    return JSONResponse({"error": str(exc), "code": exc.code}, status_code=exc.status)
+
+
+async def _broadcast_view() -> dict:
+    """Everything the confirmation dialog and the status panels need - no secrets (the key is never read, only 'is one set')."""
+    source = sources_mod.get_active_source()
+    show = await run_in_threadpool(control.unit_show, "ffmpeg-stream")
+    producer = control.producer_unit_for(source)
+    ready = None
+    if source is not None:
+        if producer:
+            ready = (await run_in_threadpool(control.unit_show, producer))["phase"] == control.PHASE_LIVE
+        else:
+            ready = True
+    snap = broadcast.snapshot(show, ready)
+    try:
+        key_set = bool((await run_in_threadpool(env_store.read_parsed)).get("YT_STREAM_KEY"))
+    except Exception:
+        key_set = None
+    return {**snap, "source": ({"id": source["id"], "name": source["name"], "type": source["type"]} if source else None),
+            "destination": {"platform": "YouTube Live (RTMPS)", "host": "a.rtmps.youtube.com", "stream_key": (
+                "configured" if key_set else ("missing" if key_set is False else "unknown"))}}
+
+
+async def _broadcast_warnings(view: dict) -> list[dict]:
+    warnings: list[dict] = []
+    source = sources_mod.get_active_source()
+    if source is None:
+        warnings.append({"code": "no_source", "text": "No source is selected, so the stream would show whatever is on the server's virtual display."})
+    elif source.get("type") == "zoom":
+        try:
+            st = await run_in_threadpool(control.zoom_meeting_status)
+        except control.ControlError as exc:
+            st = {"status": "unknown", "detail": str(exc)}
+        if st.get("status") != "in_meeting":
+            warnings.append({"code": "not_in_meeting", "text": f"Zoom is not confirmed to be in a meeting ({st.get('detail') or st.get('status')}). Viewers would see the Zoom window as it is."})
+    if view["destination"]["stream_key"] == "missing":
+        warnings.append({"code": "no_stream_key", "text": "No YouTube stream key is configured - the encoder will not start."})
+    return warnings
+
+
+@app.get("/api/broadcast")
+async def api_broadcast(request: Request):
+    deps.require_session_api(request)
+    return await _broadcast_view()
+
+
+@app.get("/api/broadcast/preflight")
+async def api_broadcast_preflight(request: Request):
+    """What the Go Live confirmation shows: the selected source, the destination (no secrets) and any warnings."""
+    deps.require_session_api(request)
+    view = await _broadcast_view()
+    return {**view, "warnings": await _broadcast_warnings(view)}
+
+
+@app.post("/api/broadcast/authorize")
+async def api_broadcast_authorize(request: Request):
+    """Step 1 of Go Live / restart: called only AFTER the operator confirmed in the dialog. Returns a 60 s, single-use
+    grant bound to this user and to the exact source (id + revision). Warnings must be explicitly acknowledged."""
+    session = deps.require_session_api(request)
+    deps.require_csrf(request, session)
+    deps.require_rate_limit(session, "broadcast_authorize", max_calls=6, window_seconds=30)
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    body = body if isinstance(body, dict) else {}
+    purpose = str(body.get("purpose") or "go_live")
+    async with _bl():
+        view = await _broadcast_view()
+        warnings = await _broadcast_warnings(view)
+        if any(w["code"] == "no_stream_key" for w in warnings):
+            return JSONResponse({"error": warnings[-1]["text"], "code": "no_stream_key", "warnings": warnings}, status_code=409)
+        if warnings and body.get("ack_warnings") is not True:
+            return JSONResponse({"error": "Confirm the warnings before going live.", "code": "warnings_not_acknowledged",
+                                 "warnings": warnings}, status_code=409)
+        if await run_in_threadpool(control.edumix_capture_blocked):
+            return JSONResponse({"error": "EduMix capture and YouTube broadcasting are disabled until a real live class has "
+                                          "been inspected and an authorized capture method is confirmed.", "code": "edumix_locked"}, status_code=403)
+        try:
+            grant = broadcast.issue_grant(session["username"], purpose, sources_mod.get_active_source(),
+                                          sources_mod.sources_rev(), view["state"])
+        except broadcast.BroadcastError as exc:
+            return _bcast_error(exc)
+    db.audit(session["username"], "broadcast_authorize", f"purpose={purpose} source={(view['source'] or {}).get('name')}", deps.client_ip(request))
+    return {**grant, "source": view["source"], "destination": view["destination"], "warnings": warnings}
+
+
+async def _start_encoder_authorized(session, grant_id: str, purpose: str, ip: str) -> dict:
+    """Atomically consume the grant, record the session, hand stream.sh its one-time permission and start (or restart)
+    the encoder. Serialized: a duplicate or concurrent request sees LIVE/STARTING and is refused (or answered idempotently
+    when it carries the very grant that started the live session)."""
+    async with _bl():
+        source, rev = sources_mod.get_active_source(), sources_mod.sources_rev()
+        show = await run_in_threadpool(control.unit_show, "ffmpeg-stream")
+        snap = broadcast.snapshot(show, True)
+        if snap["session"] and snap["session"].get("id") == grant_id and snap["state"] in (broadcast.LIVE, broadcast.STARTING):
+            return {"ok": True, "already": True, "state": snap["state"]}       # idempotent replay of the same start
+        if purpose == "go_live" and snap["state"] in (broadcast.LIVE, broadcast.STARTING, broadcast.STOPPING):
+            raise broadcast.BroadcastError("already_" + snap["state"].lower(), f"The broadcast is already {snap['state'].lower()}.")
+        grant = broadcast.consume_grant(grant_id, session["username"], purpose, source, rev)
+        broadcast.begin_session(grant, source)
+        try:
+            await run_in_threadpool(control.write_broadcast_auth, grant.env())
+            result = await _checked_unit_action("ffmpeg-stream", "start" if purpose == "go_live" else "restart", grant=grant)
+        except control.ControlError as exc:
+            broadcast.fail_session("The encoder could not be started.", {"error": str(exc)[:300]})
+            raise
+        finally:
+            try:
+                await run_in_threadpool(control.clear_broadcast_auth)           # the permission is single-use
+            except Exception:
+                pass
+        broadcast.mark_live()
+    db.audit(session["username"], "broadcast_" + ("start" if purpose == "go_live" else "restart"),
+             f"source={(source or {}).get('name')}", ip)
+    return result
+
+
+async def _stop_encoder(session, ip: str) -> dict:
+    async with _bl():
+        broadcast.mark_stop_requested()
+        try:
+            result = await _checked_unit_action("ffmpeg-stream", "stop")
+        finally:
+            try:
+                await run_in_threadpool(control.clear_broadcast_auth)
+            except Exception:
+                pass
+    db.audit(session["username"], "broadcast_stop", ip=ip)
+    return result
+
+
+@app.get("/api/stream/preflight")
+async def api_stream_preflight(request: Request):
+    """Back-compat for older pages: just the warnings (the new dialog uses /api/broadcast/preflight)."""
+    deps.require_session_api(request)
+    view = await _broadcast_view()
+    return {"warnings": await _broadcast_warnings(view)}
+
+
 @app.post("/api/units/{unit}/{verb}")
 async def api_unit_action(unit: str, verb: str, request: Request):
     session = deps.require_session_api(request)
     deps.require_csrf(request, session)
     if verb not in ("start", "stop", "restart"):
         raise HTTPException(status_code=400, detail="invalid verb")
+    if unit == "ffmpeg-stream":
+        if verb == "stop":
+            try:
+                return await _stop_encoder(session, deps.client_ip(request))
+            except control.ControlError as exc:
+                return _api_error(exc)
+        return JSONResponse({"error": "The encoder can only be started through Go Live with a confirmation. "
+                                      "Use the Go Live button.", "code": "use_go_live"}, status_code=409)
     try:
         result = await _checked_unit_action(unit, verb)
     except control.ControlError as exc:
@@ -629,25 +804,7 @@ async def api_pipeline_restart(request: Request):
     deps.require_csrf(request, session)
     results = await run_in_threadpool(control.pipeline_restart)
     db.audit(session["username"], "pipeline_restart", ip=deps.client_ip(request))
-    return {"results": results}
-
-
-@app.get("/api/stream/preflight")
-async def api_stream_preflight(request: Request):
-    """Read-only 'are you sure?' facts shown before Go Live. Warnings, never blocks: the operator decides."""
-    deps.require_session_api(request)
-    warnings: list[dict] = []
-    source = sources_mod.get_active_source()
-    if source is None:
-        warnings.append({"code": "no_source", "text": "No source is selected, so the stream would show whatever is on the server's virtual display."})
-    elif source.get("type") == "zoom" and control.producer_unit_for(source) == "zoom":
-        try:
-            st = await run_in_threadpool(control.zoom_meeting_status)
-        except control.ControlError as exc:
-            st = {"status": "unknown", "detail": str(exc)}
-        if st.get("status") != "in_meeting":
-            warnings.append({"code": "not_in_meeting", "text": f"Zoom is not in a meeting right now ({st.get('detail') or st.get('status')}). Viewers would see the Zoom window as it is."})
-    return {"warnings": warnings}
+    return {"results": results, "note": "The encoder is stopped by a pipeline restart and is never started by it: press Go Live to broadcast again."}
 
 
 @app.post("/api/stream/{action}")
@@ -655,21 +812,24 @@ async def api_stream_action(action: str, request: Request):
     session = deps.require_session_api(request)
     deps.require_csrf(request, session)
     deps.require_rate_limit(session, "stream_" + action, max_calls=6, window_seconds=15)
-    verb = {"go-live": "start", "stop": "stop", "restart": "restart"}.get(action)
-    if not verb:
+    if action not in ("go-live", "stop", "restart"):
         raise HTTPException(status_code=400, detail="invalid action")
-    if verb in ("stop", "restart"):
-        # Manual control always wins: if a schedule's window is what's
-        # currently live, a manual stop/restart here must suppress that
-        # schedule for the rest of its occurrence (no auto-rejoin/re-go-live)
-        # - see app/scheduler.py's note_manual_override().
-        await run_in_threadpool(scheduler.note_manual_override)
+    ip = deps.client_ip(request)
     try:
-        result = await _checked_unit_action("ffmpeg-stream", verb)
+        if action == "stop":
+            # Manual control always wins: a manual stop suppresses the schedule's own handling for this occurrence.
+            await run_in_threadpool(scheduler.note_manual_override)
+            return await _stop_encoder(session, ip)
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        grant_id = str((body or {}).get("grant") or "") if isinstance(body, dict) else ""
+        return await _start_encoder_authorized(session, grant_id, "go_live" if action == "go-live" else "restart", ip)
+    except broadcast.BroadcastError as exc:
+        return _bcast_error(exc)
     except control.ControlError as exc:
         return _api_error(exc)
-    db.audit(session["username"], f"stream_{action}", ip=deps.client_ip(request))
-    return result
 
 
 def _schedule_zoom_followup(source: dict, join_via: str = "client") -> None:
@@ -946,9 +1106,9 @@ async def api_zoom_meeting_only(request: Request):
     restarted = False
     if restart_needed and want_restart:
         try:
-            await run_in_threadpool(control.unit_action, "ffmpeg-stream", "restart")
+            await _start_encoder_authorized(session, str(body.get("grant") or ""), "restart", deps.client_ip(request))
             restarted, restart_needed = True, False
-        except control.ControlError as exc:
+        except (control.ControlError, broadcast.BroadcastError) as exc:
             window_result = {**(window_result or {}), "restart_error": str(exc)}
     db.audit(session["username"], "zoom_meeting_only",
              f"enabled={enabled} fit={options['meeting_only_fit']} auto={auto} region={options.get('meeting_only_region') or '-'} "
@@ -1204,12 +1364,14 @@ async def api_config_apply_restarts(request: Request):
     body = await request.json()
     units = body.get("units", [])
     if set(units) == set(config.UNIT_ORDER):
-        results = await run_in_threadpool(control.pipeline_restart)
+        results = await run_in_threadpool(control.pipeline_restart)      # leaves the encoder stopped (see pipeline_start)
     else:
         bad = [u for u in units if u not in config.ALLOWED_UNITS]
         if bad:
             raise HTTPException(status_code=400, detail=f"unknown units: {bad}")
-        results = [control.unit_action(u, "restart") for u in units]
+        results = [(control.unit_action(u, "restart") if u != "ffmpeg-stream" else
+                    {"ok": False, "unit": u, "verb": "restart", "stderr": "not restarted here - the encoder only starts "
+                     "through Go Live with a confirmation", "needs_go_live": True}) for u in units]
     db.audit(session["username"], "apply_restarts", ",".join(units), deps.client_ip(request))
     return {"results": results}
 
@@ -1852,12 +2014,7 @@ async def api_sources_switch(source_id: int, request: Request):
     if not s:
         raise HTTPException(status_code=404, detail="source not found")
     try:
-        body = await request.json()
-    except Exception:
-        body = {}
-    go_live = not (isinstance(body, dict) and body.get("go_live") is False)      # default unchanged: Join also starts the encoder
-    try:
-        outcome = await run_in_threadpool(control.start_source, s, go_live)
+        outcome = await run_in_threadpool(control.start_source, s)             # prepares the source; never starts the encoder
     except control.ControlError as exc:
         return _api_error(exc)
     sources_mod.set_active_source_id(source_id)
@@ -1866,7 +2023,7 @@ async def api_sources_switch(source_id: int, request: Request):
         join_via = "web" if control.producer_unit_for(s) == "browser-source" else "client"
         _schedule_zoom_followup(s, join_via)
     db.audit(session["username"], "source_switch",
-             f"{s['name']} hot={outcome['hot_swapped']} dropped={outcome['rtmp_dropped']} go_live={go_live} "
+             f"{s['name']} hot={outcome['hot_swapped']} dropped={outcome['rtmp_dropped']} "
              f"encoder_started={outcome.get('encoder_started')}", deps.client_ip(request))
     return outcome
 

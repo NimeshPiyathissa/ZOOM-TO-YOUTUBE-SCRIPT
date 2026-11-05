@@ -51,6 +51,10 @@ async def _send_alert(message: str) -> None:
         pass
 
 
+_last_error_alert: float | None = None
+_go_live_suppressed: set = set()
+
+
 async def _watchdog() -> None:
     global _last_alert_ts
     # unit_show()/read_current_source()/zoom_meeting_status() below all
@@ -65,25 +69,32 @@ async def _watchdog() -> None:
         show = await loop.run_in_executor(None, control.unit_show, "ffmpeg-stream")
     except control.ControlError:
         return
+
+    # The broadcast session is reconciled here even when nobody has the dashboard open: an encoder that vanished
+    # without a stop request becomes ERROR (diagnostics kept) and the operator is told ONCE. It is never restarted.
+    from . import broadcast
+    global _last_error_alert
+    snap = await loop.run_in_executor(None, broadcast.snapshot, show, None)
+    err = snap.get("last_error") or {}
+    if snap["state"] == broadcast.ERROR and err.get("at") and err.get("at") != _last_error_alert:
+        _last_error_alert = err["at"]
+        await _send_alert("The broadcast ended unexpectedly and was NOT restarted: " + str(err.get("reason", "")) +
+                          " Check the dashboard and press Go Live again when ready.")
+        db.audit(None, "broadcast_error", str(err.get("reason", ""))[:120])
+
     if show["active_state"] != "failed":
         return
 
     now = time.time()
     if now - _last_alert_ts > ALERT_COOLDOWN_SECONDS:
         _last_alert_ts = now
-        await _send_alert("ffmpeg-stream has failed and systemd exhausted its own restart attempts.")
+        await _send_alert("ffmpeg-stream has failed. It will not be restarted automatically - use Go Live when ready.")
         db.audit(None, "watchdog_alert", "ffmpeg-stream failed")
 
+    # Auto-recovery used to re-start the encoder here. Restarting a broadcast on its own is exactly what must not
+    # happen, so the 'auto_recovery' setting is now ignored (kept only so existing settings pages keep loading).
     if db.get_setting("auto_recovery", "off") == "on":
-        recent = [t for t in _recovery_attempts if now - t < 3600]
-        if len(recent) < MAX_RECOVERY_ATTEMPTS_PER_HOUR:
-            _recovery_attempts.append(now)
-            try:
-                control.unit_action("ffmpeg-stream", "reset-failed")
-                control.unit_action("ffmpeg-stream", "start")
-                db.audit(None, "auto_recovery", "restarted ffmpeg-stream")
-            except control.ControlError:
-                pass
+        db.audit(None, "auto_recovery_ignored", "auto_recovery is disabled: the encoder is never restarted automatically")
 
     # Telemetry and frame drop check
     try:
@@ -380,9 +391,13 @@ def _stop_and_leave(schedule: dict, ever_joined: bool) -> None:
         # unrelated session the operator started by hand in the meantime.
         return
     try:
-        control.unit_action("ffmpeg-stream", "stop")
+        live = control.unit_show("ffmpeg-stream")["phase"] in (control.PHASE_LIVE, control.PHASE_STARTING)
     except control.ControlError:
-        pass
+        live = False
+    if live:
+        # A broadcast is on air and only the operator may end it. Leave everything as it is and say so.
+        db.audit(None, "scheduled_stop_suppressed", f"schedule={schedule['id']} - broadcast left running; stop it manually")
+        return
     if not schedule.get("keep_meeting_open"):
         try:
             env = control.read_current_source()
@@ -503,12 +518,13 @@ def _tick_schedule(schedule: dict, now: dt.datetime) -> None:
         if _backoff_due(schedule["id"], now):
             _try_join(schedule, key, now)
     elif state == "joined" and now >= start_at:
-        try:
-            control.unit_action("ffmpeg-stream", "start")
-            _persist_state(schedule["id"], "live", key, None)
-            db.audit(None, "scheduled_go_live", f"schedule={schedule['id']} occurrence={key}")
-        except control.ControlError as exc:
-            _persist_state(schedule["id"], "joined", key, f"Go-live failed, will retry next tick: {exc}")
+        # Scheduled broadcasting is disabled: a schedule joins/prepares the meeting but NEVER starts the encoder.
+        # (control.unit_action would refuse anyway - this just reports it once instead of retrying every tick.)
+        note = (schedule["id"], key)
+        if note not in _go_live_suppressed:
+            _go_live_suppressed.add(note)
+            _persist_state(schedule["id"], "joined", key, "Ready. Scheduled go-live is disabled - press Go Live yourself.")
+            db.audit(None, "scheduled_go_live_suppressed", f"schedule={schedule['id']} occurrence={key}")
 
 
 def _list_enabled_rich_schedules() -> list[dict]:

@@ -260,3 +260,46 @@ build_meeting_only_filter() {
     MEETING_ONLY_FILTER="crop=${rw}:${rh}:${rx}:${ry},scale=${out_w}:${out_h}:force_original_aspect_ratio=decrease:flags=lanczos,pad=${out_w}:${out_h}:(ow-iw)/2:(oh-ih)/2:black,setsar=1"
   fi
 }
+
+# ------------------------------------------------------------ broadcast authorization + secret-safe logging
+#
+# The encoder may only start when the dashboard has just written a ONE-TIME permission into current-source.env
+# (BROADCAST_AUTH_NONCE / _EXPIRES, see dashboard app/broadcast.py) after an operator confirmed Go Live. This is the
+# last line of defence: it stops a direct `systemctl --user start ffmpeg-stream`, systemd's own Restart= policy after a
+# crash, a boot, a stale dashboard and every code path that might one day call "start" from starting a broadcast.
+# The permission is burned (blanked on disk, under a lock) before ffmpeg starts, so it works exactly once.
+#   return 0 = authorized (and burned), 1 = refuse.
+broadcast_gate() {
+  local nonce="${BROADCAST_AUTH_NONCE:-}" exp="${BROADCAST_AUTH_EXPIRES:-0}" now lock tries=0
+  now="$(date +%s)"
+  [[ -n "$nonce" && "$exp" =~ ^[0-9]+$ ]] || return 1
+  (( now <= exp )) || return 1
+  [[ -f "$SOURCE_ENV_FILE" ]] || return 1
+  # mkdir is atomic everywhere (no flock dependency): whoever creates the directory holds the lock.
+  lock="$SOURCE_ENV_FILE.lockdir"
+  until mkdir "$lock" 2>/dev/null; do
+    tries=$((tries + 1))
+    (( tries > 50 )) && return 1                                   # 5 s: refuse rather than start unauthorized
+    if [[ -d "$lock" && -n "$(find "$lock" -maxdepth 0 -mmin +1 2>/dev/null)" ]]; then rmdir "$lock" 2>/dev/null; fi
+    sleep 0.1
+  done
+  local ok=1 tmp="$SOURCE_ENV_FILE.burn.$$"
+  # Re-read under the lock: if another instance already burned this nonce, refuse (single use, no double start).
+  if grep -q "^BROADCAST_AUTH_NONCE=\"$nonce\"\$" "$SOURCE_ENV_FILE"; then
+    if sed -E 's/^(BROADCAST_AUTH_(ID|NONCE|EXPIRES))=.*/\1=""/' "$SOURCE_ENV_FILE" > "$tmp" \
+       && chmod 644 "$tmp" && mv -f "$tmp" "$SOURCE_ENV_FILE"; then
+      ok=0
+    fi
+  fi
+  rm -f "$tmp" 2>/dev/null
+  rmdir "$lock" 2>/dev/null
+  (( ok == 0 )) || return 1
+  unset BROADCAST_AUTH_NONCE BROADCAST_AUTH_EXPIRES BROADCAST_AUTH_ID
+  return 0
+}
+
+# Filter for ffmpeg's log output: masks the secret path part of any rtmp(s):// destination (the YouTube stream key).
+# Unbuffered so progress lines keep flowing. Never prints or stores the real value.
+redact_stream_secrets() {
+  sed -u -E "s#(rtmps?://[^/[:space:]'\"]+/[^/[:space:]'\"]+/)[^[:space:]'\"]+#\1<redacted>#g"
+}

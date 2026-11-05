@@ -129,10 +129,24 @@ def edumix_capture_blocked_for(source_type: str) -> bool:
     return edumix.capture_blocked(source_type)
 
 
-def unit_action(unit: str, verb: str) -> dict:
+def unit_action(unit: str, verb: str, *, grant=None) -> dict:
+    """The single place systemd verbs are issued. Starting or restarting the ENCODER needs `grant`: the opaque
+    broadcast.Grant minted by an authenticated Go Live confirmation (app/broadcast.py). Anything else - a join, a source
+    switch, a schedule, a watchdog, the pipeline buttons, a legacy endpoint - is refused here, whatever called it."""
     _require_unit(unit)
     if verb not in VERBS:
         raise ControlError(f"unknown verb: {verb}")
+    if unit == "ffmpeg-stream" and verb in ("start", "restart"):
+        from . import broadcast
+        if not (isinstance(grant, broadcast.Grant) and grant.valid()):
+            raise ControlError("Starting the encoder needs an explicit Go Live confirmation. Nothing is started "
+                               "automatically - press Go Live and confirm.")
+    if unit == "ffmpeg-stream" and verb == "stop":
+        try:                                   # every stop path (button, pipeline, schedule...) is a DELIBERATE stop, not a crash
+            from . import broadcast
+            broadcast.mark_stop_requested()
+        except Exception:
+            pass
     if unit == "ffmpeg-stream" and verb in ("start", "restart") and edumix_capture_blocked():
         raise ControlError(
             "EduMix capture and YouTube broadcasting are disabled until a real live class has been "
@@ -261,8 +275,8 @@ def pipeline_start() -> list[dict]:
             continue
         if unit == "audio-setup" and wanted_unit is None:
             continue
-        if unit == "ffmpeg-stream" and source_type == "edumix" and edumix_capture_blocked():
-            continue  # viewing only: no encoder for EduMix yet
+        if unit == "ffmpeg-stream":
+            continue  # never started here: only an authorized Go Live starts the encoder (app/broadcast.py)
         results.append(unit_action(unit, "start"))
         time.sleep(0.5)
     return results
@@ -318,7 +332,10 @@ WATERMARK_ENV_KEYS = (
     "WATERMARK_ANCHOR", "WATERMARK_MARGIN_X", "WATERMARK_MARGIN_Y",
     "WATERMARK_SIZE", "WATERMARK_OPACITY", "WATERMARK_IMAGE_PATH",
 )
-SOURCE_ENV_KEYS = SOURCE_ENV_KEYS + WATERMARK_ENV_KEYS
+# One-time permission for the NEXT encoder start (see app/broadcast.py and scripts/stream.sh). Written just before an
+# authorized start, burned by stream.sh as it starts, and carried across source writes so a switch cannot wipe it.
+BROADCAST_ENV_KEYS = ("BROADCAST_AUTH_ID", "BROADCAST_AUTH_NONCE", "BROADCAST_AUTH_EXPIRES")
+SOURCE_ENV_KEYS = SOURCE_ENV_KEYS + WATERMARK_ENV_KEYS + BROADCAST_ENV_KEYS
 
 
 def _account_profile_id(source: dict) -> str:
@@ -377,7 +394,7 @@ def _source_env_lines(source: dict) -> dict[str, str]:
     # every time a source is applied (switching sources would otherwise
     # silently clear the watermark).
     current = read_current_source()
-    for key in WATERMARK_ENV_KEYS:
+    for key in WATERMARK_ENV_KEYS + BROADCAST_ENV_KEYS:
         if key in current:
             values[key] = current[key]
     if type_ == "zoom":
@@ -581,7 +598,7 @@ def _set_slate() -> dict:
     return {"ok": proc.returncode == 0, "action": "slate"}
 
 
-def start_source(source: dict, start_encoder: bool = True) -> dict:
+def start_source(source: dict, encoder_grant=None) -> dict:
     """Switch to `source`, keeping the RTMP connection up whenever that's
     physically possible:
 
@@ -596,8 +613,9 @@ def start_source(source: dict, start_encoder: bool = True) -> dict:
       different, so the encoder must restart. The caller is told via
       rtmp_dropped=True (the UI confirms first while live) and a slate is
       shown for the gap.
-    `start_encoder=False` ("Join only"): bring the source up and join, but never start ffmpeg-stream - the meeting can
-    be checked on the dashboard before anything is sent to YouTube. A running encoder is still handled as above.
+    This NEVER starts the encoder from OFFLINE: switching or joining only prepares the source. The single exception is
+    a switch while LIVE that needs a direct-media encoder restart, which needs `encoder_grant` (an authorized restart)
+    and is refused without it.
     Returns {"results": [...], "rtmp_dropped": bool, "hot_swapped": bool, "failed": [...], "encoder_started": bool}."""
     type_ = source["type"]
     old_type = read_current_source().get("SOURCE_TYPE", "")
@@ -626,10 +644,13 @@ def start_source(source: dict, start_encoder: bool = True) -> dict:
             results.append({"ok": False, "action": "cdp-navigate", "stderr": str(exc)[:200]})
             # fall through to a producer restart, which still keeps RTMP up
 
-    apply_source_config(source)
-    wanted_unit = producer_unit_for(source)
     needs_ffmpeg_restart = type_ == "direct" or old_type == "direct"
     rtmp_dropped = needs_ffmpeg_restart and ffmpeg_up
+    if needs_ffmpeg_restart and ffmpeg_up and encoder_grant is None:      # refuse BEFORE touching any configuration
+        raise ControlError("This switch needs the encoder to restart, which drops the live stream. Confirm the "
+                           "restart (Go Live authorization) to switch, or stop the stream first.")
+    apply_source_config(source)
+    wanted_unit = producer_unit_for(source)
 
     if ffmpeg_up:
         results.append(_set_slate())
@@ -652,9 +673,7 @@ def start_source(source: dict, start_encoder: bool = True) -> dict:
     if type_ == "edumix" and edumix_capture_blocked_for(type_):
         pass  # view-only: the encoder stays off
     elif needs_ffmpeg_restart and ffmpeg_up:
-        results.append(unit_action("ffmpeg-stream", "start"))           # it was stopped above for a direct-media change
-    elif not ffmpeg_up and (start_encoder or needs_ffmpeg_restart):
-        results.append(unit_action("ffmpeg-stream", "start"))
+        results.append(unit_action("ffmpeg-stream", "start", grant=encoder_grant))   # authorized restart of a live stream
     # systemctl refusing a start/restart used to vanish here; report it so the UI can say so.
     failed = [{"unit": r.get("unit"), "verb": r.get("verb"), "error": r.get("stderr") or "systemctl failed"}
               for r in results if r.get("ok") is False and r.get("verb") in ("start", "restart")]
@@ -1436,8 +1455,8 @@ def _units_for_active_source() -> list[str]:
             continue
         if unit == "audio-setup" and wanted is None:
             continue
-        if unit == "ffmpeg-stream" and source_type == "edumix" and edumix_capture_blocked():
-            continue
+        if unit == "ffmpeg-stream":
+            continue                      # restart-all prepares the pipeline; the encoder only comes back via Go Live
         units.append(unit)
     return units
 
@@ -1558,3 +1577,19 @@ def reboot_readiness() -> list[dict]:
         checks.append({"check": "settings.json parses", "ok": False, "detail": str(exc)})
 
     return checks
+
+
+# ---------------------------------------------------------------- broadcast authorization -> scripts/stream.sh
+
+def write_broadcast_auth(auth_env: dict) -> None:
+    """Puts the one-time start permission into current-source.env (carried keys of the active source are kept).
+    scripts/stream.sh refuses to start without it and blanks it as it starts - see app/broadcast.py."""
+    current = read_current_source()
+    values = {k: current.get(k, "") for k in SOURCE_ENV_KEYS}
+    values.update({k: str(v) for k, v in auth_env.items() if k in BROADCAST_ENV_KEYS})
+    _write_source_env_values(values)
+
+
+def clear_broadcast_auth() -> None:
+    from . import broadcast
+    write_broadcast_auth(broadcast.empty_env())

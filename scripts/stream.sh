@@ -22,6 +22,15 @@ if [[ "$SOURCE_TYPE" == "edumix" && "${EDUMIX_CAPTURE_ENABLED:-0}" != "1" ]]; th
   exit 0
 fi
 
+# Broadcast authorization gate (lib.sh): without the dashboard's one-time permission nothing is sent to YouTube.
+# Exit 0, not an error: systemd must not treat a refusal as a failure to "heal" with Restart=, which is how a crash
+# used to quietly start a second broadcast. After a crash, a reboot or a stop the encoder stays down until the
+# operator presses Go Live again.
+if ! broadcast_gate; then
+  log "Not starting: no valid one-time broadcast authorization (Go Live + confirmation in the dashboard is required)"
+  exit 0
+fi
+
 # Direct-media sources never touch Xvfb, so don't block startup waiting
 # for a display that nothing is going to use.
 [[ "$SOURCE_TYPE" != "direct" ]] && wait_for_x
@@ -157,8 +166,10 @@ fi
 # systemd's SIGTERM on stop reaches ffmpeg directly for a clean shutdown,
 # and Restart=always in ffmpeg-stream.service handles reconnecting if the
 # RTMP connection to YouTube drops.
+# The key must not stay in this process's environment (ffmpeg inherits it) - RTMP_URL below is a plain shell variable.
+unset YT_STREAM_KEY VNC_PASSWORD ZOOM_LINK ZOOM_PASSCODE TELEGRAM_BOT_TOKEN 2>/dev/null || true
 exec /usr/bin/ffmpeg -hide_banner -loglevel info -stats \
   "${INPUT_ARGS[@]}" \
   "${ENCODE_ARGS[@]}" \
   -f flv "$RTMP_URL" \
-  >>"$LOG_FILE" 2>&1
+  >>"$LOG_FILE" 2> >(redact_stream_secrets >>"$LOG_FILE")

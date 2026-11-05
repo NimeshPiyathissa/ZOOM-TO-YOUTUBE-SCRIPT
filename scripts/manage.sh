@@ -28,11 +28,12 @@ case "$cmd" in
     echo "Starting display, audio, Zoom, and VNC (stream not started yet)..."
     systemctl --user start "${CORE_UNITS[@]}"
     echo "Connect over the SSH+VNC tunnel to verify the meeting looks right,"
-    echo "then run: $0 go-live"
+    echo "then press Go Live in the dashboard (the encoder never starts from here)"
     ;;
   go-live)
-    echo "Starting ffmpeg-stream..."
-    systemctl --user start ffmpeg-stream.service
+    echo "The encoder starts only from the dashboard (Go Live + confirmation); nothing was started."
+    echo "(stream.sh refuses to run without the dashboard's one-time authorization.)"
+    exit 1
     ;;
   down)
     echo "Stopping everything..."
