@@ -496,9 +496,11 @@ async function refreshReadiness() {
     const data = await apiFetch("/api/system/readiness");
     renderSteps(rebootReadinessEl, data.checks.map((c) => ({ label: c.check, status: c.ok ? "ok" : "failed", detail: c.detail })));
     rebootBtn.disabled = !data.ok;
+    rebootBtn.title = data.ok ? "" : "Disabled until every readiness check above passes.";
   } catch (err) {
     renderSteps(rebootReadinessEl, [{ label: "Could not run checks", status: "failed", detail: err.message }]);
     rebootBtn.disabled = true;
+    rebootBtn.title = "Disabled: the readiness checks could not run.";
   }
 }
 
