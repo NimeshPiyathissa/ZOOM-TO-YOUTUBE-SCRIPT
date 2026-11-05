@@ -184,12 +184,14 @@
   }
 
   // Safety Confirmation Modal
-  function openSafetyModal(action) {
+  async function openSafetyModal(action) {
     pendingAction = action;
     if (action === "go-live") {
       modalTitle.textContent = "Confirm Going Live";
+      const warnings = await goLiveWarnings();
       modalBody.textContent =
-        "You are about to start the live stream encoder (ffmpeg-stream) and broadcast directly to YouTube Live. Verify that your Zoom or Web Kiosk source is ready.";
+        "You are about to start the live stream encoder (ffmpeg-stream) and broadcast directly to YouTube Live. Verify that your Zoom or Web Kiosk source is ready." +
+        (warnings.length ? " Heads-up: " + warnings.join(" ") : "");
       modalConfirmBtn.textContent = "Confirm & Go Live";
       modalConfirmBtn.className = "btn btn-primary btn-touch";
       modalIcon.className = "studio-modal-icon icon-go-live";
@@ -227,8 +229,8 @@
           "X-CSRF-Token": getCsrfToken(),
         },
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Action failed");
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.ok === false) throw new Error(data.error || data.detail || data.stderr || "Action failed");
       showToast(action === "go-live" ? "Starting live broadcast…" : "Stream stopped cleanly", "ok");
       await pollState();
     } catch (err) {
@@ -513,6 +515,7 @@
 
   skInput.addEventListener("input", () => {
     btnSaveSk.disabled = skInput.value.trim().length === 0;
+    btnSaveSk.title = btnSaveSk.disabled ? "Type a stream key first" : "";
   });
 
   btnSaveSk.addEventListener("click", async () => {

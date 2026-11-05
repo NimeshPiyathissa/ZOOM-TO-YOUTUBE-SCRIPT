@@ -32,6 +32,8 @@
 
   async function quickAction(action, confirmMsg) {
     if (confirmMsg && !(await confirmDialog(confirmMsg, { danger: action === "stop" }))) return;
+    if (action === "go-live" && !(await confirmGoLive())) return;
+    if (action === "go-live" && !(await confirmGoLive())) return;
     try { await apiFetch(`/api/stream/${action}`, { method: "POST" }); toast(`Stream: ${action} sent`); }
     catch (err) { toast(err.message, "err"); }
   }

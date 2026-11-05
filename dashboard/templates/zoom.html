@@ -102,6 +102,18 @@
         <button class="seg-btn is-active" data-value="fit">Fit - whole meeting, small bars</button>
         <button class="seg-btn" data-value="fill">Fill - no bars, least crop</button>
       </div>
+      <div class="zm-mo-auto" id="zm-mo-auto-row" hidden>
+        <label class="zm-opt">
+          <span class="zm-opt-main">{{ icon("sparkles", "icon-sm") }}<span>Detect black borders automatically</span></span>
+          <span class="switch"><input type="checkbox" id="zm-mo-auto" aria-describedby="zm-mo-auto-hint"><span class="track"></span></span>
+        </label>
+        <div class="zm-mo-actions">
+          <button type="button" id="zm-mo-measure" class="btn btn-secondary btn-sm">{{ icon("focus", "icon-sm") }}Measure now</button>
+          <button type="button" id="zm-mo-reset" class="btn btn-ghost btn-sm">{{ icon("rotate-cw", "icon-sm") }}Reset framing</button>
+        </div>
+        <div class="hint m-0" id="zm-mo-auto-hint">Measures the real screen and removes only pure-black borders (never dark UI or dark video). Re-checked every 30 s; a change is saved for the next stream start and never restarts the encoder by itself. If the black is part of the video you are sharing, leave this off. Reset returns to Fit with the fixed top/bottom trims.</div>
+        <div class="hint m-0" id="zm-mo-measure-out" role="status" aria-live="polite"></div>
+      </div>
       <div class="zm-mo-pending" id="zm-mo-pending" role="status" hidden>
         <span>The live encoder still has the old crop/fit - this applies on the next stream start.</span>
         <button type="button" id="zm-mo-restart" class="btn btn-secondary btn-sm">{{ icon("refresh-cw", "icon-sm") }}Restart stream to apply</button>

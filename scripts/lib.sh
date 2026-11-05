@@ -208,7 +208,7 @@ wait_for_x() {
 }
 
 # "Meeting only" encoder filter -> $MEETING_ONLY_FILTER (empty when off).
-# Args: out_w out_h fit(fit|fill) trim_top trim_bottom.
+# Args: out_w out_h fit(fit|fill) trim_top trim_bottom [region x:y:w:h].
 #
 # Zoom keeps drawing its own chrome around the video (top bar with the
 # meeting title/REC/Sign in, the bottom toolbar, the side-panel arrow),
@@ -220,19 +220,31 @@ wait_for_x() {
 #          smallest bars that preserves its shape;
 #   fill - the smallest centred crop that makes the meeting area exactly
 #          the output shape (no bars), then scaled up.
+# `region` (optional) is a MEASURED meeting area (app/framing.py: the
+# part of the screen that is not pure-black border). When it is sane it
+# replaces the fixed top/bottom band; when it is missing or implausible
+# (smaller than a third of the frame, outside it, not numbers) the fixed
+# trims are used - a bad measurement can never crop real content away.
 # All sizes are rounded to even numbers (yuv420p needs that).
 build_meeting_only_filter() {
-  local out_w="$1" out_h="$2" fit="${3:-fit}" top="${4:-56}" bottom="${5:-96}"
+  local out_w="$1" out_h="$2" fit="${3:-fit}" top="${4:-56}" bottom="${5:-96}" region="${6:-}"
   MEETING_ONLY_FILTER=""
   [[ "$out_w" =~ ^[0-9]+$ && "$out_h" =~ ^[0-9]+$ ]] || return 0
   [[ "$top" =~ ^[0-9]+$ ]] || top=56
   [[ "$bottom" =~ ^[0-9]+$ ]] || bottom=96
-  # Never trim away more than a third of the frame, whatever was configured.
+  # Never trim away more than a sixth of the frame per edge, whatever was configured.
   local max=$((out_h / 6))
   (( top > max )) && top=$max
   (( bottom > max )) && bottom=$max
   top=$((top / 2 * 2)); bottom=$((bottom / 2 * 2))
-  local rw=$out_w rh=$((out_h - top - bottom))
+  local rx=0 ry=$top rw=$out_w rh=$((out_h - top - bottom))
+  if [[ "$region" =~ ^([0-9]+):([0-9]+):([0-9]+):([0-9]+)$ ]]; then
+    local mx=$((${BASH_REMATCH[1]} / 2 * 2)) my=$((${BASH_REMATCH[2]} / 2 * 2))
+    local mw=$((${BASH_REMATCH[3]} / 2 * 2)) mh=$((${BASH_REMATCH[4]} / 2 * 2))
+    if (( mw * 3 >= out_w && mh * 3 >= out_h && mx + mw <= out_w && my + mh <= out_h )); then
+      rx=$mx; ry=$my; rw=$mw; rh=$mh
+    fi
+  fi
   rh=$((rh / 2 * 2))
   if [[ "$fit" == "fill" ]]; then
     local cw ch
@@ -242,9 +254,9 @@ build_meeting_only_filter() {
       cw=$rw; ch=$((rw * out_h / out_w))
     fi
     cw=$((cw / 2 * 2)); ch=$((ch / 2 * 2))
-    local cx=$(( (rw - cw) / 2 / 2 * 2 )) cy=$(( top + (rh - ch) / 2 / 2 * 2 ))
+    local cx=$(( rx + (rw - cw) / 2 / 2 * 2 )) cy=$(( ry + (rh - ch) / 2 / 2 * 2 ))
     MEETING_ONLY_FILTER="crop=${cw}:${ch}:${cx}:${cy},scale=${out_w}:${out_h}:flags=lanczos,setsar=1"
   else
-    MEETING_ONLY_FILTER="crop=${rw}:${rh}:0:${top},scale=${out_w}:${out_h}:force_original_aspect_ratio=decrease:flags=lanczos,pad=${out_w}:${out_h}:(ow-iw)/2:(oh-ih)/2:black,setsar=1"
+    MEETING_ONLY_FILTER="crop=${rw}:${rh}:${rx}:${ry},scale=${out_w}:${out_h}:force_original_aspect_ratio=decrease:flags=lanczos,pad=${out_w}:${out_h}:(ow-iw)/2:(oh-ih)/2:black,setsar=1"
   fi
 }

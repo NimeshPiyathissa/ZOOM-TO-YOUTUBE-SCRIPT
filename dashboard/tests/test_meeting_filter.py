@@ -80,3 +80,44 @@ def test_preview_survives_unreadable_source(monkeypatch):
         raise RuntimeError("sudo failed")
     monkeypatch.setattr(control, "read_current_source", boom)
     assert asyncio.run(preview.PreviewManager()._meeting_only("1280x720")) == ""
+
+
+
+# --- measured region (6th argument): (out_w, out_h, fit, top, bottom, region, filter produced by lib.sh)
+GOLDEN_REGION = [
+    (1920, 1080, 'fit', 56, 96, '240:0:1440:1080', 'crop=1440:1080:240:0,scale=1920:1080:force_original_aspect_ratio=decrease:flags=lanczos,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black,setsar=1'),
+    (1920, 1080, 'fill', 56, 96, '240:0:1440:1080', 'crop=1440:810:240:134,scale=1920:1080:flags=lanczos,setsar=1'),
+    (1920, 1080, 'fit', 56, 96, '0:140:1920:800', 'crop=1920:800:0:140,scale=1920:1080:force_original_aspect_ratio=decrease:flags=lanczos,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black,setsar=1'),
+    (1920, 1080, 'fill', 56, 96, '0:140:1920:800', 'crop=1422:800:248:140,scale=1920:1080:flags=lanczos,setsar=1'),
+    (1280, 720, 'fit', 56, 96, '160:0:960:720', 'crop=960:720:160:0,scale=1280:720:force_original_aspect_ratio=decrease:flags=lanczos,pad=1280:720:(ow-iw)/2:(oh-ih)/2:black,setsar=1'),
+    (1280, 720, 'fill', 56, 96, '160:0:960:720', 'crop=960:540:160:90,scale=1280:720:flags=lanczos,setsar=1'),
+    (1920, 1080, 'fit', 56, 96, '10:10:100:100', 'crop=1920:928:0:56,scale=1920:1080:force_original_aspect_ratio=decrease:flags=lanczos,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black,setsar=1'),
+    (1920, 1080, 'fill', 56, 96, '10:10:100:100', 'crop=1648:928:136:56,scale=1920:1080:flags=lanczos,setsar=1'),
+    (1920, 1080, 'fit', 56, 96, '0:0:3000:2000', 'crop=1920:928:0:56,scale=1920:1080:force_original_aspect_ratio=decrease:flags=lanczos,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black,setsar=1'),
+    (1920, 1080, 'fill', 56, 96, '0:0:3000:2000', 'crop=1648:928:136:56,scale=1920:1080:flags=lanczos,setsar=1'),
+    (1920, 1080, 'fit', 56, 96, 'abc', 'crop=1920:928:0:56,scale=1920:1080:force_original_aspect_ratio=decrease:flags=lanczos,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black,setsar=1'),
+    (1920, 1080, 'fill', 56, 96, 'abc', 'crop=1648:928:136:56,scale=1920:1080:flags=lanczos,setsar=1'),
+    (1080, 1920, 'fit', 56, 96, '0:300:1080:1320', 'crop=1080:1320:0:300,scale=1080:1920:force_original_aspect_ratio=decrease:flags=lanczos,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black,setsar=1'),
+    (1080, 1920, 'fill', 56, 96, '0:300:1080:1320', 'crop=742:1320:168:300,scale=1080:1920:flags=lanczos,setsar=1'),
+    (1921, 1081, 'fit', 56, 96, '241:3:1439:1071', 'crop=1438:1070:240:2,scale=1921:1081:force_original_aspect_ratio=decrease:flags=lanczos,pad=1921:1081:(ow-iw)/2:(oh-ih)/2:black,setsar=1'),
+    (1921, 1081, 'fill', 56, 96, '241:3:1439:1071', 'crop=1438:808:240:132,scale=1921:1081:flags=lanczos,setsar=1'),
+]
+
+
+@pytest.mark.parametrize("w,h,fit,top,bottom,region,expected", GOLDEN_REGION)
+def test_region_twin_matches_bash_golden(w, h, fit, top, bottom, region, expected):
+    assert preview.meeting_only_filter(w, h, fit, top, bottom, region) == expected
+
+
+@pytest.mark.skipif(shutil.which("bash") is None or not LIB.exists(), reason="bash or scripts/lib.sh not available")
+@pytest.mark.parametrize("w,h,fit,top,bottom,region,expected", GOLDEN_REGION[::2])
+def test_region_matches_bash(w, h, fit, top, bottom, region, expected, tmp_path):
+    body = LIB.read_text().replace("\r", "")
+    start = body.index("build_meeting_only_filter() {")
+    func = body[start:body.index("\n}\n", start) + 3]
+    f = tmp_path / "f.sh"
+    f.write_text(func)
+    out = subprocess.run(
+        ["bash", "-c", f'source "{f.as_posix()}"; build_meeting_only_filter {w} {h} {fit} {top} {bottom} "{region}"; printf %s "$MEETING_ONLY_FILTER"'],
+        capture_output=True, text=True).stdout
+    assert out == expected

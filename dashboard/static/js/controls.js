@@ -111,8 +111,10 @@ function renderUnits(units) {
     const badge = document.getElementById(`unit-${u.unit}-badge`);
     if (!badge) continue;
     badge.classList.remove("skeleton");
-    badge.className = "badge " + badgeClass(u.active_state);
-    badge.innerHTML = `<span class="dot"></span>${u.active_state}${u.sub_state ? ` (${u.sub_state})` : ""}`;
+    const b = unitBadge(u);
+    badge.className = "badge " + b.cls;
+    badge.innerHTML = b.html;
+    badge.title = b.title;
     document.getElementById(`unit-${u.unit}-uptime`).textContent = fmtUptime(u.uptime_seconds);
     document.getElementById(`unit-${u.unit}-restarts`).textContent = u.restart_count ?? "-";
   }

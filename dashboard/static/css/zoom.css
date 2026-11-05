@@ -93,7 +93,7 @@
 /* in-meeting controls: three tiles with the read-back state as a readout */
 .zm-controls { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-3); transition: opacity var(--duration-base) var(--ease-out); }
 .zm-controls.is-off { opacity: 0.45; }
-.zm-controls.is-off .zm-ctl { pointer-events: none; }
+.zm-controls.is-off button { cursor: not-allowed; }
 .zm-ctl {
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-1);
   min-height: 96px; padding: var(--space-3); border-radius: var(--radius-md);
@@ -115,6 +115,9 @@ button.zm-ctl:focus-visible { outline: 2px solid var(--accent-ring); outline-off
 .zm-apply-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); margin-top: var(--space-3); }
 .zm-meeting-only { margin-top: var(--space-3); display: grid; gap: var(--space-2); }
 .zm-meeting-only .zm-seg { align-self: flex-start; }
+.zm-mo-auto { display: grid; gap: var(--space-2); }
+.zm-mo-auto[hidden] { display: none; }
+.zm-mo-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 /* The Fit / Fill labels are long: on a narrow screen let them wrap onto their own rows instead of clipping off the edge. */
 @media (max-width: 640px) {
   .zm-meeting-only .zm-seg { align-self: stretch; display: grid; grid-template-columns: 1fr; }

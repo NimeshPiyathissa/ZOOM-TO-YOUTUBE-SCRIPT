@@ -43,14 +43,23 @@ async def _display_size() -> str:
     return "1280x720"  # last-resort fallback, matches the documented default
 
 
-def meeting_only_filter(out_w: int, out_h: int, fit: str = "fit", top: int = 56, bottom: int = 96) -> str:
+def meeting_only_filter(out_w: int, out_h: int, fit: str = "fit", top: int = 56, bottom: int = 96,
+                        region: str | tuple | None = None) -> str:
     """Python twin of scripts/lib.sh build_meeting_only_filter(): the crop/scale the ENCODER applies in
     "Meeting only" mode, so the dashboard preview shows what the broadcast will actually look like (same
-    arithmetic, same even-number rounding). tests/test_meeting_filter.py pins the two to the same strings."""
+    arithmetic, same even-number rounding). tests/test_meeting_filter.py pins the two to the same strings.
+    `region` (x:y:w:h, a MEASURED meeting area from app/framing.py) replaces the fixed top/bottom band when it is
+    plausible; an implausible one is ignored, so a bad measurement can never crop real content away."""
     max_trim = out_h // 6                          # never trim away more than a sixth per edge
     top, bottom = min(top, max_trim), min(bottom, max_trim)
     top, bottom = top // 2 * 2, bottom // 2 * 2
-    rw, rh = out_w, (out_h - top - bottom) // 2 * 2
+    rx, ry, rw, rh = 0, top, out_w, out_h - top - bottom
+    parsed = parse_region(region)
+    if parsed:
+        mx, my, mw, mh = (v // 2 * 2 for v in parsed)
+        if mw * 3 >= out_w and mh * 3 >= out_h and mx + mw <= out_w and my + mh <= out_h:
+            rx, ry, rw, rh = mx, my, mw, mh
+    rh = rh // 2 * 2
     if fit == "fill":
         if rw * out_h > rh * out_w:                # meeting area wider than the output: trim the sides
             ch = rh
@@ -59,11 +68,25 @@ def meeting_only_filter(out_w: int, out_h: int, fit: str = "fit", top: int = 56,
             cw = rw
             ch = rw * out_h // out_w
         cw, ch = cw // 2 * 2, ch // 2 * 2
-        cx = (rw - cw) // 2 // 2 * 2
-        cy = top + (rh - ch) // 2 // 2 * 2
+        cx = rx + (rw - cw) // 2 // 2 * 2
+        cy = ry + (rh - ch) // 2 // 2 * 2
         return f"crop={cw}:{ch}:{cx}:{cy},scale={out_w}:{out_h}:flags=lanczos,setsar=1"
-    return (f"crop={rw}:{rh}:0:{top},scale={out_w}:{out_h}:force_original_aspect_ratio=decrease:flags=lanczos,"
+    return (f"crop={rw}:{rh}:{rx}:{ry},scale={out_w}:{out_h}:force_original_aspect_ratio=decrease:flags=lanczos,"
             f"pad={out_w}:{out_h}:(ow-iw)/2:(oh-ih)/2:black,setsar=1")
+
+
+def parse_region(region) -> tuple | None:
+    """'x:y:w:h' (or a 4-tuple) -> ints, else None."""
+    if region is None or region == "":
+        return None
+    if isinstance(region, str):
+        m = re.fullmatch(r"(\d+):(\d+):(\d+):(\d+)", region.strip())
+        return tuple(int(g) for g in m.groups()) if m else None
+    try:
+        x, y, w, h = (int(v) for v in region)
+        return (x, y, w, h) if min(x, y, w, h) >= 0 else None
+    except (TypeError, ValueError):
+        return None
 
 
 def _trim(value, default: int) -> int:
@@ -118,7 +141,8 @@ class PreviewManager:
             return ""
         fit = "fill" if src.get("ZOOM_MEETING_ONLY_FIT") == "fill" else "fit"
         return meeting_only_filter(w, h, fit, _trim(src.get("ZOOM_MEETING_ONLY_TRIM_TOP"), 56),
-                                   _trim(src.get("ZOOM_MEETING_ONLY_TRIM_BOTTOM"), 96))
+                                   _trim(src.get("ZOOM_MEETING_ONLY_TRIM_BOTTOM"), 96),
+                                   src.get("ZOOM_MEETING_ONLY_REGION"))
 
     async def _capture_once(self) -> None:
         tmp_path = PREVIEW_PATH.with_suffix(".tmp.jpg")

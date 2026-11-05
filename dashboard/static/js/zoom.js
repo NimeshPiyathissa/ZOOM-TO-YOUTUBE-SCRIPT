@@ -97,7 +97,8 @@ function renderStatus(st) {
   const svc = st.service || "unknown";
   const svcUnit = st.join_via === "web" ? "browser-source.service" : "zoom.service";
   $("zm-service-badge").className = "badge " + ({ LIVE: "badge-active", STARTING: "badge-activating", FAILED: "badge-failed" }[svc] || "badge-inactive");
-  $("zm-service-text").textContent = svcUnit + " " + svc.toLowerCase();
+  // "LIVE" is systemd-speak for "running": on the Zoom page it must not read like a broadcast.
+  $("zm-service-text").textContent = svcUnit + " " + ({ LIVE: "running", STARTING: "starting", FAILED: "failed", STOPPED: "not running", RECONNECTING: "restarting" }[svc] || svc.toLowerCase());
   const viaBadge = $("zm-via-badge");
   if (st.join_via && key !== "not_joined") { viaBadge.hidden = false; $("zm-via-text").textContent = "via " + (JOIN_VIA_LABEL[st.join_via] || st.join_via); }
   else viaBadge.hidden = true;
@@ -121,6 +122,8 @@ function renderStatus(st) {
   $("zm-rejoin").hidden = !running;
   $("zm-leave-slate").hidden = !running; $("zm-leave-stop").hidden = !running;
   $("zm-join").disabled = !a; $("zm-sticky-join").disabled = !a;
+  const noSource = "Nothing to join yet: pick a meeting in the library below, or add one.";
+  $("zm-join").title = a ? "" : noSource; $("zm-sticky-join").title = a ? "" : noSource;
   $("zm-sticky-join").hidden = running && key !== "not_joined"; $("zm-sticky-leave").hidden = !running;
   $("zm-sticky-status").textContent = v.label;
   // in-meeting controls
@@ -128,6 +131,12 @@ function renderStatus(st) {
   $("zm-controls-note").textContent = inMeeting ? "state read back from Zoom's toolbar" : "available once in a meeting";
   paintCtl("mic", st.mic, { muted: "Muted", unmuted: "LIVE", no_audio: "No audio", not_applicable: "N/A (attendee)", unknown: "Unknown" }, { muted: "mic-off", unmuted: "mic", no_audio: "mic-off", not_applicable: "mic-off", unknown: "mic" });
   paintCtl("camera", st.camera, { on: "On", off: "Off", not_applicable: "N/A (attendee)", unknown: "Unknown" }, { on: "video", off: "video-off", not_applicable: "video-off", unknown: "video" });
+  // Real disabled buttons with a reason (not just pointer-events:none, which swallowed the click AND the tooltip).
+  const offWhy = "Available once Zoom is in a meeting.";
+  $("zm-controls").querySelectorAll("button").forEach((b) => {
+    b.disabled = !inMeeting;
+    if (!inMeeting) b.title = offWhy; else if (b.title === offWhy) b.title = "";
+  });
 }
 
 function paintCtl(kind, v, labels, icons) {
@@ -253,13 +262,17 @@ function renderMeetingOnly() {
   $("zm-meeting-only").disabled = !a;
   $("zm-meeting-only-fit-seg").hidden = !o.meeting_only;
   setSeg($("zm-meeting-only-fit-seg"), o.meeting_only_fit || "fit");
+  $("zm-mo-auto-row").hidden = !o.meeting_only;
+  $("zm-mo-auto").checked = !!o.meeting_only_auto;
+  if (o.meeting_only && o.meeting_only_auto && o.meeting_only_region) $("zm-mo-measure-out").textContent = `Using the measured area ${o.meeting_only_region} (x:y:width:height).`;
 }
 function paintMeetingOnlyPending(pending) { $("zm-mo-pending").hidden = !pending; }
-async function postMeetingOnly(restart) {
+async function postMeetingOnly(restart, extra = {}) {
   const enabled = $("zm-meeting-only").checked;
   const fit = segValue($("zm-meeting-only-fit-seg")) || "fit";
   $("zm-meeting-only-fit-seg").hidden = !enabled;
-  return post("/api/zoom/meeting-only", { enabled, fit, restart });
+  $("zm-mo-auto-row").hidden = !enabled;
+  return post("/api/zoom/meeting-only", { enabled, fit, auto: $("zm-mo-auto").checked, restart, ...extra });
 }
 async function applyMeetingOnly() {
   const a = active(); if (!a) return;
@@ -291,6 +304,28 @@ $("zm-mo-restart").addEventListener("click", (e) => withLoading(e.currentTarget,
   } catch (err) { toast(err.message, "err"); }
 }));
 apiFetch("/api/zoom/meeting-only").then((r) => paintMeetingOnlyPending(r.pending_restart)).catch(() => {});
+function describeMeasure(m) {
+  if (!m) return "";
+  const g = m.margins || {};
+  const nums = `left ${g.left ?? 0}, top ${g.top ?? 0}, right ${g.right ?? 0}, bottom ${g.bottom ?? 0} px`;
+  return `${m.reason} (${nums}; ${m.size}, ${m.samples} frames)`;
+}
+$("zm-mo-auto").addEventListener("change", () => { $("zm-mo-auto").disabled = true; applyMeetingOnly().finally(() => { $("zm-mo-auto").disabled = false; }); });
+$("zm-mo-measure").addEventListener("click", (e) => withLoading(e.currentTarget, async () => {
+  try {
+    const r = await apiFetch("/api/zoom/framing");
+    $("zm-mo-measure-out").textContent = describeMeasure(r.measure) + (r.measure.region && !r.auto ? " Switch Detect automatically on to use it." : "");
+  } catch (err) { toast(err.message, "err"); }
+}));
+$("zm-mo-reset").addEventListener("click", (e) => withLoading(e.currentTarget, async () => {
+  try {
+    const r = await postMeetingOnly(false, { auto: false, fit: "fit", reset: true });
+    $("zm-mo-measure-out").textContent = "Framing reset: Fit, fixed top/bottom trims, no measured area.";
+    paintMeetingOnlyPending(r.restart_needed);
+    toast(r.restart_needed ? "Framing reset - applies on the next stream start" : "Framing reset");
+    await refreshSources(true);
+  } catch (err) { toast(err.message, "err"); }
+}));
 $("zm-meeting-only").addEventListener("change", () => { $("zm-meeting-only").disabled = true; applyMeetingOnly().finally(() => { $("zm-meeting-only").disabled = false; }); });
 initSegmented($("zm-meeting-only-fit-seg"), () => { if ($("zm-meeting-only").checked) applyMeetingOnly(); });
 

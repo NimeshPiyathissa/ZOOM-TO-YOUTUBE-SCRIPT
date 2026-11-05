@@ -32,6 +32,8 @@ from .youtube import YouTubeURLError
 from . import accounts as accounts_mod
 from .accounts import AccountError
 from . import audio_level
+from . import status as unit_status
+from . import framing
 from . import edumix, edumix_api
 from . import recording, settings_store, telegram
 
@@ -546,13 +548,16 @@ async def api_state(request: Request):
         if active_source["type"] == "webpage":
             source_health = stats.webpage_health()
 
+    producer_unit = control.producer_unit_for(active_source)
+    unit_status.annotate_units(units, producer_unit, active_source["type"] if active_source else None)
     return {
         "stream": stats.stream_state(stream_show),
         "ffmpeg": stats.ffmpeg_progress(stream_show),
         "system": stats.system_stats(),
         "units": units,
+        "services": await run_in_threadpool(unit_status.system_services),
         "active_source": active_source_view,
-        "producer_unit": control.producer_unit_for(active_source),
+        "producer_unit": producer_unit,
         "source_health": source_health,
         "server_time": time.time(),
     }
@@ -570,6 +575,40 @@ async def api_preview(request: Request):
 
 # ---------------------------------------------------------------- api: unit / pipeline / stream control
 
+async def _checked_unit_action(unit: str, verb: str) -> dict:
+    """control.unit_action() plus the two things the UI used to hide:
+    * systemctl refusing the command (ok=false used to come back as HTTP 200, so the page said "sent");
+    * a start/restart that is accepted but dies within a few seconds (a bad .env value, a missing source...),
+      which used to look exactly like success until the next poll showed "Stopped" with no explanation.
+    Raises control.ControlError with a human reason; returns the action result otherwise."""
+    result = await run_in_threadpool(control.unit_action, unit, verb)
+    if not result.get("ok"):
+        raise control.ControlError(result.get("stderr") or f"systemctl {verb} {unit} failed")
+    if verb in ("start", "restart"):
+        seen_live = 0
+        for _ in range(8):                      # ~5 s at most; never blocks longer than that
+            await asyncio.sleep(0.6)
+            show = await run_in_threadpool(control.unit_show, unit)
+            phase = show["phase"]
+            if phase == control.PHASE_LIVE:
+                seen_live += 1
+                if seen_live >= 2:
+                    break
+                continue
+            if phase in (control.PHASE_FAILED, control.PHASE_STOPPED, control.PHASE_RECONNECTING):
+                detail = ""
+                if unit == "ffmpeg-stream":
+                    detail = (stats.stream_state(show) or {}).get("last_error") or ""
+                    if not detail:
+                        detail = (await run_in_threadpool(stats.last_ffmpeg_log_error)) or ""
+                if detail:                                                       # never echo a stream key
+                    detail = (await run_in_threadpool(logs_mod.build_redactor))(detail)
+                raise control.ControlError(
+                    f"{unit} was started but stopped again right away"
+                    + (f": {detail}" if detail else " without reporting an error - see the Logs page."))
+    return result
+
+
 @app.post("/api/units/{unit}/{verb}")
 async def api_unit_action(unit: str, verb: str, request: Request):
     session = deps.require_session_api(request)
@@ -577,7 +616,7 @@ async def api_unit_action(unit: str, verb: str, request: Request):
     if verb not in ("start", "stop", "restart"):
         raise HTTPException(status_code=400, detail="invalid verb")
     try:
-        result = control.unit_action(unit, verb)
+        result = await _checked_unit_action(unit, verb)
     except control.ControlError as exc:
         return _api_error(exc)
     db.audit(session["username"], f"unit_{verb}", unit, deps.client_ip(request))
@@ -591,6 +630,24 @@ async def api_pipeline_restart(request: Request):
     results = await run_in_threadpool(control.pipeline_restart)
     db.audit(session["username"], "pipeline_restart", ip=deps.client_ip(request))
     return {"results": results}
+
+
+@app.get("/api/stream/preflight")
+async def api_stream_preflight(request: Request):
+    """Read-only 'are you sure?' facts shown before Go Live. Warnings, never blocks: the operator decides."""
+    deps.require_session_api(request)
+    warnings: list[dict] = []
+    source = sources_mod.get_active_source()
+    if source is None:
+        warnings.append({"code": "no_source", "text": "No source is selected, so the stream would show whatever is on the server's virtual display."})
+    elif source.get("type") == "zoom" and control.producer_unit_for(source) == "zoom":
+        try:
+            st = await run_in_threadpool(control.zoom_meeting_status)
+        except control.ControlError as exc:
+            st = {"status": "unknown", "detail": str(exc)}
+        if st.get("status") != "in_meeting":
+            warnings.append({"code": "not_in_meeting", "text": f"Zoom is not in a meeting right now ({st.get('detail') or st.get('status')}). Viewers would see the Zoom window as it is."})
+    return {"warnings": warnings}
 
 
 @app.post("/api/stream/{action}")
@@ -608,7 +665,7 @@ async def api_stream_action(action: str, request: Request):
         # - see app/scheduler.py's note_manual_override().
         await run_in_threadpool(scheduler.note_manual_override)
     try:
-        result = control.unit_action("ffmpeg-stream", verb)
+        result = await _checked_unit_action("ffmpeg-stream", verb)
     except control.ControlError as exc:
         return _api_error(exc)
     db.audit(session["username"], f"stream_{action}", ip=deps.client_ip(request))
@@ -858,14 +915,24 @@ async def api_zoom_meeting_only(request: Request):
         raise HTTPException(status_code=400, detail="the active source isn't a Zoom meeting")
     source = sources_mod.get_source(active["id"])
     options = dict(source.get("options") or {})
-    # The encoder's filter is a function of (on, fit) - fit is irrelevant while off.
-    was_filter = options.get("meeting_only_fit", "fit") if options.get("meeting_only") else None
+    # The encoder's filter is a function of (on, fit, measured region) - fit/region are irrelevant while off.
+    was_filter = _framing_key(options)
+    reset = bool(body.get("reset"))
+    auto = bool(body.get("auto", options.get("meeting_only_auto", False))) and enabled and not reset
     options["meeting_only"] = enabled
-    options["meeting_only_fit"] = fit
+    options["meeting_only_fit"] = "fit" if reset else fit
+    options["meeting_only_auto"] = auto
+    measure = None
+    if not auto:
+        options["meeting_only_region"] = ""            # Reset / Auto off / Meeting-only off: back to the fixed trims
+    elif not options.get("meeting_only_region"):
+        measure = await framing.measure()              # Auto just switched on: measure the real screen once now
+        if measure.get("region"):
+            options["meeting_only_region"] = measure["region"]
     await run_in_threadpool(sources_mod.update_source, active["id"], source["name"], "zoom", source["url"], options, source.get("account_id"))
     updated = sources_mod.get_source(active["id"])
     await run_in_threadpool(control.write_current_source, updated)
-    filter_changed = (fit if enabled else None) != was_filter
+    filter_changed = _framing_key(updated.get("options") or {}) != was_filter
     if filter_changed:
         control.note_encoder_filter_changed()
     window_result = None
@@ -882,9 +949,84 @@ async def api_zoom_meeting_only(request: Request):
         except control.ControlError as exc:
             window_result = {**(window_result or {}), "restart_error": str(exc)}
     db.audit(session["username"], "zoom_meeting_only",
-             f"enabled={enabled} fit={fit} restarted={restarted}", deps.client_ip(request))
-    return {"enabled": enabled, "fit": fit, "window": window_result,
+             f"enabled={enabled} fit={options['meeting_only_fit']} auto={auto} region={options.get('meeting_only_region') or '-'} "
+             f"reset={reset} restarted={restarted}", deps.client_ip(request))
+    return {"enabled": enabled, "fit": options["meeting_only_fit"], "auto": auto,
+            "region": options.get("meeting_only_region") or "", "measure": measure, "window": window_result,
             "restart_needed": restart_needed, "restarted": restarted}
+
+
+def _framing_key(options: dict):
+    """What the encoder's crop/scale graph is built from; None while Meeting-only is off."""
+    if not options.get("meeting_only"):
+        return None
+    region = (options.get("meeting_only_region") or "") if options.get("meeting_only_auto") else ""
+    return (options.get("meeting_only_fit", "fit") or "fit", region)
+
+
+@app.get("/api/zoom/framing")
+async def api_zoom_framing(request: Request):
+    """Read-only: measure the real screen NOW (one ~2 s low-priority ffmpeg grab) and report the black borders, the
+    saved Fit/Auto settings and the exact filter the encoder would use. Changes nothing."""
+    session = deps.require_session_api(request)
+    deps.require_rate_limit(session, "zoom_framing", max_calls=6, window_seconds=30)
+    active = sources_mod.get_active_source()
+    options = (active or {}).get("options") or {}
+    m = await framing.measure()
+    try:
+        w, h = (int(v) for v in m["size"].split("x"))
+        flt = preview.meeting_only_filter(w, h, "fill" if options.get("meeting_only_fit") == "fill" else "fit", 56, 96,
+                                          m.get("region") if options.get("meeting_only_auto") else None)
+    except ValueError:
+        flt = ""
+    return {"measure": m, "meeting_only": bool(options.get("meeting_only")), "fit": options.get("meeting_only_fit", "fit"),
+            "auto": bool(options.get("meeting_only_auto")), "saved_region": options.get("meeting_only_region") or "",
+            "filter": flt, "pending_restart": await run_in_threadpool(control.encoder_filter_stale)}
+
+
+_framing_pending: dict = {"region": None, "count": 0}
+
+
+async def _framing_watch_tick() -> None:
+    """One step of the Auto-framing watcher: while Meeting-only + Auto are on for the active Zoom source, re-measure and,
+    when the picture's black borders changed (twice in a row, by more than 16 px), store the new area so the NEXT encoder
+    start uses it and the UI offers "Restart to apply". It never restarts the encoder by itself."""
+    active = sources_mod.get_active_source()
+    options = (active or {}).get("options") or {}
+    if not active or active["type"] != "zoom" or not options.get("meeting_only") or not options.get("meeting_only_auto"):
+        _framing_pending.update(region=None, count=0)
+        return
+    m = await framing.measure()
+    if not m.get("ok"):
+        return                                           # blank/dark screen or no frame: keep what we have
+    new = m.get("region") or ""
+    current = options.get("meeting_only_region") or ""
+    if not framing.changed_materially(current, new):
+        _framing_pending.update(region=None, count=0)
+        return
+    if _framing_pending["region"] is not None and not framing.changed_materially(_framing_pending["region"], new):
+        _framing_pending["count"] += 1
+    else:
+        _framing_pending.update(region=new, count=1)
+    if _framing_pending["count"] < 2:
+        return
+    _framing_pending.update(region=None, count=0)
+    source = sources_mod.get_source(active["id"])
+    opts = dict(source.get("options") or {})
+    opts["meeting_only_region"] = new
+    await run_in_threadpool(sources_mod.update_source, active["id"], source["name"], "zoom", source["url"], opts, source.get("account_id"))
+    await run_in_threadpool(control.write_current_source, sources_mod.get_source(active["id"]))
+    control.note_encoder_filter_changed()
+    db.audit(None, "zoom_framing_auto", f"region={new or '-'} (was {current or '-'})")
+
+
+async def _framing_watch_loop() -> None:
+    while True:
+        await asyncio.sleep(30)
+        try:
+            await _framing_watch_tick()
+        except Exception:
+            pass                                          # a failed measurement must never take the dashboard down
 
 
 @app.post("/api/zoom/reset")
@@ -2898,6 +3040,7 @@ async def on_startup():
     from . import zoom_web, telegram
     zoom_web.start_cleanfeed_heartbeat()
     telegram.start_telegram_poller()
+    asyncio.create_task(_framing_watch_loop())
     if not config.EDUMIX_WORKER_EXTERNAL:
         asyncio.create_task(edumix_api.supervisor.run())
 

@@ -107,9 +107,9 @@ fi
 # the dashboard offers when the stream is live.
 CROP_FILTER=""
 if [[ "$SOURCE_TYPE" == "zoom" && "${ZOOM_MEETING_ONLY:-0}" == "1" ]]; then
-  build_meeting_only_filter "${RESOLUTION%x*}" "${RESOLUTION#*x}" "${ZOOM_MEETING_ONLY_FIT:-fit}"     "${ZOOM_MEETING_ONLY_TRIM_TOP:-56}" "${ZOOM_MEETING_ONLY_TRIM_BOTTOM:-96}"
+  build_meeting_only_filter "${RESOLUTION%x*}" "${RESOLUTION#*x}" "${ZOOM_MEETING_ONLY_FIT:-fit}"     "${ZOOM_MEETING_ONLY_TRIM_TOP:-56}" "${ZOOM_MEETING_ONLY_TRIM_BOTTOM:-96}" "${ZOOM_MEETING_ONLY_REGION:-}"
   CROP_FILTER="$MEETING_ONLY_FILTER"
-  log "Meeting-only (${ZOOM_MEETING_ONLY_FIT:-fit}): ${CROP_FILTER}"
+  log "Meeting-only (${ZOOM_MEETING_ONLY_FIT:-fit}${ZOOM_MEETING_ONLY_REGION:+, measured area ${ZOOM_MEETING_ONLY_REGION}}): ${CROP_FILTER}"
 fi
 
 # ---------------------------------------------------------------- encode args

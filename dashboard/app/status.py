@@ -1,0 +1,148 @@
+"""What each service's state MEANS, so an intentionally idle unit is not shown as a failure.
+
+systemd only says active/inactive/failed. That is not enough for this stack: `ffmpeg-stream` is inactive whenever
+nothing is being broadcast, `browser-source` is inactive whenever the active source is the desktop Zoom client, and
+`zoom` is inactive whenever the active source is a web page. None of those is a fault. This module combines the raw
+unit state (control.unit_show) with what the active source actually needs and returns one of a small closed set:
+
+    active        running and doing its job            (green)
+    on_air        the encoder is streaming             (scarlet LIVE pill)
+    starting      coming up                            (amber)
+    retrying      crash-looping / waiting to restart   (amber)
+    error         failed                               (red)
+    stopped       NOT running although the active source needs it     (red)
+    idle          not running, and nothing needs it right now          (neutral)
+    off_air       the encoder, not broadcasting - the normal resting state (neutral)
+    not_configured  the unit file does not exist here  (neutral)
+    disconnected  the unit is up but its heartbeat is stale (worker only)   (amber)
+
+Nothing here talks to systemd by itself except system_services(), which does read-only `systemctl is-active` calls.
+"""
+from __future__ import annotations
+
+import subprocess
+import time
+
+from . import config
+
+LABELS = {
+    "active": "Active", "on_air": "On air", "starting": "Starting", "retrying": "Restarting", "error": "Error",
+    "stopped": "Stopped", "idle": "Idle", "off_air": "Off air", "not_configured": "Not configured",
+    "disconnected": "Disconnected",
+}
+
+TITLES = {
+    "xvfb": "Virtual display", "openbox": "Window manager", "audio-setup": "Audio routing", "zoom": "Zoom client",
+    "browser-source": "Browser source", "x11vnc": "Remote screen (VNC)", "novnc-proxy": "noVNC gateway",
+    "ffmpeg-stream": "Encoder to YouTube",
+}
+
+# Units every source needs; if one of these is down something really is wrong.
+ALWAYS_NEEDED = {"xvfb", "openbox", "audio-setup", "x11vnc", "novnc-proxy"}
+
+
+def _result(kind: str, reason: str, **extra) -> dict:
+    return {"kind": kind, "label": LABELS[kind], "reason": reason, **extra}
+
+
+def classify_unit(show: dict, producer_unit: str | None, source_type: str | None = None) -> dict:
+    """`show` is one control.unit_show() snapshot; `producer_unit` is control.producer_unit_for(active_source)."""
+    unit = show.get("unit", "")
+    phase = show.get("phase")
+    active, sub = show.get("active_state", ""), show.get("sub_state", "")
+
+    if show.get("unit_file_state") == "not-found":
+        return _result("not_configured", f"{unit}.service is not installed on this machine.")
+    if phase == "FAILED":
+        return _result("error", f"{unit} failed (result: {show.get('result') or 'unknown'}). See Logs.")
+    if phase == "RECONNECTING":
+        return _result("retrying", f"{unit} is waiting to restart after a failure.")
+    if phase == "STARTING":
+        return _result("starting", f"{unit} is starting.")
+    if phase == "LIVE":
+        if unit == "ffmpeg-stream":
+            return _result("on_air", "The encoder is streaming to YouTube.")
+        if active == "active" and sub == "exited":
+            return _result("active", "One-shot setup finished successfully; nothing keeps running by design.")
+        return _result("active", f"{TITLES.get(unit, unit)} is running.")
+
+    # inactive / dead from here on
+    if unit == "ffmpeg-stream":
+        return _result("off_air", "Not broadcasting. This is normal until you press Go Live.")
+    if unit == "browser-source":
+        if producer_unit == "browser-source":
+            return _result("stopped", "The active source needs the browser, but it is not running.")
+        why = "no source is selected" if producer_unit is None and not source_type else "the active source does not use it"
+        return _result("idle", f"Not needed: {why}.")
+    if unit == "zoom":
+        if producer_unit == "zoom":
+            return _result("stopped", "The active source is a Zoom meeting but the Zoom client is not running.")
+        return _result("idle", "Not needed: Zoom is not the active source.")
+    if unit in ALWAYS_NEEDED:
+        return _result("stopped", f"{TITLES.get(unit, unit)} is required by every source but is not running.")
+    return _result("idle", "Not running.")
+
+
+def annotate_units(units: list[dict], producer_unit: str | None, source_type: str | None) -> list[dict]:
+    """Adds `status` {kind,label,reason} and `title` to every unit row (in place, returns the list)."""
+    for u in units:
+        u["title"] = TITLES.get(u.get("unit", ""), u.get("unit", ""))
+        u["status"] = classify_unit(u, producer_unit, source_type)
+    return units
+
+
+# ---------------------------------------------------------------- system services (dashboard, caddy, worker)
+
+_CACHE: dict = {"at": 0.0, "value": None}
+CACHE_SECONDS = 10.0
+WORKER_STALE_SECONDS = 30.0
+
+
+def _is_active(unit: str) -> str:
+    try:
+        out = subprocess.run(["systemctl", "is-active", unit], capture_output=True, timeout=4)
+        return out.stdout.decode(errors="replace").strip() or "unknown"
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        return "unavailable"
+
+
+def classify_system(name: str, systemd_state: str, *, job: dict | None = None, now: float | None = None) -> dict:
+    now = time.time() if now is None else now
+    if systemd_state == "unavailable":
+        return _result("not_configured", "systemd is not available here (local development).")
+    if systemd_state == "failed":
+        return _result("error", f"{name} failed.")
+    if systemd_state in ("activating", "reloading"):
+        return _result("starting", f"{name} is starting.")
+    if systemd_state != "active":
+        if name == "edumix-worker" and not config.EDUMIX_WORKER_EXTERNAL:
+            return _result("not_configured", "The worker runs inside the dashboard in this setup.")
+        return _result("stopped", f"{name} is {systemd_state}.")
+    if name == "edumix-worker":
+        if job is None or job.get("completed_at") or job.get("desired") != "running":
+            return _result("idle", "Running and waiting: no EduMix class is open.")
+        hb = job.get("heartbeat")
+        if hb is None or now - float(hb) > WORKER_STALE_SECONDS:
+            return _result("disconnected", "The worker is running but has not reported for over 30 s.")
+        return _result("active", "Supervising the open EduMix class.")
+    return _result("active", f"{name} is running.")
+
+
+def system_services(now: float | None = None) -> list[dict]:
+    """dashboard / caddy / edumix-worker. Cached for 10 s: this is read on every state poll."""
+    now = time.time() if now is None else now
+    if _CACHE["value"] is not None and now - _CACHE["at"] < CACHE_SECONDS:
+        return _CACHE["value"]
+    try:
+        from . import jobs
+        job = jobs.current()
+    except Exception:
+        job = None
+    rows = []
+    for name, title in (("dashboard", "Dashboard"), ("caddy", "Web server (Caddy)"), ("edumix-worker", "EduMix worker")):
+        state = "active" if name == "dashboard" else _is_active(name)     # this process is the dashboard
+        row = {"unit": name, "title": title, "systemd": state, "scope": "system"}
+        row["status"] = classify_system(name, state, job=job, now=now)
+        rows.append(row)
+    _CACHE.update(at=now, value=rows)
+    return rows

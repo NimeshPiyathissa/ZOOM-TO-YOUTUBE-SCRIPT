@@ -36,6 +36,18 @@ async function apiFetch(url, opts = {}) {
   return data;
 }
 
+// Go Live asks the server what would be broadcast right now (no source, Zoom not in a meeting) and, only if
+// there is something worth knowing, asks before starting. The server never refuses on these: it is the operator's call.
+async function goLiveWarnings() {
+  try { return ((await apiFetch("/api/stream/preflight")).warnings || []).map((w) => w.text); }
+  catch (err) { return []; }
+}
+async function confirmGoLive() {
+  const warnings = await goLiveWarnings();
+  if (!warnings.length) return true;
+  return confirmDialog(warnings.join(" ") + " Go live anyway?", { confirmText: "Go live anyway" });
+}
+
 // ---------------------------------------------------------------- icons
 
 function icon(name, cls = "") {
@@ -477,6 +489,35 @@ function phaseBadgeClass(phase, unit) {
   if (phase === "FAILED") return "badge-failed";
   if (phase === "STARTING" || phase === "RECONNECTING") return "badge-activating";
   return "badge-inactive";
+}
+
+// One place that turns the server's meaning of a unit's state (app/status.py) into a badge. Falls back to the raw
+// systemd words only if the server did not send `status` (an older backend).
+const STATUS_BADGE = {
+  active: "badge-active", on_air: "badge-live", starting: "badge-activating", retrying: "badge-activating",
+  disconnected: "badge-activating", error: "badge-failed", stopped: "badge-failed",
+  idle: "badge-inactive", off_air: "badge-inactive", not_configured: "badge-inactive",
+};
+function unitBadge(u) {
+  const st = u.status;
+  if (!st) {
+    return { cls: u.phase ? phaseBadgeClass(u.phase, u.unit) : badgeClass(u.active_state),
+             html: `<span class="dot"></span>${u.active_state}${u.sub_state ? ` (${u.sub_state})` : ""}`, title: "" };
+  }
+  const raw = u.active_state ? ` systemd: ${u.active_state}${u.sub_state ? ` (${u.sub_state})` : ""}.` : (u.systemd ? ` systemd: ${u.systemd}.` : "");
+  return { cls: STATUS_BADGE[st.kind] || "badge-inactive", html: `<span class="dot"></span>${st.label}`, title: st.reason + raw };
+}
+
+// System-level services (dashboard, web server, EduMix worker) as small read-only cards.
+function renderSystemServices(container, services) {
+  if (!container || !services) return;
+  container.innerHTML = services.map((s) => {
+    const b = unitBadge(s);
+    return `<div class="card-3d service-card-3d" id="svc-${s.unit}">
+      <div class="service-card-head"><span class="service-card-name">${s.title}</span>
+        <span class="badge ${b.cls}" title="${b.title.replace(/"/g, "&quot;")}">${b.html}</span></div>
+      <div class="service-card-meta"><span>${s.status.reason}</span></div></div>`;
+  }).join("");
 }
 
 function fmtAgo(seconds) {

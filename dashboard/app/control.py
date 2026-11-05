@@ -296,7 +296,7 @@ SOURCE_ENV_KEYS = (
     # scripts/stream.sh). FIT changes ffmpeg's filter graph, which is
     # fixed at process start - toggling it while live needs an encoder
     # restart, same as a resolution/bitrate change.
-    "ZOOM_MEETING_ONLY", "ZOOM_MEETING_ONLY_FIT",
+    "ZOOM_MEETING_ONLY", "ZOOM_MEETING_ONLY_FIT", "ZOOM_MEETING_ONLY_REGION",
     # "client" (desktop, join-zoom.sh) or "web" (Zoom's web client, run by
     # browser-source.sh against the same ZOOM_LINK/ZOOM_PASSCODE already
     # in .env - no separate secret storage needed). Not secret itself.
@@ -389,6 +389,9 @@ def _source_env_lines(source: dict) -> dict[str, str]:
         values["ZOOM_VIEW"] = str(options.get("view", "speaker"))
         values["ZOOM_MEETING_ONLY"] = "1" if options.get("meeting_only") else "0"
         values["ZOOM_MEETING_ONLY_FIT"] = str(options.get("meeting_only_fit", "fit") or "fit")
+        # The measured area only counts while Auto is on; Reset (auto off / empty region) goes back to the fixed trims.
+        values["ZOOM_MEETING_ONLY_REGION"] = (str(options.get("meeting_only_region", "") or "")
+                                              if options.get("meeting_only") and options.get("meeting_only_auto") else "")
         # auto always starts on the client - the fallback watcher (Part 4)
         # flips this to "web" mid-join if the client path never gets off
         # the ground; it never starts on web first.
@@ -1188,19 +1191,30 @@ def note_encoder_filter_changed() -> None:
     from just changed (stream.sh reads them once, at process start)."""
     global _encoder_filter_changed_at
     _encoder_filter_changed_at = time.time()
+    try:                      # survives a dashboard restart: "the live encoder is stale" must not be forgotten
+        from . import db
+        db.set_setting("encoder_filter_changed_at", str(_encoder_filter_changed_at))
+    except Exception:
+        pass
 
 
 def encoder_filter_stale() -> bool:
     """True when ffmpeg-stream is running but was started before the last
     note_encoder_filter_changed() - i.e. it still has the old filter."""
-    if not _encoder_filter_changed_at:
+    changed_at = _encoder_filter_changed_at
+    try:
+        from . import db
+        changed_at = max(changed_at, float(db.get_setting("encoder_filter_changed_at", "0") or 0))
+    except Exception:
+        pass
+    if not changed_at:
         return False
     try:
         info = unit_show("ffmpeg-stream")
     except ControlError:
         return False
     up = info.get("uptime_seconds")
-    return info["phase"] in (PHASE_LIVE, PHASE_STARTING) and up is not None         and (time.time() - up) < _encoder_filter_changed_at
+    return info["phase"] in (PHASE_LIVE, PHASE_STARTING) and up is not None and (time.time() - up) < changed_at
 
 
 def zoom_quit_to_slate() -> list[dict]:

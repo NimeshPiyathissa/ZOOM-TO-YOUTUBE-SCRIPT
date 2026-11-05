@@ -57,6 +57,7 @@ if (rBrbBtn) {
 
 async function streamAction(btn, action, confirmMsg) {
   if (confirmMsg && !(await confirmDialog(confirmMsg, { danger: action !== "go-live" }))) return;
+  if (action === "go-live" && !(await confirmGoLive())) return;
   await withLoading(btn, async () => {
     try { await post(`/api/stream/${action}`); toast(`Stream: ${action.replace("-", " ")} sent`); }
     catch (err) { toast(err.message, "err"); }

@@ -303,6 +303,10 @@ def _validate_zoom_options(options: dict, url: str = "") -> dict:
     meeting_only_fit = str(options.get("meeting_only_fit", "fit") or "fit").strip().lower()
     if meeting_only_fit not in config.ZOOM_MEETING_ONLY_FIT_MODES:
         raise ValidationError(f"meeting_only_fit must be one of {sorted(config.ZOOM_MEETING_ONLY_FIT_MODES)}")
+    # Measured meeting area (app/framing.py): "x:y:w:h" or "". Only ever applied while Auto is on.
+    meeting_only_region = str(options.get("meeting_only_region", "") or "").strip()
+    if meeting_only_region and not re.fullmatch(r"\d{1,5}:\d{1,5}:\d{1,5}:\d{1,5}", meeting_only_region):
+        raise ValidationError("meeting_only_region must look like x:y:w:h")
     # Set by control.set_last_join_method() after a join actually happens
     # (the honest "joined via" record for auto mode) - a save just carries
     # it through unchanged; anything not a real mode is dropped rather
@@ -325,6 +329,8 @@ def _validate_zoom_options(options: dict, url: str = "") -> dict:
         "last_join_method": last_join_method,
         "meeting_only": bool(options.get("meeting_only", False)),
         "meeting_only_fit": meeting_only_fit,
+        "meeting_only_auto": bool(options.get("meeting_only_auto", False)),
+        "meeting_only_region": meeting_only_region,
     }
 
 

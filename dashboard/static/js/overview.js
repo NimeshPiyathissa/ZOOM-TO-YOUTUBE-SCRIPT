@@ -31,6 +31,7 @@ document.getElementById("unit-list").addEventListener("click", async (e) => {
 
 async function streamAction(btn, action, confirmMsg) {
   if (confirmMsg && !(await confirmDialog(confirmMsg, { danger: action === "stop" }))) return;
+  if (action === "go-live" && !(await confirmGoLive())) return;
   await withLoading(btn, async () => {
     try { await apiFetch(`/api/stream/${action}`, { method: "POST" }); toast(`Stream: ${action} sent`); }
     catch (err) { toast(err.message, "err"); }
@@ -174,13 +175,12 @@ function renderUnits(units) {
     const badge = document.getElementById(`unit-${u.unit}-badge`);
     if (!badge) continue;
     badge.classList.remove("skeleton");
-    const label = u.active_state + (u.sub_state ? ` (${u.sub_state})` : "");
-    // Colored by the same derived `phase` the hero uses (falls back to
-    // raw-active_state coloring only if a unit somehow has no phase,
-    // e.g. the unit_show() error-fallback shape) - never a second,
-    // independently-computed guess.
-    badge.className = "badge " + (u.phase ? phaseBadgeClass(u.phase, u.unit) : badgeClass(u.active_state));
-    badge.innerHTML = `<span class="dot"></span>${label}`;
+    // The server says what the state MEANS for the active source (app/status.py): an idle encoder or an unused
+    // browser is "Off air" / "Idle", not a failure. Same derived phase underneath - never a second guess.
+    const b = unitBadge(u);
+    badge.className = "badge " + b.cls;
+    badge.innerHTML = b.html;
+    badge.title = b.title;
     document.getElementById(`unit-${u.unit}-uptime`).textContent = fmtUptime(u.uptime_seconds);
     document.getElementById(`unit-${u.unit}-restarts`).textContent = u.restart_count ?? "-";
   }
@@ -286,6 +286,7 @@ async function pollState() {
     renderState(data.stream);
     renderActiveSource(data.active_source);
     renderUnits(data.units);
+    renderSystemServices(document.getElementById("system-services"), data.services);
     renderFfmpeg(data.ffmpeg, data.stream.phase, data.active_source && data.active_source.type, data.source_health);
     renderSystem(data.system);
   } catch (err) { /* transient errors are fine on a poll loop */ }
