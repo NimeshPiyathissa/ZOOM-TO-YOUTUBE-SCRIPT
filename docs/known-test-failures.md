@@ -1,5 +1,9 @@
 # Known test failures (pre-existing)
 
+> **Status (V2 branch): all five are fixed in the tests only - no product code changed.** The root causes below were confirmed:
+> each test encoded behaviour that a later, deliberate change had replaced. Tests 1-4 now use a link without `pwd=` for the
+> separate-passcode cases and a new test pins "link `pwd=` wins"; test 5 now asserts the VNC password is NOT embedded.
+
 Five tests fail on the repository **before** any EduMix work (verified on tag
 `checkpoint-pre-edumix-20261104`, and unchanged afterwards). None is caused by EduMix and none was
 "fixed" here - this file only records the root causes so they can be dealt with as a separate change.
