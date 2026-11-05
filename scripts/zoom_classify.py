@@ -19,7 +19,7 @@ import re
 HOME_MARKERS = re.compile(r"join a meeting|new meeting|sign in|sign up|^version:|whiteboards", re.I | re.M)
 
 
-def classify_window(titles, texts, snap, audio=False):
+def classify_window(titles, texts, snap, audio=False, media=0):
     """Returns (status, detail, action, extra) or None when nothing
     recognizable is on screen (caller decides connecting/unknown)."""
     snap = snap or {}
@@ -36,12 +36,23 @@ def classify_window(titles, texts, snap, audio=False):
     if audio:
         return ("in_meeting", "Zoom is playing meeting audio - it is in a meeting/webinar (window title and toolbar aren't readable here).", "",
                 {"kind": "meeting", "attendee": False, "evidence": "audio"})
+    if media >= 2 and not HOME_MARKERS.search(texts or ""):
+        # Zoom holds live UDP media flows only while it is in a meeting/webinar - the one in-meeting signal that works when
+        # the window is unreadable AND the room is silent. Inferred, so never "high" confidence downstream.
+        return ("in_meeting", f"Zoom has {media} live media connections - it is in a meeting/webinar (window not readable here).", "",
+                {"kind": "meeting", "attendee": False, "evidence": "media"})
     if HOME_MARKERS.search(texts or ""):
         return ("not_joined", "Zoom is open at its home screen - not in a meeting.", "Use Join / Rejoin.", {})
     if any(t.strip() == "Zoom Workplace" for t in titles):
         if snap.get("available") and (texts or "").strip():
             return ("in_meeting", "Zoom's main window is up and shows no home-screen UI - treating it as a meeting/webinar.", "",
-                    {"kind": "webinar" if re.search(r"webinar", texts, re.I) else "meeting",
+                    {"kind": "webinar" if re.search(r"\bwebinar\b", texts, re.I) else "meeting",
                      "attendee": False, "evidence": "inferred"})
+        if not snap.get("available"):
+            # AT-SPI unreadable: "Zoom Workplace" is the title at the home screen AND in a meeting, and there is no audio and
+            # no media flow. That is NOT evidence of "home screen" - say it cannot be told instead of guessing.
+            return ("unknown", "Zoom is running but its window cannot be read here (no AT-SPI), so the home screen cannot be "
+                    "told from a meeting. Look at the Remote screen.", "Install python3-pyatspi for reliable detection.",
+                    {"evidence": "unreadable"})
         return ("not_joined", "Zoom is open at its home screen - not in a meeting.", "Use Join / Rejoin.", {})
     return None

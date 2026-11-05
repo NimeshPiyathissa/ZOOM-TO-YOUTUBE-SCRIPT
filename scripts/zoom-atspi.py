@@ -159,7 +159,7 @@ if QUERY == "snapshot":
     in_meeting = bool(controls)
     kind = ""
     if in_meeting:
-        kind = "webinar" if (webinar_ui and not has_av) or re.search(r"webinar", text.lower()) else "meeting"
+        kind = "webinar" if (webinar_ui and not has_av) or re.search(r"\bwebinar\b", text.lower()) else "meeting"
     out({"available": True, "text": text[:6000], "in_meeting": in_meeting, "kind": kind,
          "attendee": in_meeting and webinar_ui and not has_av,
          "controls": controls[:20], "windows": [w.name or "" for w in windows]})

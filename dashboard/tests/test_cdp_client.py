@@ -264,7 +264,7 @@ def test_no_page_target_raises(chrome):
 
 def test_zoom_web_status_and_cleanfeed_through_cdp(chrome):
     chrome.targets = [("page", "https://us06web.zoom.us/wc/join/123", "Zoom")]
-    chrome.answer = lambda expr: ({"url": "https://us06web.zoom.us/wc/123/start", "body_text": "", "in_meeting_chrome": True}
+    chrome.answer = lambda expr: ({"url": "https://us06web.zoom.us/wc/123/start", "on_zoom": True, "body_text": "", "leave_present": True, "footer_present": True, "labels": [], "playing_video": True}
                                   if expr == zoom_web.JS_STATE else {"removed": 3})
     st = run(zoom_web._status_async())
     assert st["status"] == "in_meeting"

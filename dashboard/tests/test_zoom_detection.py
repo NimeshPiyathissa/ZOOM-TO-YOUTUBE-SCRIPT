@@ -52,15 +52,26 @@ def test_workplace_window_without_home_ui_is_inferred_meeting():
     assert r[0] == "in_meeting" and r[3]["evidence"] == "inferred"
 
 
-def test_workplace_title_with_unreadable_tree_stays_not_joined():
-    assert status(["Zoom Workplace"], "", {"available": False}) == "not_joined"
+def test_workplace_title_with_unreadable_tree_is_unknown_not_a_guessed_home_screen():
+    # No AT-SPI + title "Zoom Workplace" is the same picture at the home screen and in a silent meeting: say so.
+    assert status(["Zoom Workplace"], "", {"available": False}) == "unknown"
+    r = classify_window(["Zoom Workplace"], "", {"available": False})
+    assert r[3]["evidence"] == "unreadable" and "AT-SPI" in r[1]
+    # ...but a readable tree that shows home-screen text is still a confident home screen
+    assert status(["Zoom Workplace"], "Join a meeting	Sign in", {"available": True}) == "not_joined"
+
+
+def test_live_media_flows_prove_a_silent_meeting_when_the_window_is_unreadable():
+    r = classify_window(["Zoom Workplace"], "", {"available": False}, audio=False, media=3)
+    assert r[0] == "in_meeting" and r[3]["evidence"] == "media"
+    assert classify_window(["Zoom Workplace"], "", {"available": False}, audio=False, media=1)[0] == "unknown"   # one flow is not enough
 
 
 def test_audio_alone_proves_a_meeting_when_atspi_is_missing():
     # prod 2026-11-03: no python3-pyatspi, title "Zoom Workplace", no text
     r = classify_window(["Zoom Workplace"], "", {"available": False, "reason": "pyatspi-not-installed"}, audio=True)
     assert r[0] == "in_meeting" and r[3]["evidence"] == "audio"
-    assert classify_window(["Zoom Workplace"], "", {"available": False}, audio=False)[0] == "not_joined"
+    assert classify_window(["Zoom Workplace"], "", {"available": False}, audio=False)[0] == "unknown"
 
 
 def test_nothing_recognizable():

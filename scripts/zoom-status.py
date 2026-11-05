@@ -151,7 +151,10 @@ for status, rx, detail, action in PHRASES:
 
 audio = "zoom" in run(["pactl", "list", "sink-inputs"], timeout=5).lower()
 signals.append(f"audio={'zoom' if audio else 'none'}")
-verdict = classify_window(titles, texts, atspi, audio)
+# Live UDP media flows owned by the zoom process: present only while in a meeting/webinar (read-only socket listing).
+media = sum(1 for ln in run(["ss", "-uanp"], timeout=5).splitlines() if 'users:(("zoom"' in ln and "ESTAB" in ln)
+signals.append(f"media=udp:{media}")
+verdict = classify_window(titles, texts, atspi, audio, media)
 if verdict:
     status, detail, action, extra = verdict
     signals.append("evidence=" + extra.get("evidence", "text"))
