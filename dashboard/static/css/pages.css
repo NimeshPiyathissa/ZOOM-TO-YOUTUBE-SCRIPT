@@ -223,10 +223,10 @@ main.page:has(> .vnc-container) { padding-bottom: var(--space-4); }
 @container (max-width: 900px) { .vnc-quick-right #vnc-rate-text { display: none; } }
 @container (max-width: 640px) { .vnc-q-label { display: none; } }
 /* Fullscreen Live in the quick bar: its status line yields first, then labels, as the panel narrows. */
-.vnc-quick-bar .fsl { margin-right: var(--space-2); }
-.vnc-quick-bar .fsl-status { max-width: 34ch; }
-@container (max-width: 1180px) { .vnc-quick-bar .fsl-status { display: none; } }
-@container (max-width: 560px) { .vnc-quick-bar .fsl .fsl-label { display: none; } }
+.vnc-quick-bar .fsl, .vnc-quick-bar .cb { margin-right: var(--space-2); }
+.vnc-quick-bar .fsl-status, .vnc-quick-bar .cb-status { max-width: 34ch; }
+@container (max-width: 1180px) { .vnc-quick-bar .fsl-status, .vnc-quick-bar .cb-status { display: none; } }
+@container (max-width: 560px) { .vnc-quick-bar .fsl .fsl-label, .vnc-quick-bar .cb .cb-label { display: none; } }
 /* Fullscreen Live's broadcast frame drawn over the remote screen (vnc.js) - only when it is smaller than the screen. */
 .vnc-broadcast-frame { position: absolute; pointer-events: none; border: 2px dashed var(--accent); border-radius: 2px; box-shadow: 0 0 0 9999px rgb(0 0 0 / 0.28); z-index: 1; }
 .vnc-broadcast-frame[hidden] { display: none; }

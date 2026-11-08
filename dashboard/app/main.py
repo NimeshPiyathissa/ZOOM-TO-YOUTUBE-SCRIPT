@@ -39,6 +39,7 @@ from . import broadcast
 from . import zoom_state
 from . import framing
 from . import fullscreen_live
+from . import clean_broadcast, zoom_layout
 from . import edumix, edumix_api
 from . import recording, settings_store, telegram
 
@@ -1102,8 +1103,10 @@ async def api_zoom_meeting_only(request: Request):
     options["meeting_only"] = enabled
     options["meeting_only_fit"] = "fit" if reset else fit
     options["meeting_only_auto"] = auto
-    # Choosing a Meeting-only framing by hand ends Fullscreen Live (it would otherwise keep overriding this choice).
+    # Choosing a Meeting-only framing by hand ends Fullscreen Live / Clean Broadcast (they would otherwise keep
+    # overriding this choice).
     options.update(_FSL_CLEARED)
+    options.update(_CB_CLEARED)
     measure = None
     if not auto:
         options["meeting_only_region"] = ""            # Reset / Auto off / Meeting-only off: back to the fixed trims
@@ -1139,7 +1142,10 @@ async def api_zoom_meeting_only(request: Request):
 
 
 def _framing_key(options: dict):
-    """What the encoder's crop/scale graph is built from; None while Meeting-only and Fullscreen Live are off."""
+    """What the encoder's crop/scale graph is built from; None while Clean Broadcast, Meeting-only and Fullscreen Live
+    are off."""
+    if options.get("clean_broadcast"):
+        return ("clean_broadcast", options.get("clean_filter") or "", options.get("clean_capture") or "")
     if options.get("fullscreen_live"):
         return ("fullscreen_live", options.get("fullscreen_box") or "", options.get("fullscreen_capture") or "")
     if not options.get("meeting_only"):
@@ -1167,7 +1173,13 @@ def _fsl_output_size() -> tuple[int, int]:
 
 
 def _fsl_status(options: dict) -> dict:
-    return {"active": bool(options.get("fullscreen_live")), "plan": options.get("fullscreen_plan") or None,
+    plan = options.get("fullscreen_plan") or None
+    if plan and plan.get("state") == "native" and not plan.get("chrome_checked"):
+        # Saved by the first Fullscreen Live version, which could not see Zoom's grey toolbars: never report it as
+        # "no borders" - it was not verified.
+        plan = dict(plan, state="unverified", summary="Saved before Zoom's toolbars could be detected - not verified. "
+                                                       "Use Clean Broadcast (or re-check) to measure the meeting.")
+    return {"active": bool(options.get("fullscreen_live")), "plan": plan,
             "box": options.get("fullscreen_box") or "", "capture": options.get("fullscreen_capture") or "",
             "restore_available": bool(options.get("fullscreen_restore"))}
 
@@ -1252,15 +1264,18 @@ async def api_zoom_fullscreen_live(request: Request):
     display = fullscreen_live.parse_size(await preview._display_size()) or (1920, 1080)
     output = await run_in_threadpool(_fsl_output_size)
     measured = await framing.measure(f"{display[0]}x{display[1]}", 0, 0)
-    p = fullscreen_live.plan(display, output, output, window_after, measured)
+    chrome = await _cb_measure(display)                # Zoom's own bars are not black: check for them separately
+    p = fullscreen_live.plan(display, output, output, window_after, measured, chrome=chrome)
     p["summary"] = fullscreen_live.summary(p)
     if not options.get("fullscreen_live"):
         snap = {k: options[k] for k in fullscreen_live.RESTORE_KEYS if k in options}
         snap["window_fullscreen"] = bool(window_before and window_before.get("fullscreen"))
         options["fullscreen_restore"] = snap
+    options.update(_CB_CLEARED)
     options.update(fullscreen_live=True, fullscreen_box=p["box"], fullscreen_capture=p["capture_size"],
                    fullscreen_plan={k: p[k] for k in ("state", "box", "capture_size", "output", "content", "content_ratio",
-                                                      "scale", "bars", "limitations", "issues", "summary", "filter")}
+                                                      "scale", "bars", "limitations", "issues", "summary", "filter",
+                                                      "chrome_checked", "zoom_ui")}
                    | {"at": time.time()})
     await run_in_threadpool(sources_mod.update_source, active["id"], source["name"], "zoom", source["url"], options, source.get("account_id"))
     await run_in_threadpool(control.write_current_source, sources_mod.get_source(active["id"]))
@@ -1279,6 +1294,273 @@ async def api_zoom_fullscreen_live(request: Request):
             "plan": p, "window": {"before": window_before, "after": window_after, "result": window_result},
             "measure": {k: measured.get(k) for k in ("ok", "region", "margins", "reason", "samples")},
             **_fsl_status(options), "encoder_phase": phase, "pending_restart": pending}
+
+
+# ---------------------------------------------------------------- Clean Broadcast (app/clean_broadcast.py)
+# The YouTube frame shows the meeting picture and nothing else: Zoom's title bar, toolbar, frame lines and open side
+# panels are MEASURED on real frames (app/zoom_layout.py) and cut away; the picture is fitted with one uniform scale,
+# never cropped (unless the operator explicitly confirms Fill 16:9 with its exact loss shown). Like Fullscreen Live it
+# never starts, stops or restarts the encoder: framing is baked in at encoder start, so while live a change is saved and
+# reported as pending for the next authorized (V2 Go Live grant) start or restart.
+
+_CB_SETTLE_SECONDS = 1.5
+_CB_FRAMES = 3
+# Explicit "off" values (sources.update_source carries absent keys forward).
+_CB_CLEARED = {"clean_broadcast": False, "clean_filter": "", "clean_capture": "", "clean_plan": None, "clean_restore": None}
+_CB_DEFAULTS = {"clean_policy": "preserve", "clean_background": "dark", "clean_source": "unknown"}
+
+
+def _cb_prefs(options: dict, body: dict | None = None) -> dict:
+    body = body or {}
+    prefs = {k: options.get(k) or v for k, v in _CB_DEFAULTS.items()}
+    if body.get("policy") in clean_broadcast.POLICIES:
+        prefs["clean_policy"] = body["policy"]
+    if body.get("background") in clean_broadcast.BACKGROUNDS:
+        prefs["clean_background"] = body["background"]
+    if body.get("source") in clean_broadcast.SOURCES:
+        prefs["clean_source"] = body["source"]
+    return prefs
+
+
+def _cb_plan(display, layout, prefs) -> dict:
+    p = clean_broadcast.plan(display, _fsl_output_size(), layout, policy=prefs["clean_policy"],
+                             background=prefs["clean_background"], source=prefs["clean_source"])
+    p["summary"] = clean_broadcast.summary(p)
+    p["layout"] = {k: (layout or {}).get(k) for k in ("ok", "size", "bands", "kinds", "content", "reason", "frames")}
+    p["at"] = time.time()
+    return p
+
+
+def _cb_status(options: dict) -> dict:
+    return {"active": bool(options.get("clean_broadcast")), "plan": options.get("clean_plan") or None,
+            "restore_available": bool(options.get("clean_restore")),
+            "prefs": {k[6:]: v for k, v in _cb_prefs(options).items()}}
+
+
+async def _cb_measure(display: tuple[int, int]) -> dict:
+    frames, w, h = await zoom_layout.grab_frames(f"{display[0]}x{display[1]}", _CB_FRAMES)
+    return await asyncio.to_thread(zoom_layout.detect_frames, frames, w, h)
+
+
+async def _cb_context():
+    active = sources_mod.get_active_source()
+    if not active or active["type"] != "zoom":
+        raise HTTPException(status_code=400, detail="Clean Broadcast frames a Zoom meeting - the active source isn't one. "
+                                                    "Pick the Zoom source first.")
+    source = sources_mod.get_source(active["id"])
+    return active, source, dict(source.get("options") or {})
+
+
+async def _cb_save(active, source, options, was_filter) -> bool:
+    await run_in_threadpool(sources_mod.update_source, active["id"], source["name"], "zoom", source["url"], options,
+                            source.get("account_id"))
+    await run_in_threadpool(control.write_current_source, sources_mod.get_source(active["id"]))
+    if _framing_key(options) != was_filter:
+        control.note_encoder_filter_changed()
+    return await run_in_threadpool(control.encoder_filter_stale)
+
+
+async def _encoder_phase() -> str:
+    try:
+        return (await run_in_threadpool(control.unit_show, "ffmpeg-stream"))["phase"]
+    except control.ControlError:
+        return "UNKNOWN"
+
+
+@app.get("/api/zoom/clean-broadcast")
+async def api_zoom_clean_broadcast_state(request: Request):
+    """Read-only: saved Clean Broadcast state/plan, encoder phase, whether the running encoder is behind, CPU load."""
+    deps.require_session_api(request)
+    active = sources_mod.get_active_source()
+    zoom = bool(active and active["type"] == "zoom")
+    options = ((sources_mod.get_source(active["id"]) or {}).get("options") or {}) if zoom else {}
+    import psutil
+    return {"zoom_source": zoom, **_cb_status(options), "encoder_phase": await _encoder_phase(),
+            "pending_restart": await run_in_threadpool(control.encoder_filter_stale),
+            "cpu_percent": psutil.cpu_percent(interval=None), "display": await preview._display_size(),
+            "output": "%dx%d" % _fsl_output_size()}
+
+
+@app.post("/api/zoom/clean-broadcast")
+async def api_zoom_clean_broadcast(request: Request):
+    """{action: "apply" | "settings" | "restore", policy?, background?, source?, confirm_crop?}. Window + framing only."""
+    session = deps.require_session_api(request)
+    deps.require_csrf(request, session)
+    deps.require_rate_limit(session, "zoom_clean_broadcast", max_calls=8, window_seconds=30)
+    body = await request.json()
+    action = str(body.get("action", "")).strip().lower()
+    if action not in ("apply", "settings", "restore"):
+        raise HTTPException(status_code=400, detail="action must be apply, settings or restore")
+    active, source, options = await _cb_context()
+    was_filter = _framing_key(options)
+    phase = await _encoder_phase()
+    live = phase in (control.PHASE_LIVE, control.PHASE_STARTING)
+    ip = deps.client_ip(request)
+
+    if action == "restore":
+        snap = options.get("clean_restore")
+        if not options.get("clean_broadcast") and not snap:
+            return {"ok": True, "action": "restore", "message": "Already on the original framing.", **_cb_status(options),
+                    "encoder_phase": phase, "pending_restart": await run_in_threadpool(control.encoder_filter_stale)}
+        snap = snap or {}
+        for k in clean_broadcast.RESTORE_KEYS:
+            if k in snap:
+                options[k] = snap[k]
+            else:
+                options.pop(k, None)
+        options.update(_CB_CLEARED)
+        window = None
+        if snap.get("window_fullscreen") is False and not options.get("meeting_only") and not options.get("fullscreen_live"):
+            try:
+                window = await run_in_threadpool(control.zoom_set_meeting_only, False)
+            except control.ControlError as exc:
+                window = {"applied": False, "note": str(exc)}
+        pending = await _cb_save(active, source, options, was_filter)
+        db.audit(session["username"], "zoom_clean_broadcast", f"restore live={live} pending_restart={pending}", ip)
+        msg = "Original framing restored."
+        if pending:
+            msg += " The live stream keeps Clean Broadcast framing until its next authorized start or restart."
+        return {"ok": True, "action": "restore", "message": msg, "window": window, **_cb_status(options),
+                "encoder_phase": phase, "pending_restart": pending}
+
+    prefs = _cb_prefs(options, body)
+    display = fullscreen_live.parse_size(await preview._display_size()) or (1920, 1080)
+    window = None
+    if action == "settings":
+        saved = options.get("clean_plan") or {}
+        layout = saved.get("layout") if options.get("clean_broadcast") else None
+        if not layout:                                 # not active yet: just remember the choices
+            options.update(prefs)
+            await run_in_threadpool(sources_mod.update_source, active["id"], source["name"], "zoom", source["url"],
+                                    options, source.get("account_id"))
+            return {"ok": True, "action": "settings", "message": "Saved - used when Clean Broadcast is switched on.",
+                    **_cb_status(options), "encoder_phase": phase,
+                    "pending_restart": await run_in_threadpool(control.encoder_filter_stale)}
+        if layout.get("size") != "%dx%d" % display:
+            layout = None                              # the desktop changed since measuring: re-measure below
+    else:
+        layout = None
+    if layout is None:
+        window_before = await run_in_threadpool(control.zoom_window_geometry)
+        try:
+            window = await run_in_threadpool(control.zoom_set_meeting_only, True)
+        except control.ControlError as exc:
+            window = {"applied": False, "note": str(exc)}
+        if window.get("applied"):
+            await asyncio.sleep(_CB_SETTLE_SECONDS)
+        layout = await _cb_measure(display)
+        window = {"before": window_before, "result": window}
+    p = _cb_plan(display, layout, prefs)
+
+    kept = False
+    old = options.get("clean_plan") or {}
+    if (not p["verified"] and options.get("clean_broadcast") and old.get("verified")
+            and old.get("display") == p["display"]):
+        # Unsure right now (a panel open, a dark screen) but a verified framing exists: keep it rather than fall back.
+        kept = True
+        reason = p["warnings"][0]["text"] if p["warnings"] else ""
+        p = dict(old, kept_reason=reason)
+    elif p["crop"]["lost_pct"] > 0 and not body.get("confirm_crop"):
+        return JSONResponse(status_code=409, content={
+            "ok": False, "needs_confirm": True, "plan": p,
+            "detail": f"Fill 16:9 would cut {p['crop']['lost_pct']}% of the picture. Confirm to use it, or keep Preserve."})
+
+    if not options.get("clean_broadcast"):
+        snap = {k: options[k] for k in clean_broadcast.RESTORE_KEYS if k in options}
+        wb = (window or {}).get("before")
+        snap["window_fullscreen"] = bool(wb and wb.get("fullscreen"))
+        options["clean_restore"] = snap
+    options.update(prefs)
+    options.update(_FSL_CLEARED)                       # Clean Broadcast replaces Fullscreen Live / Meeting-only
+    options.update(meeting_only=False, meeting_only_auto=False, meeting_only_region="")
+    options.update(clean_broadcast=True, clean_filter=p["filter"], clean_capture=p["capture_size"], clean_plan=p)
+    pending = await _cb_save(active, source, options, was_filter)
+    if live:
+        applies = ("The live stream keeps its current framing - restarting it would interrupt viewers, so that is never "
+                   "done automatically. Clean Broadcast applies at the next authorized start (or an authorized restart).")
+    else:
+        applies = "Ready: the next Go Live uses this framing."
+    db.audit(session["username"], "zoom_clean_broadcast",
+             f"{action} state={p['state']} content={p['content']} filter={p['filter'] or '-'} kept={kept} live={live} "
+             f"pending_restart={pending}", ip)
+    msg = p["summary"] if not kept else ("Measurement uncertain right now - kept the last verified framing. "
+                                         + p.get("kept_reason", ""))
+    return {"ok": True, "action": action, "state": p["state"], "message": msg, "applies": applies, "kept": kept,
+            "plan": p, "window": window, **_cb_status(options), "encoder_phase": phase, "pending_restart": pending}
+
+
+@app.get("/api/zoom/clean-broadcast/preview.jpg")
+async def api_zoom_clean_broadcast_preview(request: Request, view: str = "output", policy: str = "",
+                                           background: str = ""):
+    """One frame of the screen now, framed EXACTLY like the broadcast would be (the saved plan's filter, or - with
+    policy/background - the same measured layout re-planned with those choices, so a choice can be previewed before it
+    is saved). view=screen returns the whole desktop instead. One short nice-19 grab; never touches the encoder."""
+    session = deps.require_session_api(request)
+    deps.require_rate_limit(session, "zoom_clean_preview", max_calls=20, window_seconds=60)
+    size = await preview._display_size()
+    vf = "scale=960:-2"
+    if view != "screen":
+        active = sources_mod.get_active_source()
+        options = ((sources_mod.get_source(active["id"]) or {}).get("options") or {}) if active and active["type"] == "zoom" else {}
+        plan = options.get("clean_plan") or {}
+        flt = options.get("clean_filter") if options.get("clean_broadcast") else ""
+        if (policy or background) and plan.get("layout"):
+            prefs = _cb_prefs(options, {"policy": policy, "background": background})
+            flt = _cb_plan(fullscreen_live.parse_size(size) or (1920, 1080), plan["layout"], prefs)["filter"]
+        if flt and clean_broadcast.safe_filter(flt) and (plan.get("capture_size") in (None, size)):
+            vf = f"{flt},scale=960:-2"
+    argv = ["/usr/bin/nice", "-n", "19", "/usr/bin/ionice", "-c", "3", "ffmpeg", "-hide_banner", "-loglevel", "error",
+            "-f", "x11grab", "-video_size", size, "-draw_mouse", "0", "-i", config.DISPLAY_NUM, "-frames:v", "1",
+            "-vf", vf, "-q:v", "4", "-f", "mjpeg", "-"]
+    try:
+        proc = await asyncio.create_subprocess_exec(*argv, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
+        out, _ = await asyncio.wait_for(proc.communicate(), timeout=10)
+    except (asyncio.TimeoutError, FileNotFoundError, OSError):
+        out = b""
+    if not out:
+        raise HTTPException(status_code=503, detail="No frame could be read from the screen right now.")
+    return Response(content=out, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
+
+
+_cb_pending: dict = {"content": None, "count": 0}
+
+
+async def _cb_watch_tick(active: dict, options: dict) -> None:
+    """Clean Broadcast: when Zoom's layout really changed (a confident measurement, seen twice in a row, differing by more
+    than 16 px - e.g. a panel was closed), re-plan for the NEXT encoder start. Uncertain measurements change nothing.
+    It never restarts the encoder."""
+    display = fullscreen_live.parse_size(await preview._display_size())
+    if not display:
+        return
+    layout = await _cb_measure(display)
+    if not layout.get("ok"):
+        _cb_pending.update(content=None, count=0)
+        return
+    old = fullscreen_live.parse_box(((options.get("clean_plan") or {}).get("layout") or {}).get("content"))
+    new = tuple(layout["content"])
+    if old and not framing.changed_materially("%d:%d:%d:%d" % old, "%d:%d:%d:%d" % new):
+        _cb_pending.update(content=None, count=0)
+        return
+    if _cb_pending["content"] == new:
+        _cb_pending["count"] += 1
+    else:
+        _cb_pending.update(content=new, count=1)
+    if _cb_pending["count"] < 2:
+        return
+    _cb_pending.update(content=None, count=0)
+    source = sources_mod.get_source(active["id"])
+    opts = dict(source.get("options") or {})
+    if not opts.get("clean_broadcast"):
+        return
+    p = _cb_plan(display, layout, _cb_prefs(opts))
+    if p["crop"]["lost_pct"] > 0 and (opts.get("clean_plan") or {}).get("crop", {}).get("lost_pct", 0) == 0:
+        return                                           # never start cutting the picture without the operator
+    was = opts.get("clean_filter")
+    opts.update(clean_filter=p["filter"], clean_capture=p["capture_size"], clean_plan=p)
+    await run_in_threadpool(sources_mod.update_source, active["id"], source["name"], "zoom", source["url"], opts, source.get("account_id"))
+    await run_in_threadpool(control.write_current_source, sources_mod.get_source(active["id"]))
+    control.note_encoder_filter_changed()
+    db.audit(None, "zoom_clean_broadcast_relayout", f"content={p['content']} filter={p['filter'] or '-'} (was {was or '-'})")
 
 
 @app.get("/api/zoom/framing")
@@ -1315,6 +1597,9 @@ async def _framing_watch_tick() -> None:
     start uses it and the UI offers "Restart to apply". It never restarts the encoder by itself."""
     active = sources_mod.get_active_source()
     options = (active or {}).get("options") or {}
+    if active and active["type"] == "zoom" and options.get("clean_broadcast"):
+        await _cb_watch_tick(active, options)
+        return
     if active and active["type"] == "zoom" and options.get("fullscreen_live"):
         await _fsl_watch_tick(active, options)
         return

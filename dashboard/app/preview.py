@@ -139,6 +139,14 @@ class PreviewManager:
             w, h = (int(v) for v in video_size.split("x"))
         except ValueError:
             return ""
+        if src.get("ZOOM_CLEAN_BROADCAST") == "1":
+            # Clean Broadcast: the very string the encoder applies (validated the same way lib.sh does). It outputs the
+            # broadcast size; the caller's scale=640:-1 then makes the thumbnail.
+            from . import clean_broadcast
+            vf = src.get("ZOOM_CLEAN_FILTER") or ""
+            if src.get("ZOOM_CLEAN_CAPTURE") not in (None, "", video_size) or not clean_broadcast.safe_filter(vf):
+                return ""                                  # display changed since measuring / bad filter: show the screen
+            return vf
         if src.get("ZOOM_FULLSCREEN_LIVE") == "1":
             # Same box the encoder crops (lib.sh build_capture_framing); a 16:9 preview of the capture's width shows
             # exactly the broadcast's framing (the box is exact 16:9 and every RESOLUTION preset is 16:9).

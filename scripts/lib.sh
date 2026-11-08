@@ -290,13 +290,49 @@ build_fullscreen_live_filter() {
   fi
 }
 
+# "Clean Broadcast" filter check (dashboard app/clean_broadcast.py builds ZOOM_CLEAN_FILTER from frames it measured;
+# safe_filter() there is this function's twin, pinned by tests/test_clean_broadcast.py). Only the characters and
+# filters the planner emits are accepted, so nothing that reads files, the network or commands can arrive via the env
+# file. Empty is valid (native capture, no filter).   return 0 = usable.
+clean_filter_ok() {
+  local vf="$1" bad='[^]A-Za-z0-9=:,;._[-]' low
+  [[ "$vf" =~ $bad ]] && return 1
+  low="${vf,,}"
+  local f
+  for f in movie amovie file sendcmd zmq drawtext subtitles 'ass=' lavfi frei0r ladspa lv2 opencl vulkan http; do
+    [[ "$low" == *"$f"* ]] && return 1
+  done
+  return 0
+}
+
 # Capture size + framing filter for the x11grab capture, shared by stream.sh and test-recording.sh so a local test
 # recording is framed exactly like the broadcast. Reads SOURCE_TYPE and the ZOOM_* framing keys of current-source.env.
 #   args: output_size(WxH)  ->  $CAPTURE_SIZE, $CROP_FILTER ("" = none), $FRAMING_NOTE (for the log)
 build_capture_framing() {
   local res="${1:-1920x1080}"
   CAPTURE_SIZE="$res"; CROP_FILTER=""; FRAMING_NOTE=""
-  if [[ "${SOURCE_TYPE:-}" == "zoom" && "${ZOOM_FULLSCREEN_LIVE:-0}" == "1" ]]; then
+  if [[ "${SOURCE_TYPE:-}" == "zoom" && "${ZOOM_CLEAN_BROADCAST:-0}" == "1" ]]; then
+    # Clean Broadcast: capture the whole desktop the dashboard measured and apply ITS filter (Zoom UI cut away, picture
+    # fitted with one uniform scale). The same string drives the Live Studio preview. A rejected filter falls back to
+    # fitting the whole desktop - never to a crop.
+    [[ "${ZOOM_CLEAN_CAPTURE:-}" =~ ^[0-9]+x[0-9]+$ ]] && CAPTURE_SIZE="$ZOOM_CLEAN_CAPTURE"
+    local actual=""
+    command -v xdpyinfo >/dev/null 2>&1 && actual="$(xdpyinfo -display "${DISPLAY:-:99}" 2>/dev/null | awk '/dimensions:/{print $2; exit}')"
+    if [[ "$actual" =~ ^[0-9]+x[0-9]+$ && "$actual" != "$CAPTURE_SIZE" ]]; then
+      # The screen changed size since the dashboard measured it: the stored crop no longer fits. Fit the whole screen.
+      CAPTURE_SIZE="$actual"
+      build_fullscreen_live_filter "${CAPTURE_SIZE%x*}" "${CAPTURE_SIZE#*x}" "${res%x*}" "${res#*x}" ""
+      CROP_FILTER="$FULLSCREEN_LIVE_FILTER"
+      FRAMING_NOTE="Clean Broadcast was measured on ${ZOOM_CLEAN_CAPTURE:-?}, the screen is now ${actual} - whole screen fitted instead (re-measure in the dashboard): ${CROP_FILTER:-no filter}"
+    elif clean_filter_ok "${ZOOM_CLEAN_FILTER:-}"; then
+      CROP_FILTER="${ZOOM_CLEAN_FILTER:-}"
+      FRAMING_NOTE="Clean Broadcast (capture ${CAPTURE_SIZE}): ${CROP_FILTER:-no filter, native ${CAPTURE_SIZE}}"
+    else
+      build_fullscreen_live_filter "${CAPTURE_SIZE%x*}" "${CAPTURE_SIZE#*x}" "${res%x*}" "${res#*x}" ""
+      CROP_FILTER="$FULLSCREEN_LIVE_FILTER"
+      FRAMING_NOTE="Clean Broadcast filter REJECTED (unexpected characters) - whole desktop fitted instead: ${CROP_FILTER:-no filter}"
+    fi
+  elif [[ "${SOURCE_TYPE:-}" == "zoom" && "${ZOOM_FULLSCREEN_LIVE:-0}" == "1" ]]; then
     # Fullscreen Live replaces Meeting-only: capture the WHOLE desktop the dashboard measured (a capture smaller than
     # the screen grabs only its top-left corner), then the smallest 16:9 box around all content, uniform scale, no trims.
     [[ "${ZOOM_CAPTURE_SIZE:-}" =~ ^[0-9]+x[0-9]+$ ]] && CAPTURE_SIZE="$ZOOM_CAPTURE_SIZE"

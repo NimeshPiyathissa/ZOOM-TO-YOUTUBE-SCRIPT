@@ -125,9 +125,12 @@ def output_bars(content: tuple[int, int, int, int], box: tuple[int, int, int, in
 
 
 def plan(display: tuple[int, int], capture: tuple[int, int], output: tuple[int, int],
-         window: dict | None, measured: dict | None) -> dict:
+         window: dict | None, measured: dict | None, chrome: dict | None = None) -> dict:
     """Decide the framing. `measured` = app/framing.py measure()/decide() over the WHOLE screen (band 0/0);
-    `window` = control.zoom_window_geometry() ({"w","h","x","y","fullscreen"}) or None."""
+    `window` = control.zoom_window_geometry() ({"w","h","x","y","fullscreen"}) or None;
+    `chrome` = app/zoom_layout.py's verdict. The black-border measurement cannot see Zoom's dark-GREY title bar and
+    toolbar (that is how the first version reported "Native 16:9 - no borders" with both on screen), so when chrome is
+    given, "native"/"optimized" are only reported if Zoom UI was positively ruled out."""
     W, H = display
     ow, oh = output
     issues: list[dict] = []
@@ -174,6 +177,18 @@ def plan(display: tuple[int, int], capture: tuple[int, int], output: tuple[int, 
         limitations.append(f"The meeting content is small on screen ({cw}x{ch}); it is enlarged at most {MAX_UPSCALE}x so it stays "
                            "sharp. Speaker view or a fullscreen share gives a bigger picture.")
 
+    zoom_ui: dict = {}
+    if chrome is not None:
+        if chrome.get("ok"):
+            zoom_ui = {k: v for k, v in (chrome.get("bands") or {}).items()
+                       if (chrome.get("kinds") or {}).get(k) == "zoom_ui" and v > 0}
+            if zoom_ui:
+                where = ", ".join(f"{k} {v} px" for k, v in zoom_ui.items())
+                limitations.insert(0, f"Zoom's own controls are on screen ({where}) and are part of this frame - they would "
+                                      "be broadcast. Fullscreen Live keeps the whole screen; Clean Broadcast removes them.")
+        else:
+            limitations.insert(0, "Zoom's toolbars could not be ruled out (" + (chrome.get("reason") or "no measurement")
+                               + ") - this framing is not verified as border-free.")
     if box == full and (W, H) == (ow, oh):
         state = "native"
     else:
@@ -183,7 +198,7 @@ def plan(display: tuple[int, int], capture: tuple[int, int], output: tuple[int, 
     return {"state": state, "box": "%d:%d:%d:%d" % box, "capture_size": f"{W}x{H}", "output": f"{ow}x{oh}",
             "display": f"{W}x{H}", "content": "%d:%d:%d:%d" % content, "content_ratio": ratio_name(cw, ch),
             "scale": round(min(ow / box[2], oh / box[3]), 3), "bars": bars, "issues": issues,
-            "limitations": limitations, "measured": measured_ok,
+            "limitations": limitations, "measured": measured_ok, "chrome_checked": chrome is not None, "zoom_ui": zoom_ui,
             "filter": fullscreen_filter((W, H), (ow, oh), box)}
 
 

@@ -314,6 +314,9 @@ SOURCE_ENV_KEYS = (
     # "Fullscreen Live" (app/fullscreen_live.py): lossless 16:9 box + whole-desktop capture size. Replaces the
     # Meeting-only filter while on (scripts/lib.sh build_capture_framing). Also baked in at encoder start.
     "ZOOM_FULLSCREEN_LIVE", "ZOOM_FRAMING_BOX", "ZOOM_CAPTURE_SIZE",
+    # "Clean Broadcast" (app/clean_broadcast.py): the exact filter (Zoom UI cut away, picture fitted) + capture size the
+    # dashboard measured. Wins over Fullscreen Live / Meeting-only (lib.sh build_capture_framing). Baked in at start.
+    "ZOOM_CLEAN_BROADCAST", "ZOOM_CLEAN_FILTER", "ZOOM_CLEAN_CAPTURE",
     # "client" (desktop, join-zoom.sh) or "web" (Zoom's web client, run by
     # browser-source.sh against the same ZOOM_LINK/ZOOM_PASSCODE already
     # in .env - no separate secret storage needed). Not secret itself.
@@ -416,6 +419,10 @@ def _source_env_lines(source: dict) -> dict[str, str]:
         values["ZOOM_FULLSCREEN_LIVE"] = "1" if fsl else "0"
         values["ZOOM_FRAMING_BOX"] = str(options.get("fullscreen_box", "") or "") if fsl else ""
         values["ZOOM_CAPTURE_SIZE"] = str(options.get("fullscreen_capture", "") or "") if fsl else ""
+        clean = bool(options.get("clean_broadcast"))
+        values["ZOOM_CLEAN_BROADCAST"] = "1" if clean else "0"
+        values["ZOOM_CLEAN_FILTER"] = str(options.get("clean_filter", "") or "") if clean else ""
+        values["ZOOM_CLEAN_CAPTURE"] = str(options.get("clean_capture", "") or "") if clean else ""
         # auto always starts on the client - the fallback watcher (Part 4)
         # flips this to "web" mid-join if the client path never gets off
         # the ground; it never starts on web first.
@@ -1174,7 +1181,7 @@ def zoom_apply_join_options(source: dict) -> dict:
         report["applied"].append("view")
     except ControlError as exc:
         report["view"] = {"want": view, "sent": False, "note": str(exc)}
-    if options.get("meeting_only") or options.get("fullscreen_live"):   # both want the fullscreen, pointer-parked window
+    if options.get("meeting_only") or options.get("fullscreen_live") or options.get("clean_broadcast"):   # all want the fullscreen window
         try:
             report["meeting_only"] = zoom_set_meeting_only(True)
             report["applied"].append("meeting_only")

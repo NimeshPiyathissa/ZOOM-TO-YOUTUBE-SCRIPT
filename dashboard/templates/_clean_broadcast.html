@@ -1,0 +1,74 @@
+{#- "Clean Broadcast" control. cb_variant="compact" (Remote GUI quick bar) or "panel" (Live Studio). Behaviour:
+    static/js/clean-broadcast.js. It frames the Zoom meeting for the broadcast - it never starts, stops or restarts the
+    stream (the V2 Go Live confirmation stays the only way to go on air). -#}
+{% from "_macros.html" import icon %}
+{% set cb_variant = cb_variant|default('panel') %}
+<div class="cb cb-{{ cb_variant }}" data-cb-root data-variant="{{ cb_variant }}" data-state="idle">
+  <div class="cb-bar">
+    <button type="button" class="btn btn-sm cb-btn" data-cb-apply
+            title="Measure the Zoom meeting and frame ONLY the meeting picture for YouTube: Zoom's title bar, toolbar and panels removed, whole picture kept, no stretching. Never starts the stream.">
+      <span class="cb-ico" aria-hidden="true">{{ icon("maximize", "icon-sm") }}</span><span class="spinner cb-spin" aria-hidden="true"></span><span class="cb-label">Clean Broadcast</span>
+    </button>
+    <button type="button" class="btn btn-ghost btn-sm cb-restore" data-cb-restore hidden title="Put back the framing that was in use before Clean Broadcast">
+      {{ icon("rotate-cw", "icon-sm") }}<span class="cb-label">Restore Original</span>
+    </button>
+    <span class="cb-status" data-cb-status role="status" aria-live="polite"></span>
+  </div>
+  {% if cb_variant == 'panel' %}
+  <div class="cb-panel">
+    <div class="cb-controls">
+      <fieldset class="cb-field">
+        <legend class="eyebrow">Framing</legend>
+        <label class="cb-radio"><input type="radio" name="cb-policy" value="preserve" data-cb-policy checked> Preserve full content</label>
+        <label class="cb-radio"><input type="radio" name="cb-policy" value="fill" data-cb-policy> Fill 16:9 <span class="hint">(cuts edges)</span></label>
+      </fieldset>
+      <label class="cb-field">
+        <span class="eyebrow">Fit 16:9 background</span>
+        <select class="input input-sm" data-cb-background>
+          <option value="dark">Dark</option>
+          <option value="blur">Blurred picture</option>
+          <option value="black">Black</option>
+        </select>
+      </label>
+      <label class="cb-field" title="Read it in Zoom: Settings → Statistics → Video → Receive → Resolution">
+        <span class="eyebrow">Source quality (Zoom Statistics)</span>
+        <select class="input input-sm" data-cb-source>
+          <option value="unknown">Not checked</option>
+          <option value="360p">640×360 (360p)</option>
+          <option value="540p">960×540 (540p)</option>
+          <option value="720p">1280×720 (720p)</option>
+          <option value="1080p">1920×1080 (1080p)</option>
+        </select>
+      </label>
+    </div>
+    <div class="cb-previews">
+      <figure class="cb-fig">
+        <figcaption class="eyebrow">Zoom screen · detected Zoom UI</figcaption>
+        <div class="cb-shot" data-cb-screen-wrap>
+          <img data-cb-screen alt="Current Zoom screen" hidden>
+          <div class="cb-overlay" data-cb-overlay aria-hidden="true"></div>
+        </div>
+      </figure>
+      <figure class="cb-fig">
+        <figcaption class="eyebrow">YouTube output preview <span class="hint" data-cb-output-size></span></figcaption>
+        <div class="cb-shot cb-shot-out"><img data-cb-output alt="Planned YouTube output frame" hidden></div>
+      </figure>
+    </div>
+    <div class="cb-actions">
+      <button type="button" class="btn btn-ghost btn-sm" data-cb-preview>{{ icon("rotate-cw", "icon-sm") }}Refresh preview</button>
+      <span class="hint">Both images are one frame grabbed now; the output uses the exact filter the encoder will use.</span>
+    </div>
+    <dl class="cb-facts">
+      <div><dt>Source (Zoom receives)</dt><dd data-cb-fact="source">—</dd></div>
+      <div><dt>Meeting picture on screen</dt><dd data-cb-fact="content">—</dd></div>
+      <div><dt>Capture</dt><dd data-cb-fact="capture">—</dd></div>
+      <div><dt>YouTube output</dt><dd data-cb-fact="output">—</dd></div>
+      <div><dt>Content aspect</dt><dd data-cb-fact="ratio">—</dd></div>
+      <div><dt>Scale / bars</dt><dd data-cb-fact="scale">—</dd></div>
+      <div><dt>Zoom UI removed</dt><dd data-cb-fact="removed">—</dd></div>
+      <div><dt>CPU · encoder</dt><dd data-cb-fact="cpu">—</dd></div>
+    </dl>
+    <ul class="cb-warnings" data-cb-warnings></ul>
+  </div>
+  {% endif %}
+</div>

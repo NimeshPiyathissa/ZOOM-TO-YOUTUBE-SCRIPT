@@ -336,6 +336,7 @@ def _validate_zoom_options(options: dict, url: str = "") -> dict:
         restore = None
     plan = options.get("fullscreen_plan")
     plan = {k: v for k, v in plan.items() if k in _FSL_PLAN_KEYS and _json_small(v)} if isinstance(plan, dict) else None
+    clean = _validate_clean_broadcast(options)
     return {
         "passcode": passcode, "bot_name": bot_name, "signin_mode": signin_mode, "join_url": join_url,
         "meeting_kind": meeting_kind,
@@ -358,6 +359,7 @@ def _validate_zoom_options(options: dict, url: str = "") -> dict:
         "fullscreen_capture": fullscreen_capture,
         "fullscreen_restore": restore,
         "fullscreen_plan": plan,
+        **clean,
     }
 
 
@@ -365,7 +367,60 @@ def _validate_zoom_options(options: dict, url: str = "") -> dict:
 # form (which doesn't send these keys) carries them forward instead of silently switching Fullscreen Live off.
 FULLSCREEN_OPTION_KEYS = ("fullscreen_live", "fullscreen_box", "fullscreen_capture", "fullscreen_restore", "fullscreen_plan")
 _FSL_PLAN_KEYS = {"state", "box", "capture_size", "output", "content", "content_ratio", "scale", "bars", "limitations",
-                  "issues", "summary", "filter", "at"}
+                  "issues", "summary", "filter", "at", "chrome_checked", "zoom_ui"}
+
+# Clean Broadcast (app/clean_broadcast.py, set only by /api/zoom/clean-broadcast and its watcher) - carried forward on
+# a normal Zoom form save like Fullscreen Live. The filter goes to ffmpeg, so it is held to the same allow-list here,
+# in lib.sh and in the preview.
+CLEAN_OPTION_KEYS = ("clean_broadcast", "clean_filter", "clean_capture", "clean_plan", "clean_restore",
+                     "clean_policy", "clean_background", "clean_source")
+_CLEAN_PLAN_KEYS = {"state", "label", "policy", "background", "source", "verified", "display", "capture_size", "output",
+                    "content", "content_size", "content_ratio", "removed", "scale", "scaled", "bars", "crop", "magnify",
+                    "warnings", "filter", "broadcast_box", "layout_reason", "summary", "layout", "at", "kept_reason"}
+_BOX_RE = r"\d{1,5}:\d{1,5}:\d{1,5}:\d{1,5}"
+
+
+def _validate_clean_broadcast(options: dict) -> dict:
+    from . import clean_broadcast as cb
+    vf = str(options.get("clean_filter", "") or "")
+    if len(vf) > 1500 or not cb.safe_filter(vf):
+        raise ValidationError("clean_filter contains something the encoder filter allow-list does not accept")
+    capture = str(options.get("clean_capture", "") or "").strip()
+    if capture and not re.fullmatch(r"\d{2,5}x\d{2,5}", capture):
+        raise ValidationError("clean_capture must look like 1920x1080")
+    plan = options.get("clean_plan")
+    plan = ({k: v for k, v in plan.items() if k in _CLEAN_PLAN_KEYS} if isinstance(plan, dict) else None)
+    if plan is not None and len(json.dumps(plan, default=str)) > 16000:
+        plan = None
+    restore = options.get("clean_restore")
+    if isinstance(restore, dict):
+        r = {}
+        for k in ("meeting_only", "meeting_only_auto", "fullscreen_live", "window_fullscreen"):
+            if k in restore:
+                r[k] = bool(restore[k])
+        if restore.get("meeting_only_fit") in config.ZOOM_MEETING_ONLY_FIT_MODES:
+            r["meeting_only_fit"] = restore["meeting_only_fit"]
+        for k in ("meeting_only_region", "fullscreen_box"):
+            if re.fullmatch(_BOX_RE, str(restore.get(k) or "")):
+                r[k] = restore[k]
+        if re.fullmatch(r"\d{2,5}x\d{2,5}", str(restore.get("fullscreen_capture") or "")):
+            r["fullscreen_capture"] = restore["fullscreen_capture"]
+        for k in ("fullscreen_plan", "fullscreen_restore"):
+            if isinstance(restore.get(k), dict) and _json_small(restore[k]):
+                r[k] = restore[k]
+        restore = r
+    else:
+        restore = None
+    return {
+        "clean_broadcast": bool(options.get("clean_broadcast", False)),
+        "clean_filter": vf,
+        "clean_capture": capture,
+        "clean_plan": plan,
+        "clean_restore": restore,
+        "clean_policy": options.get("clean_policy") if options.get("clean_policy") in cb.POLICIES else "preserve",
+        "clean_background": options.get("clean_background") if options.get("clean_background") in cb.BACKGROUNDS else "dark",
+        "clean_source": options.get("clean_source") if options.get("clean_source") in cb.SOURCES else "unknown",
+    }
 
 
 def _json_small(v) -> bool:
@@ -527,7 +582,7 @@ def update_source(source_id: int, name: str, type_: str, url: str, options: dict
     if type_ == "zoom" and existing and existing.get("type") == "zoom":
         prev = existing.get("options") or {}
         options = dict(options)
-        for k in FULLSCREEN_OPTION_KEYS:
+        for k in FULLSCREEN_OPTION_KEYS + CLEAN_OPTION_KEYS:
             if k not in options and k in prev:
                 options[k] = prev[k]
     url, options = validate_source(type_, url, options)

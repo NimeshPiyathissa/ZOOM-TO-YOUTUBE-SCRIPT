@@ -211,7 +211,10 @@ def api(tmp_path, monkeypatch):
     deps._rate_buckets.clear()
     main_mod._fsl_pending.update(content=None, count=0)
     st = {"phase": "STOPPED", "window": dict(WIN, fullscreen=False), "measure": {"ok": True, "region": None, "margins": {}},
-          "window_calls": [], "unit_calls": [], "noted": [], "written": []}
+          "window_calls": [], "unit_calls": [], "noted": [], "written": [],
+          "chrome": {"ok": True, "size": "1920x1080", "bands": {"top": 0, "bottom": 0, "left": 0, "right": 0},
+                     "kinds": {"top": "none", "bottom": "none", "left": "none", "right": "none"},
+                     "content": (0, 0, 1920, 1080), "reason": "No Zoom UI at the screen edges."}}
     monkeypatch.setattr(main_mod, "_FSL_SETTLE_SECONDS", 0)
     monkeypatch.setattr(control, "read_current_source", lambda: {})
     monkeypatch.setattr(control, "write_current_source", lambda s: st["written"].append(s))
@@ -235,6 +238,10 @@ def api(tmp_path, monkeypatch):
     async def meas(*a, **k):
         return dict(st["measure"])
     monkeypatch.setattr(framing, "measure", meas)
+
+    async def chrome(display):
+        return dict(st["chrome"])
+    monkeypatch.setattr(main_mod, "_cb_measure", chrome)
 
     async def no_start(*a, **k):
         raise AssertionError("Fullscreen Live must never start or restart the encoder")
@@ -345,10 +352,44 @@ def test_watcher_only_grows_the_box_after_two_sightings_and_never_restarts(api):
     assert opts(api)["fullscreen_box"] == "0:0:1920:1080"
 
 
-def test_button_is_on_remote_gui_and_live_studio(api):
+def test_button_is_replaced_by_clean_broadcast_on_remote_gui_and_live_studio(api):
+    """Clean Broadcast (tests/test_clean_broadcast.py) supersedes the Fullscreen Live button on both pages; the
+    Fullscreen Live API stays for saved sources and reports honestly."""
     for path in ("/vnc", "/studio"):
         html = api.get(path).text
-        assert "data-fsl-apply" in html and "data-fsl-restore" in html and "Fullscreen Live" in html and "fullscreen-live.js" in html
+        assert "data-fsl-apply" not in html and "fullscreen-live.js" not in html
+        assert "data-cb-apply" in html and "clean-broadcast.js" in html
     src = (REPO / "dashboard" / "static" / "js" / "fullscreen-live.js").read_text(encoding="utf-8")
     for forbidden in ("/api/stream", "/api/broadcast", "go_live", "grant"):
         assert forbidden not in src
+
+
+# ---------------------------------------------------------------- the "Native 16:9 - no borders" bug (2026-11-08)
+
+ZOOM_UI = {"ok": True, "size": "1920x1080", "bands": {"top": 69, "bottom": 76, "left": 4, "right": 4},
+           "kinds": {"top": "zoom_ui", "bottom": "zoom_ui", "left": "zoom_ui", "right": "zoom_ui"},
+           "content": (4, 69, 1912, 935), "reason": "Zoom UI found"}
+
+
+def test_visible_zoom_toolbars_are_never_reported_as_native(api):
+    """Production 2026-11-08: Zoom's grey title bar + toolbar were on screen, cropdetect saw no black, and the
+    dashboard said "Native 16:9 - no borders". With the Zoom-UI check the same screen is 'limited' and says why."""
+    api.st["chrome"] = dict(ZOOM_UI)
+    d = api.post("/api/zoom/fullscreen-live", json={"action": "apply"}, headers=api.csrf).json()
+    assert d["state"] == "limited" and d["plan"]["zoom_ui"] == {"top": 69, "bottom": 76, "left": 4, "right": 4}
+    assert "Zoom's own controls are on screen" in d["message"] and "Clean Broadcast" in d["message"]
+
+
+def test_unmeasurable_zoom_ui_is_not_native_either(api):
+    api.st["chrome"] = {"ok": False, "reason": "blank screen"}
+    d = api.post("/api/zoom/fullscreen-live", json={"action": "apply"}, headers=api.csrf).json()
+    assert d["state"] == "limited" and "not verified" in d["message"]
+
+
+def test_plan_saved_by_the_first_version_is_reported_unverified(api):
+    o = dict(opts(api))
+    o.update(fullscreen_live=True, fullscreen_box="0:0:1920:1080", fullscreen_capture="1920x1080",
+             fullscreen_plan={"state": "native", "box": "0:0:1920:1080", "summary": "Native 1920x1080: ... no borders"})
+    sources.update_source(api.sid, "Class", "zoom", LINK, o)
+    plan = api.get("/api/zoom/fullscreen-live").json()["plan"]
+    assert plan["state"] == "unverified" and "not verified" in plan["summary"]

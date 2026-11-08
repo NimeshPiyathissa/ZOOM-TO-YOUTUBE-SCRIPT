@@ -95,6 +95,10 @@ def validate_updates(updates: dict[str, str]) -> None:
         r = config.RESOLUTION_RANGE
         if not (r["min_w"] <= w <= r["max_w"] and r["min_h"] <= h <= r["max_h"]):
             raise ValidationError(f"RESOLUTION out of allowed range {r}")
+    if updates.get("DISPLAY_SIZE"):
+        m = re.match(r"^(\d{3,4})x(\d{3,4})$", updates["DISPLAY_SIZE"])
+        if not m or not (640 <= int(m.group(1)) <= 3840 and 360 <= int(m.group(2)) <= 2160):
+            raise ValidationError("DISPLAY_SIZE must look like 1928x1225 (640x360 to 3840x2160) or be empty")
     if "FPS" in updates:
         try:
             fps = int(updates["FPS"])

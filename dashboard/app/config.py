@@ -130,6 +130,7 @@ ENV_KEY_RESTART_MAP = {
     "X264_PRESET": ["ffmpeg-stream"],
     "RESOLUTION": ["full-pipeline"],
     "DISPLAY_NUM": ["full-pipeline"],
+    "DISPLAY_SIZE": ["full-pipeline"],
     "TELEGRAM_BOT_TOKEN": [],
     "TELEGRAM_CHAT_ID": [],
 }
@@ -150,6 +151,10 @@ ALL_ENV_KEYS = [
     "ZOOM_LINK", "ZOOM_PASSCODE", "BOT_NAME", "ZOOM_SIGNIN_MODE", "YT_STREAM_KEY",
     "RESOLUTION", "FPS", "VIDEO_BITRATE", "AUDIO_BITRATE", "X264_PRESET", "VNC_PASSWORD", "DISPLAY_NUM",
     "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID",
+    # Virtual screen size when it must differ from RESOLUTION (Clean Broadcast native mode, e.g. 1928x1225 so Zoom's
+    # video area is exactly 1920x1080). Read only by start-xvfb.sh; set by hand in a maintenance window, not by a form.
+    # Listed so a Config save keeps it.
+    "DISPLAY_SIZE",
 ]
 ZOOM_SIGNIN_MODES = {"guest", "google"}
 # Which app actually joins the meeting: the desktop Linux client (existing
