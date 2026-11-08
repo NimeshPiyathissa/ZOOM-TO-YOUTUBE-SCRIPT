@@ -2,13 +2,22 @@
 // and automated VNC authentication. RFB construction/event-wiring itself lives in
 // vnc-embed.js's connectVnc() (shared with the Accounts sign-in panel, the /remote
 // Interact overlay and the global quick-peek overlay) - this file only owns the
-// page-level behaviour on top: the status overlay, auto-reconnect loop, fullscreen
+// page-level behaviour on top: the status overlay, auto-reconnect loop, view
+// modes (Smart Fit / Fit / Fill / 1:1 - geometry in vnc-fit.js), fullscreen
 // toggle and quick actions.
 import { connectVnc, promptText, reconnectDelayMs, CLOSE_AUTH_FAILED } from '/static/js/vnc-embed.js';
+import { DEFAULT_MODE, MODE_LABELS, normalizeMode, computeLayout, describeLayout, measureBars } from '/static/js/vnc-fit.js';
 
 const $ = (id) => document.getElementById(id);
-const target = $("vnc-screen");
+const stage = $("vnc-screen");
+const target = $("vnc-frame");
 const viewport = $("vnc-viewport");
+const device = $("vnc-device");
+const header = document.querySelector(".vnc-head");
+const quickBar = device?.querySelector(".vnc-quick-bar");
+const fitText = $("vnc-fit-text");
+const modeButtons = Array.from(document.querySelectorAll("#vnc-view-modes [data-view]"));
+const resetBtn = $("vnc-btn-reset");
 const badge = $("vnc-badge");
 const badgeText = $("vnc-badge-text");
 const overlay = $("vnc-overlay-msg");
@@ -17,7 +26,6 @@ const overlaySub = $("vnc-overlay-sub");
 const overlayBtn = $("vnc-overlay-btn");
 const spinner = $("vnc-spinner");
 const scaleBtn = $("vnc-btn-scale");
-const scaleText = $("vnc-scale-text");
 const reconnectBtn = $("vnc-btn-reconnect");
 const fullscreenBtn = $("vnc-btn-fullscreen");
 
@@ -29,7 +37,17 @@ const fullscreenBtn = $("vnc-btn-fullscreen");
 let vncPassword = null;
 
 let rfb = null;
-let scaleMode = true;
+const VIEW_KEY = "zs.vnc.view";
+const FB_KEY = "zs.vnc.fb";
+let viewMode = DEFAULT_MODE;
+try { viewMode = normalizeMode(localStorage.getItem(VIEW_KEY)); } catch (err) { /* storage blocked */ }
+// Last framebuffer size seen, so the panel already has the right shape
+// before the first connect. Xvfb :99 is 1920x1080.
+let lastFb = { w: 1920, h: 1080 };
+try {
+  const saved = JSON.parse(localStorage.getItem(FB_KEY) || "null");
+  if (saved && saved.w > 0 && saved.h > 0) lastFb = saved;
+} catch (err) { /* ignore */ }
 let reconnectTimer = null;
 let reconnectAttempt = 0;
 let intentionalDisconnect = false;
@@ -107,7 +125,7 @@ function connect() {
   try {
     rfb = connectVnc(target, {
       path: "/vnc/ws",
-      scaleViewport: scaleMode,
+      scaleViewport: viewMode !== "native",
       qualityLevel: 6,
       showDotCursor: true,
       getPassword: async () => {
@@ -144,6 +162,8 @@ function connect() {
             reconnectTimer = null;
           }
           setStatus("connected");
+          // The framebuffer size is known now (ServerInit): re-fit to it.
+          applyView();
           try { rfb.focus({ preventScroll: true }); } catch (err) { /* older noVNC */ }
           post("/api/vnc/rate", { mode: "fast" }).catch(() => {});
           if (typeof announce === "function") announce("Remote GUI connected");
@@ -216,21 +236,190 @@ overlayBtn?.addEventListener("click", () => {
   connect();
 });
 
-// Controls: Scale mode toggle
-scaleBtn?.addEventListener("click", () => {
-  scaleMode = !scaleMode;
-  if (rfb) {
-    rfb.scaleViewport = scaleMode;
-    // Actual 1:1 is bigger than the box: let it be dragged around rather
-    // than silently cropped to the centre.
-    rfb.clipViewport = !scaleMode;
-    rfb.dragViewport = !scaleMode;
+// ---------------------------------------------------------------- view modes
+// The card (#vnc-viewport) is a slot whose height runs to the bottom of the
+// window; vnc-fit.js turns slot + framebuffer size into the panel, stage and
+// noVNC frame boxes; the result is then read back from the real canvas rect
+// so the status line reports what is on screen, not what was planned.
+// (The old "Fit Window" button toggled fit OFF - its label named the current
+// state - and the card had no definite height, so the canvas pushed the
+// page past the bottom of the window. See vnc-fit.js's header.)
+const BOTTOM_GAP = 16;     // px kept free under the panel (matches --shell-gap)
+const MIN_SLOT_H = 260;
+
+function fbSize() {
+  const w = rfb && rfb._fbWidth, h = rfb && rfb._fbHeight;  // noVNC 1.4 has no public getter
+  if (w > 0 && h > 0 && (w !== lastFb.w || h !== lastFb.h)) {
+    lastFb = { w, h };
+    try { localStorage.setItem(FB_KEY, JSON.stringify(lastFb)); } catch (err) { /* ignore */ }
   }
-  scaleBtn.setAttribute("aria-pressed", String(scaleMode));
-  if (scaleText) scaleText.textContent = scaleMode ? "Fit Window" : "Actual 1:1";
-  scaleBtn.classList.toggle("btn-primary", scaleMode);
-  scaleBtn.classList.toggle("btn-secondary", !scaleMode);
+  return lastFb;
+}
+
+function sizeSlot() {
+  if (isFullscreen()) { viewport.style.removeProperty("--vnc-slot-h"); return; }
+  const top = viewport.getBoundingClientRect().top + window.scrollY;
+  // Phones: the fixed Go Live bar covers the bottom of the window.
+  const dock = document.querySelector(".mobile-bar");
+  const dockH = dock && getComputedStyle(dock).display !== "none" ? window.innerHeight - dock.getBoundingClientRect().top : 0;
+  const h = Math.max(MIN_SLOT_H, Math.floor(window.innerHeight - top - BOTTOM_GAP - Math.max(0, dockH)));
+  viewport.style.setProperty("--vnc-slot-h", h + "px");
+}
+
+function layoutOnce(barH) {
+  const fb = fbSize();
+  // The panel's own border sits inside its box; leaving it out made the
+  // canvas 2 px wider than the stage and clipped the remote screen's edge.
+  const cs = getComputedStyle(device);
+  const bw = (parseFloat(cs.borderLeftWidth) || 0) + (parseFloat(cs.borderRightWidth) || 0);
+  const bh = (parseFloat(cs.borderTopWidth) || 0) + (parseFloat(cs.borderBottomWidth) || 0);
+  const layout = computeLayout({
+    mode: viewMode, slotW: viewport.clientWidth - bw, slotH: viewport.clientHeight - bh,
+    barH, fbW: fb.w, fbH: fb.h, fullscreen: isFullscreen(),
+  });
+  const shrink = viewMode === "smart" && layout.barDocked;
+  device.style.width = shrink ? layout.device.w + bw + "px" : "";
+  device.style.height = shrink ? layout.device.h + bh + "px" : "";
+  device.classList.toggle("bar-overlay", !layout.barDocked);
+  if (!layout.barDocked) device.classList.remove("show-bar");
+  target.style.left = layout.frame.x + "px";
+  target.style.top = layout.frame.y + "px";
+  target.style.width = layout.frame.w + "px";
+  target.style.height = layout.frame.h + "px";
+  return layout;
+}
+
+let lastLayout = null;
+
+function verifyView() {
+  const fb = fbSize();
+  const canvas = target.querySelector("canvas");
+  // Fill crops by design and 1:1 pans, so "bars" are only measured for the fits.
+  const m = canvas && isConnected && viewMode !== "fill" && viewMode !== "native"
+    ? measureBars(stage.getBoundingClientRect(), canvas.getBoundingClientRect()) : null;
+  const msg = lastLayout ? describeLayout(lastLayout, fb.w, fb.h, m) : "";
+  const borders = m ? m.bars : { x: 0, y: 0 };
+  viewport.dataset.bars = `${borders.x},${borders.y}`;
+  viewport.dataset.crop = lastLayout ? `${lastLayout.crop.x},${lastLayout.crop.y}` : "0,0";
+  const cropped = lastLayout?.mode === "fill" && (lastLayout.crop.x > 0 || lastLayout.crop.y > 0);
+  const warn = cropped || borders.x > 1 || borders.y > 1;
+  if (fitText) {
+    fitText.textContent = msg;
+    fitText.title = msg;
+    fitText.classList.toggle("is-warn", warn);
+  }
+  return { msg, warn };
+}
+
+function applyView({ report = false } = {}) {
+  if (!viewport || !device || !target) return Promise.resolve(null);
+  sizeSlot();
+  // The quick bar wraps when the panel narrows, which changes its height,
+  // which changes the panel width again - settle it in a few passes.
+  let barH = quickBar ? quickBar.offsetHeight : 0;
+  let layout = layoutOnce(barH);
+  for (let i = 0; i < 3 && quickBar && layout.barDocked; i += 1) {
+    const h = quickBar.offsetHeight;
+    if (h === barH) break;
+    barH = h;
+    layout = layoutOnce(barH);
+  }
+  lastLayout = layout;
+  const fb = fbSize();
+  viewport.dataset.view = viewMode;
+  viewport.dataset.fb = `${fb.w}x${fb.h}`;
+  if (rfb) {
+    const native = viewMode === "native";
+    try {
+      // 1:1 is bigger than the box: let it be dragged around rather than
+      // silently cropped to the centre.
+      rfb.clipViewport = native;
+      rfb.dragViewport = native;
+      // Assigning re-runs noVNC's autoscale against the frame's new size
+      // right away instead of waiting for its own ResizeObserver.
+      rfb.scaleViewport = !native;
+    } catch (err) { /* rfb torn down */ }
+  }
+  modeButtons.forEach((b) => {
+    const on = b.dataset.view === viewMode;
+    b.classList.toggle("is-active", on);
+    b.setAttribute("aria-pressed", String(on));
+  });
+  // Read back after noVNC has rescaled (its own pass runs in a rAF).
+  return new Promise((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(() => {
+      const res = verifyView();
+      if (report && typeof toast === "function") {
+        if (!isConnected) toast(`${MODE_LABELS[viewMode]} selected - it applies when the remote screen connects`, "info");
+        else toast(res.msg, res.warn ? "warn" : "ok");
+      }
+      resolve(res);
+    }, 30)));
+  });
+}
+
+let relayoutQueued = false;
+function queueRelayout() {
+  if (relayoutQueued) return;
+  relayoutQueued = true;
+  requestAnimationFrame(() => { relayoutQueued = false; applyView(); });
+}
+
+function setViewMode(mode) {
+  viewMode = normalizeMode(mode);
+  try { localStorage.setItem(VIEW_KEY, viewMode); } catch (err) { /* ignore */ }
+  return applyView({ report: true });
+}
+
+modeButtons.forEach((b) => b.addEventListener("click", () => setViewMode(b.dataset.view)));
+
+// Fit Window: re-measure window, panel and framebuffer and fit again. From
+// Fill or 1:1 it goes back to Smart Fit, the fit that never crops.
+scaleBtn?.addEventListener("click", () => {
+  if (viewMode === "fill" || viewMode === "native") setViewMode("smart");
+  else applyView({ report: true });
 });
+
+// Reset: the default view - Smart Fit, out of fullscreen, page at the top.
+resetBtn?.addEventListener("click", async () => {
+  try { localStorage.removeItem(VIEW_KEY); } catch (err) { /* ignore */ }
+  viewMode = DEFAULT_MODE;
+  if (isFullscreen()) {
+    try {
+      if (document.exitFullscreen) await document.exitFullscreen();
+      else if (document.webkitExitFullscreen) await document.webkitExitFullscreen();
+    } catch (err) { /* ignore */ }
+  }
+  window.scrollTo({ top: 0 });
+  applyView({ report: true });
+});
+
+if (typeof ResizeObserver === "function") {
+  // Slot width (sidebar collapse, fullscreen) and header height (toolbar
+  // wrapping moves the slot's top) both change the available area.
+  const ro = new ResizeObserver(queueRelayout);
+  ro.observe(viewport);
+  if (header) ro.observe(header);
+}
+window.addEventListener("resize", queueRelayout);
+
+// Fullscreen Smart Fit: the quick bar floats over the top edge. It shows only
+// when the pointer touches the very top (or a control in it has focus) and
+// hides again once the pointer leaves it - a wider trigger band covered
+// Zoom's own top-left controls every time the pointer passed over them.
+const BAR_REVEAL_PX = 6;
+let barHideTimer = null;
+function showBarBriefly(ms = 2500) {
+  if (!device.classList.contains("bar-overlay")) return;
+  device.classList.add("show-bar");
+  clearTimeout(barHideTimer);
+  barHideTimer = setTimeout(() => device.classList.remove("show-bar"), ms);
+}
+viewport?.addEventListener("pointermove", (e) => {
+  if (device.classList.contains("bar-overlay") && e.clientY - device.getBoundingClientRect().top <= BAR_REVEAL_PX) showBarBriefly();
+});
+quickBar?.addEventListener("pointerenter", () => { if (device.classList.contains("show-bar")) clearTimeout(barHideTimer); });
+quickBar?.addEventListener("pointerleave", () => { if (device.classList.contains("show-bar")) showBarBriefly(600); });
 
 // Controls: Fullscreen toggle
 function isFullscreen() {
@@ -254,6 +443,7 @@ fullscreenBtn?.addEventListener("click", toggleFullscreen);
 function onFullscreenChange() {
   const on = isFullscreen();
   viewport.classList.toggle("is-fullscreen", on);
+  applyView().then(() => { if (on) showBarBriefly(3000); });
   fullscreenBtn?.setAttribute("aria-pressed", String(on));
   fullscreenBtn?.classList.toggle("btn-primary", on);
   fullscreenBtn?.classList.toggle("btn-secondary", !on);
@@ -327,12 +517,6 @@ window.addEventListener("pagehide", () => {
   }
 });
 
-// #vnc-screen's box comes entirely from .vnc-viewport-card's CSS grid
-// (1fr row, see vnc.html) - no JS sizing here. noVNC's own RFB instance
-// (rfb.scaleViewport, set in connect() below) watches that box with its
-// own ResizeObserver and autoscales the real framebuffer into it,
-// letterboxed and centered, on every resize/fullscreen-toggle/orientation
-// change. Do not reintroduce a competing width/height override here.
-
-// Initial connection
+// Initial layout (framebuffer shape from the last visit), then connect.
+applyView();
 connect();

@@ -14,11 +14,20 @@
       <p class="page-desc">Full interactive view and desktop control, securely proxied through this dashboard.</p>
     </div>
     <div class="vnc-toolbar page-actions">
-      <button id="vnc-btn-scale" class="btn btn-secondary btn-sm" aria-pressed="true" title="Toggle fit-to-window scaling">
+      <div class="segmented vnc-view-modes" id="vnc-view-modes" role="group" aria-label="View mode">
+        <button type="button" class="seg-btn" data-view="smart" aria-pressed="true" title="Fit the whole remote screen and shrink the panel to it - no borders, nothing cropped">Smart Fit</button>
+        <button type="button" class="seg-btn" data-view="fit" aria-pressed="false" title="Whole remote screen inside the full panel - borders if the shapes differ">Fit</button>
+        <button type="button" class="seg-btn" data-view="fill" aria-pressed="false" title="Fill the panel - crops the edges of the remote screen when the shapes differ">Fill</button>
+        <button type="button" class="seg-btn" data-view="native" aria-pressed="false" title="Actual pixels - drag to pan">1:1</button>
+      </div>
+      <button id="vnc-btn-scale" class="btn btn-secondary btn-sm" title="Re-measure the window and fit the remote screen to it">
         {{ icon("maximize", "icon-sm") }}<span id="vnc-scale-text">Fit Window</span>
       </button>
-      <button id="vnc-btn-reconnect" class="btn btn-secondary btn-sm" title="Reconnect VNC session">
-        {{ icon("rotate-cw", "icon-sm") }}Reconnect
+      <button id="vnc-btn-reset" class="btn btn-ghost btn-sm" title="Back to the default view (Smart Fit)">
+        {{ icon("refresh-ccw-dot", "icon-sm") }}Reset
+      </button>
+      <button id="vnc-btn-reconnect" class="btn btn-secondary btn-sm btn-icon" aria-label="Reconnect VNC session" title="Reconnect VNC session">
+        {{ icon("rotate-cw") }}
       </button>
       <button id="vnc-btn-fullscreen" class="btn btn-secondary btn-sm btn-icon" aria-label="Toggle Fullscreen" title="Toggle Fullscreen">
         {{ icon("maximize") }}
@@ -26,26 +35,29 @@
     </div>
   </header>
 
-  <div class="vnc-viewport-card" id="vnc-viewport">
-    <div id="vnc-screen" class="vnc-screen-stage"></div>
+  <div class="vnc-viewport-card" id="vnc-viewport" data-view="smart">
+    <div class="vnc-device" id="vnc-device">
+      <div id="vnc-screen" class="vnc-screen-stage"><div id="vnc-frame" class="vnc-frame"></div></div>
 
-    <div id="vnc-overlay-msg" class="vnc-status-overlay">
-      <div class="vnc-status-card">
-        <span class="spinner" id="vnc-spinner"></span>
-        <div class="vnc-status-title" id="vnc-overlay-text">Connecting to remote desktop…</div>
-        <div class="vnc-status-desc" id="vnc-overlay-sub">Connecting via secure WebSocket bridge to display :99</div>
-        <button id="vnc-overlay-btn" class="btn btn-primary btn-sm mt-2" hidden>{{ icon("rotate-cw", "icon-sm") }}Connect Now</button>
+      <div id="vnc-overlay-msg" class="vnc-status-overlay">
+        <div class="vnc-status-card">
+          <span class="spinner" id="vnc-spinner"></span>
+          <div class="vnc-status-title" id="vnc-overlay-text">Connecting to remote desktop…</div>
+          <div class="vnc-status-desc" id="vnc-overlay-sub">Connecting via secure WebSocket bridge to display :99</div>
+          <button id="vnc-overlay-btn" class="btn btn-primary btn-sm mt-2" hidden>{{ icon("rotate-cw", "icon-sm") }}Connect Now</button>
+        </div>
       </div>
-    </div>
 
-    <div class="vnc-quick-bar">
-      <div class="vnc-quick-left">
-        <button class="btn btn-ghost btn-sm" id="vnc-q-zoom" title="Focus Zoom window">{{ icon("focus", "icon-sm") }}Focus Zoom</button>
-        <button class="btn btn-ghost btn-sm" id="vnc-q-browser" title="Open or focus Chrome browser">{{ icon("globe", "icon-sm") }}Browser</button>
-        <button class="btn btn-ghost btn-sm" id="vnc-q-cad" title="Send Ctrl+Alt+Del">{{ icon("keyboard", "icon-sm") }}Ctrl+Alt+Del</button>
-      </div>
-      <div class="vnc-quick-right">
-        <span class="hint m-0 tnum" id="vnc-rate-text">Interactive · 25 fps</span>
+      <div class="vnc-quick-bar">
+        <div class="vnc-quick-left">
+          <button class="btn btn-ghost btn-sm" id="vnc-q-zoom" title="Focus Zoom window">{{ icon("focus", "icon-sm") }}<span class="vnc-q-label">Focus Zoom</span></button>
+          <button class="btn btn-ghost btn-sm" id="vnc-q-browser" title="Open or focus Chrome browser">{{ icon("globe", "icon-sm") }}<span class="vnc-q-label">Browser</span></button>
+          <button class="btn btn-ghost btn-sm" id="vnc-q-cad" title="Send Ctrl+Alt+Del">{{ icon("keyboard", "icon-sm") }}<span class="vnc-q-label">Ctrl+Alt+Del</span></button>
+        </div>
+        <div class="vnc-quick-right">
+          <span class="hint m-0 tnum vnc-fit-text" id="vnc-fit-text" role="status" aria-live="polite"></span>
+          <span class="hint m-0 tnum" id="vnc-rate-text">Interactive · 25 fps</span>
+        </div>
       </div>
     </div>
   </div>

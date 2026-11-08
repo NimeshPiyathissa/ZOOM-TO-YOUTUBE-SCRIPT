@@ -167,43 +167,77 @@
 
 /* ---------------------------------------------------------------- Remote GUI (/vnc)
    Only the chrome around the viewport is styled; the noVNC canvas
-   area stays a plain black device surface. */
-/* The container fills the viewport below the topbar and the card takes
-   whatever the header leaves (flex), so the screen is never short by a
-   guessed header height - no page scroll, no dead strip under the card. */
-.vnc-container { display: flex; flex-direction: column; gap: var(--space-3); width: 100%; min-height: calc(100dvh - var(--topbar-h) - var(--shell-gap) * 2 - var(--space-6) - var(--space-12)); }
+   area stays a plain black device surface.
+   Sizing (static/js/vnc.js + vnc-fit.js): the card is a SLOT with a
+   definite height (--vnc-slot-h, measured to the bottom of the window),
+   and the black panel inside it (.vnc-device) is sized from the real
+   framebuffer. Before this the card had no definite height, so noVNC
+   scaled to the width and the canvas pushed the page past the window. */
+main.page:has(> .vnc-container) { padding-bottom: var(--space-4); }
+.vnc-container { display: flex; flex-direction: column; gap: var(--space-3); width: 100%; min-width: 0; }
 .vnc-container .vnc-head { margin-bottom: 0; flex: none; }
 .vnc-head { margin-bottom: var(--space-2); }
 .vnc-title-group { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-3); }
 .vnc-title-group h1 { margin: 0; }
 .vnc-title-group .program-id { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-faint); letter-spacing: var(--tracking-wide); padding: var(--space-0-5) var(--space-2); border-radius: var(--radius-full); border: var(--border-w) solid var(--border); }
 .vnc-toolbar { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+.vnc-view-modes .seg-btn { white-space: nowrap; }
 .vnc-viewport-card {
-  position: relative; width: 100%;
-  flex: 1 1 auto; min-height: 420px;
+  position: relative; width: 100%; min-width: 0;
+  height: var(--vnc-slot-h, calc(100dvh - 240px)); min-height: 260px;
+  display: flex; align-items: flex-start; justify-content: center;
+}
+.vnc-device {
+  position: relative; width: 100%; height: 100%; max-width: 100%; max-height: 100%;
   background: var(--canvas-black); border-radius: var(--radius-xl); border: var(--border-w) solid var(--glass-border);
   overflow: hidden;
-  /* Grid, not flex: the quick bar sizes to its content and the stage gets
-     the rest (1fr) - noVNC's own autoscale fits the framebuffer inside. */
-  display: grid; grid-template-rows: 1fr auto;
+  /* Grid, not flex: the quick bar sizes to its content and the stage gets the rest. */
+  display: grid; grid-template-rows: minmax(0, 1fr) auto;
   box-shadow: var(--shadow-lg);
 }
-.vnc-viewport-card.is-fullscreen { position: fixed; inset: 0; width: 100vw; height: 100dvh; z-index: var(--z-modal); border-radius: 0; border: none; }
-.vnc-screen-stage { position: relative; min-width: 0; min-height: 0; overflow: hidden; background: var(--canvas-black); display: flex; align-items: center; justify-content: center; }
-.vnc-screen-stage > div { width: 100% !important; height: 100% !important; display: flex !important; align-items: center !important; justify-content: center !important; overflow: hidden !important; }
+.vnc-viewport-card.is-fullscreen { position: fixed; inset: 0; width: 100vw; height: 100dvh; z-index: var(--z-modal); align-items: center; background: var(--canvas-black); }
+.vnc-viewport-card.is-fullscreen .vnc-device { border-radius: 0; border: none; box-shadow: none; }
+.vnc-screen-stage { position: relative; min-width: 0; min-height: 0; overflow: hidden; background: var(--canvas-black); }
+/* noVNC renders into the frame; vnc.js sets its box per view mode (in Fill it
+   is larger than the stage and the stage crops it). */
+.vnc-frame { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
+.vnc-frame > div { width: 100% !important; height: 100% !important; display: flex !important; align-items: center !important; justify-content: center !important; overflow: hidden !important; background: transparent !important; }
 .vnc-screen-stage canvas { outline: none; cursor: default; }
+/* One line, always: if it wrapped, its height would change with the panel
+   width, which Smart Fit derives from the bar height - narrow panels drop
+   labels instead (container queries below). */
+.vnc-device { container-type: inline-size; }
 .vnc-quick-bar {
-  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-2);
-  padding: var(--space-2) var(--space-3); z-index: var(--z-raised);
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: nowrap; gap: var(--space-2);
+  padding: var(--space-2) var(--space-3); z-index: var(--z-raised); min-width: 0; overflow: hidden;
   background: var(--media-panel); border-top: var(--border-w) solid var(--media-line);
 }
 .vnc-quick-bar .btn-ghost { color: var(--media-text-dim); }
 .vnc-quick-bar .btn-ghost:hover { color: var(--on-media); background: var(--media-fill-faint); }
-.vnc-quick-bar .hint { color: var(--media-text-faint); font-family: var(--font-mono); }
-.vnc-quick-left, .vnc-quick-right { display: flex; align-items: center; gap: var(--space-1); flex-wrap: wrap; }
+.vnc-quick-bar .hint { color: var(--media-text-faint); font-family: var(--font-mono); white-space: nowrap; }
+.vnc-quick-left, .vnc-quick-right { display: flex; align-items: center; gap: var(--space-1); flex-wrap: nowrap; min-width: 0; }
+.vnc-quick-left { flex: none; }
+.vnc-quick-right { flex: 1 1 auto; justify-content: flex-end; gap: var(--space-3); overflow: hidden; }
+.vnc-fit-text { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.vnc-fit-text.is-warn { color: var(--warning); }
+@container (max-width: 900px) { .vnc-quick-right #vnc-rate-text { display: none; } }
+@container (max-width: 640px) { .vnc-q-label { display: none; } }
+/* Short windows: the description line costs picture height. */
+@media (max-height: 860px) { .vnc-head .page-desc { display: none; } }
+.vnc-head { align-items: center; }
+/* Fullscreen Smart Fit: the bar floats over the TOP edge and hides itself,
+   so the picture gets the whole screen. Top, not bottom: Zoom's own meeting
+   toolbar lives at the bottom and must stay reachable. */
+.vnc-device.bar-overlay { grid-template-rows: minmax(0, 1fr); }
+.vnc-device.bar-overlay .vnc-quick-bar {
+  position: absolute; top: 0; left: 0; right: 0; border-top: 0; border-bottom: var(--border-w) solid var(--media-line);
+  transform: translateY(-100%); opacity: 0; transition: transform var(--duration-base) var(--ease-out), opacity var(--duration-base) var(--ease-out);
+}
+.vnc-device.bar-overlay.show-bar .vnc-quick-bar, .vnc-device.bar-overlay .vnc-quick-bar:focus-within { transform: none; opacity: 1; }
 @media (max-width: 767px) {
-  .vnc-viewport-card { flex: none; height: 62dvh; min-height: 320px; border-radius: var(--radius-lg); }
+  .vnc-device { border-radius: var(--radius-lg); }
   .vnc-quick-right { display: none; }
 }
-
-.vnc-screen-stage > div { background: transparent !important; }
+@media (prefers-reduced-motion: reduce) {
+  .vnc-device.bar-overlay .vnc-quick-bar { transition: none; }
+}
