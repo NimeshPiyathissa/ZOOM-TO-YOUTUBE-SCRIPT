@@ -311,6 +311,9 @@ SOURCE_ENV_KEYS = (
     # fixed at process start - toggling it while live needs an encoder
     # restart, same as a resolution/bitrate change.
     "ZOOM_MEETING_ONLY", "ZOOM_MEETING_ONLY_FIT", "ZOOM_MEETING_ONLY_REGION",
+    # "Fullscreen Live" (app/fullscreen_live.py): lossless 16:9 box + whole-desktop capture size. Replaces the
+    # Meeting-only filter while on (scripts/lib.sh build_capture_framing). Also baked in at encoder start.
+    "ZOOM_FULLSCREEN_LIVE", "ZOOM_FRAMING_BOX", "ZOOM_CAPTURE_SIZE",
     # "client" (desktop, join-zoom.sh) or "web" (Zoom's web client, run by
     # browser-source.sh against the same ZOOM_LINK/ZOOM_PASSCODE already
     # in .env - no separate secret storage needed). Not secret itself.
@@ -409,6 +412,10 @@ def _source_env_lines(source: dict) -> dict[str, str]:
         # The measured area only counts while Auto is on; Reset (auto off / empty region) goes back to the fixed trims.
         values["ZOOM_MEETING_ONLY_REGION"] = (str(options.get("meeting_only_region", "") or "")
                                               if options.get("meeting_only") and options.get("meeting_only_auto") else "")
+        fsl = bool(options.get("fullscreen_live"))
+        values["ZOOM_FULLSCREEN_LIVE"] = "1" if fsl else "0"
+        values["ZOOM_FRAMING_BOX"] = str(options.get("fullscreen_box", "") or "") if fsl else ""
+        values["ZOOM_CAPTURE_SIZE"] = str(options.get("fullscreen_capture", "") or "") if fsl else ""
         # auto always starts on the client - the fallback watcher (Part 4)
         # flips this to "web" mid-join if the client path never gets off
         # the ground; it never starts on web first.
@@ -1167,7 +1174,7 @@ def zoom_apply_join_options(source: dict) -> dict:
         report["applied"].append("view")
     except ControlError as exc:
         report["view"] = {"want": view, "sent": False, "note": str(exc)}
-    if options.get("meeting_only"):
+    if options.get("meeting_only") or options.get("fullscreen_live"):   # both want the fullscreen, pointer-parked window
         try:
             report["meeting_only"] = zoom_set_meeting_only(True)
             report["applied"].append("meeting_only")
@@ -1208,6 +1215,22 @@ def zoom_set_meeting_only(enabled: bool) -> dict:
         raise ControlError(proc.stderr.decode(errors="replace").strip() or "could not change full-screen state")
     out = proc.stdout.decode(errors="replace").strip()
     return {"applied": True, "enabled": enabled, "detail": out}
+
+
+def zoom_window_geometry() -> dict | None:
+    """Read-only: the Zoom main window's geometry and fullscreen state, via the same script (and sudoers line) as
+    zoom_set_meeting_only(). None when there is no meeting window. Never changes anything."""
+    argv = [SUDO, "-u", config.ZOOMBOT_USER, str(ZOOM_MEETING_ONLY_SCRIPT), "geometry"]
+    proc = run_as_zoombot(argv, timeout=10)
+    if proc.returncode != 0:
+        return None
+    out = proc.stdout.decode(errors="replace").strip().splitlines()
+    vals = dict(part.split("=", 1) for part in (out[-1].split() if out else []) if "=" in part)
+    try:
+        return {"w": int(vals["w"]), "h": int(vals["h"]), "x": int(vals["x"]), "y": int(vals["y"]),
+                "fullscreen": vals.get("fullscreen") == "1", "display": vals.get("display", "")}
+    except (KeyError, ValueError):
+        return None
 
 
 _encoder_filter_changed_at: float = 0.0

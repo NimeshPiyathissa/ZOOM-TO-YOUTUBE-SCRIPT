@@ -38,6 +38,7 @@ from . import status as unit_status
 from . import broadcast
 from . import zoom_state
 from . import framing
+from . import fullscreen_live
 from . import edumix, edumix_api
 from . import recording, settings_store, telegram
 
@@ -928,7 +929,7 @@ async def _apply_join_options_later(source_id: int, timeout: float = 150.0) -> N
         # leaving Zoom's chrome on screen.
         extra: dict = {}
         s = sources_mod.get_source(source_id)
-        if s and (s.get("options") or {}).get("meeting_only"):
+        if s and ((s.get("options") or {}).get("meeting_only") or (s.get("options") or {}).get("fullscreen_live")):
             try:
                 extra["meeting_only"] = await run_in_threadpool(control.zoom_set_meeting_only, True)
             except control.ControlError as exc:
@@ -1101,6 +1102,8 @@ async def api_zoom_meeting_only(request: Request):
     options["meeting_only"] = enabled
     options["meeting_only_fit"] = "fit" if reset else fit
     options["meeting_only_auto"] = auto
+    # Choosing a Meeting-only framing by hand ends Fullscreen Live (it would otherwise keep overriding this choice).
+    options.update(_FSL_CLEARED)
     measure = None
     if not auto:
         options["meeting_only_region"] = ""            # Reset / Auto off / Meeting-only off: back to the fixed trims
@@ -1136,11 +1139,146 @@ async def api_zoom_meeting_only(request: Request):
 
 
 def _framing_key(options: dict):
-    """What the encoder's crop/scale graph is built from; None while Meeting-only is off."""
+    """What the encoder's crop/scale graph is built from; None while Meeting-only and Fullscreen Live are off."""
+    if options.get("fullscreen_live"):
+        return ("fullscreen_live", options.get("fullscreen_box") or "", options.get("fullscreen_capture") or "")
     if not options.get("meeting_only"):
         return None
     region = (options.get("meeting_only_region") or "") if options.get("meeting_only_auto") else ""
     return (options.get("meeting_only_fit", "fit") or "fit", region)
+
+
+# ---------------------------------------------------------------- Fullscreen Live (app/fullscreen_live.py)
+# One click frames the Zoom meeting losslessly for a 1920x1080 broadcast: Zoom window fullscreen + pointer parked
+# (toolbars auto-hide), geometry checked (desktop / window / capture), the whole screen measured, and the smallest
+# 16:9 box around all content saved for the encoder. It NEVER starts, stops or restarts the encoder: the framing is
+# baked into ffmpeg at process start, so a live stream keeps its current framing and `pending_restart` says so - the
+# existing authorized restart (Go Live confirmation grant) is the only way to apply it mid-stream.
+
+_FSL_SETTLE_SECONDS = 1.5
+# Explicit "off" values (not deleted keys): sources.update_source carries absent Fullscreen Live keys forward.
+_FSL_CLEARED = {"fullscreen_live": False, "fullscreen_box": "", "fullscreen_capture": "", "fullscreen_restore": None,
+                "fullscreen_plan": None}
+
+
+def _fsl_output_size() -> tuple[int, int]:
+    size = fullscreen_live.parse_size(env_store.read_parsed().get("RESOLUTION", ""))
+    return size or (1920, 1080)
+
+
+def _fsl_status(options: dict) -> dict:
+    return {"active": bool(options.get("fullscreen_live")), "plan": options.get("fullscreen_plan") or None,
+            "box": options.get("fullscreen_box") or "", "capture": options.get("fullscreen_capture") or "",
+            "restore_available": bool(options.get("fullscreen_restore"))}
+
+
+@app.get("/api/zoom/fullscreen-live")
+async def api_zoom_fullscreen_live_state(request: Request):
+    """Read-only: saved Fullscreen Live state, whether the running encoder is behind it, and the encoder phase."""
+    deps.require_session_api(request)
+    active = sources_mod.get_active_source()
+    zoom = bool(active and active["type"] == "zoom")
+    options = ((sources_mod.get_source(active["id"]) or {}).get("options") or {}) if zoom else {}
+    try:
+        phase = (await run_in_threadpool(control.unit_show, "ffmpeg-stream"))["phase"]
+    except control.ControlError:
+        phase = "UNKNOWN"
+    return {"zoom_source": zoom, **_fsl_status(options), "encoder_phase": phase,
+            "pending_restart": await run_in_threadpool(control.encoder_filter_stale)}
+
+
+@app.post("/api/zoom/fullscreen-live")
+async def api_zoom_fullscreen_live(request: Request):
+    """{action: "apply" | "restore"}. Window + framing only - see the block comment above. Never touches the encoder."""
+    session = deps.require_session_api(request)
+    deps.require_csrf(request, session)
+    deps.require_rate_limit(session, "zoom_fullscreen_live", max_calls=6, window_seconds=30)
+    body = await request.json()
+    action = str(body.get("action", "")).strip().lower()
+    if action not in ("apply", "restore"):
+        raise HTTPException(status_code=400, detail="action must be apply or restore")
+    active = sources_mod.get_active_source()
+    if not active or active["type"] != "zoom":
+        raise HTTPException(status_code=400, detail="Fullscreen Live frames a Zoom meeting - the active source isn't one. "
+                                                    "Pick the Zoom source first.")
+    source = sources_mod.get_source(active["id"])
+    options = dict(source.get("options") or {})
+    was_filter = _framing_key(options)
+    try:
+        phase = (await run_in_threadpool(control.unit_show, "ffmpeg-stream"))["phase"]
+    except control.ControlError:
+        phase = "UNKNOWN"
+    live = phase in (control.PHASE_LIVE, control.PHASE_STARTING)
+
+    if action == "restore":
+        snap = options.get("fullscreen_restore")
+        if not options.get("fullscreen_live") and not snap:
+            return {"ok": True, "action": "restore", "state": "original", "message": "Already on the original framing.",
+                    **_fsl_status(options), "pending_restart": await run_in_threadpool(control.encoder_filter_stale)}
+        snap = snap or {}
+        for k in fullscreen_live.RESTORE_KEYS:
+            if k in snap:
+                options[k] = snap[k]
+            else:
+                options.pop(k, None)
+        options.update(_FSL_CLEARED)
+        window = None
+        if snap.get("window_fullscreen") is False and not options.get("meeting_only"):
+            try:
+                window = await run_in_threadpool(control.zoom_set_meeting_only, False)
+            except control.ControlError as exc:
+                window = {"applied": False, "note": str(exc)}
+        await run_in_threadpool(sources_mod.update_source, active["id"], source["name"], "zoom", source["url"], options, source.get("account_id"))
+        await run_in_threadpool(control.write_current_source, sources_mod.get_source(active["id"]))
+        if _framing_key(options) != was_filter:
+            control.note_encoder_filter_changed()
+        pending = await run_in_threadpool(control.encoder_filter_stale)
+        db.audit(session["username"], "zoom_fullscreen_live", f"restore live={live} pending_restart={pending}", deps.client_ip(request))
+        msg = "Original framing restored."
+        if pending:
+            msg += " The live stream keeps Fullscreen Live framing until its next authorized start or restart."
+        return {"ok": True, "action": "restore", "state": "original", "message": msg, "window": window,
+                **_fsl_status(options), "encoder_phase": phase, "pending_restart": pending}
+
+    # apply
+    window_before = await run_in_threadpool(control.zoom_window_geometry)
+    try:
+        window_result = await run_in_threadpool(control.zoom_set_meeting_only, True)
+    except control.ControlError as exc:
+        window_result = {"applied": False, "note": str(exc)}
+    if window_result.get("applied"):
+        await asyncio.sleep(_FSL_SETTLE_SECONDS)       # let Zoom re-lay out and its toolbars start hiding
+    window_after = await run_in_threadpool(control.zoom_window_geometry)
+    display = fullscreen_live.parse_size(await preview._display_size()) or (1920, 1080)
+    output = await run_in_threadpool(_fsl_output_size)
+    measured = await framing.measure(f"{display[0]}x{display[1]}", 0, 0)
+    p = fullscreen_live.plan(display, output, output, window_after, measured)
+    p["summary"] = fullscreen_live.summary(p)
+    if not options.get("fullscreen_live"):
+        snap = {k: options[k] for k in fullscreen_live.RESTORE_KEYS if k in options}
+        snap["window_fullscreen"] = bool(window_before and window_before.get("fullscreen"))
+        options["fullscreen_restore"] = snap
+    options.update(fullscreen_live=True, fullscreen_box=p["box"], fullscreen_capture=p["capture_size"],
+                   fullscreen_plan={k: p[k] for k in ("state", "box", "capture_size", "output", "content", "content_ratio",
+                                                      "scale", "bars", "limitations", "issues", "summary", "filter")}
+                   | {"at": time.time()})
+    await run_in_threadpool(sources_mod.update_source, active["id"], source["name"], "zoom", source["url"], options, source.get("account_id"))
+    await run_in_threadpool(control.write_current_source, sources_mod.get_source(active["id"]))
+    if _framing_key(options) != was_filter:
+        control.note_encoder_filter_changed()
+    pending = await run_in_threadpool(control.encoder_filter_stale)
+    if live:
+        applies = ("The live stream keeps its current framing - restarting it would interrupt viewers, so that is never "
+                   "done automatically. Fullscreen Live applies at the next authorized start (or an authorized restart).")
+    else:
+        applies = "Ready: the next Go Live uses this framing."
+    db.audit(session["username"], "zoom_fullscreen_live",
+             f"apply state={p['state']} box={p['box']} capture={p['capture_size']} live={live} pending_restart={pending}",
+             deps.client_ip(request))
+    return {"ok": True, "action": "apply", "state": p["state"], "message": p["summary"], "applies": applies,
+            "plan": p, "window": {"before": window_before, "after": window_after, "result": window_result},
+            "measure": {k: measured.get(k) for k in ("ok", "region", "margins", "reason", "samples")},
+            **_fsl_status(options), "encoder_phase": phase, "pending_restart": pending}
 
 
 @app.get("/api/zoom/framing")
@@ -1177,6 +1315,9 @@ async def _framing_watch_tick() -> None:
     start uses it and the UI offers "Restart to apply". It never restarts the encoder by itself."""
     active = sources_mod.get_active_source()
     options = (active or {}).get("options") or {}
+    if active and active["type"] == "zoom" and options.get("fullscreen_live"):
+        await _fsl_watch_tick(active, options)
+        return
     if not active or active["type"] != "zoom" or not options.get("meeting_only") or not options.get("meeting_only_auto"):
         _framing_pending.update(region=None, count=0)
         return
@@ -1202,6 +1343,54 @@ async def _framing_watch_tick() -> None:
     await run_in_threadpool(control.write_current_source, sources_mod.get_source(active["id"]))
     control.note_encoder_filter_changed()
     db.audit(None, "zoom_framing_auto", f"region={new or '-'} (was {current or '-'})")
+
+
+_fsl_pending: dict = {"content": None, "count": 0}
+
+
+async def _fsl_watch_tick(active: dict, options: dict) -> None:
+    """Fullscreen Live: if the meeting now shows content OUTSIDE the saved box (a wider share, a new layout), grow the
+    box to cover old + new content (seen twice in a row) for the NEXT encoder start. Only ever grows - a box can never
+    start cropping content that appeared earlier - and it never restarts the encoder."""
+    display = fullscreen_live.parse_size(await preview._display_size())
+    box = fullscreen_live.parse_box(options.get("fullscreen_box"))
+    if not display or not box:
+        return
+    m = await framing.measure(f"{display[0]}x{display[1]}", 0, 0)
+    if not m.get("ok"):
+        return
+    new = fullscreen_live.parse_box(m.get("region")) or (0, 0, display[0], display[1])
+    bx, by, bw, bh = box
+    nx, ny, nw, nh = new
+    if nx >= bx and ny >= by and nx + nw <= bx + bw and ny + nh <= by + bh:
+        _fsl_pending.update(content=None, count=0)
+        return
+    old = fullscreen_live.parse_box((options.get("fullscreen_plan") or {}).get("content")) or box
+    ux, uy = min(old[0], nx), min(old[1], ny)
+    union = (ux, uy, max(old[0] + old[2], nx + nw) - ux, max(old[1] + old[3], ny + nh) - uy)
+    if _fsl_pending["content"] == union:
+        _fsl_pending["count"] += 1
+    else:
+        _fsl_pending.update(content=union, count=1)
+    if _fsl_pending["count"] < 2:
+        return
+    _fsl_pending.update(content=None, count=0)
+    output = await run_in_threadpool(_fsl_output_size)
+    p = fullscreen_live.plan(display, output, output, None, {"ok": True, "region": "%d:%d:%d:%d" % union})
+    p["summary"] = fullscreen_live.summary(p)
+    source = sources_mod.get_source(active["id"])
+    opts = dict(source.get("options") or {})
+    if not opts.get("fullscreen_live"):
+        return
+    old_box = opts.get("fullscreen_box")
+    opts.update(fullscreen_box=p["box"], fullscreen_plan={**(opts.get("fullscreen_plan") or {}), "box": p["box"],
+                "content": p["content"], "content_ratio": p["content_ratio"], "scale": p["scale"], "bars": p["bars"],
+                "limitations": p["limitations"], "summary": p["summary"], "filter": p["filter"], "state": p["state"],
+                "at": time.time()})
+    await run_in_threadpool(sources_mod.update_source, active["id"], source["name"], "zoom", source["url"], opts, source.get("account_id"))
+    await run_in_threadpool(control.write_current_source, sources_mod.get_source(active["id"]))
+    control.note_encoder_filter_changed()
+    db.audit(None, "zoom_fullscreen_live_grow", f"box={p['box']} (was {old_box}) content={p['content']}")
 
 
 async def _framing_watch_loop() -> None:

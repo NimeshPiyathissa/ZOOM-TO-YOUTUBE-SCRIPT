@@ -1,0 +1,13 @@
+{#- "Fullscreen Live" control (Remote GUI quick bar + Live Studio Program Monitor). Behaviour: static/js/fullscreen-live.js.
+    It frames the Zoom meeting for the broadcast - it never starts, stops or restarts the stream. -#}
+{% from "_macros.html" import icon %}
+<div class="fsl {{ fsl_class|default('') }}" data-fsl-root data-state="idle">
+  <button type="button" class="btn btn-sm fsl-btn" data-fsl-apply
+          title="Frame the Zoom meeting as a true 16:9 picture for YouTube: fullscreen Zoom window, whole picture kept - no zoom, no crop, no stretch. Never starts the stream.">
+    <span class="fsl-ico" aria-hidden="true">{{ icon("maximize", "icon-sm") }}</span><span class="spinner fsl-spin" aria-hidden="true"></span><span class="fsl-label">Fullscreen Live</span>
+  </button>
+  <button type="button" class="btn btn-ghost btn-sm fsl-restore" data-fsl-restore hidden title="Put back the framing that was in use before Fullscreen Live">
+    {{ icon("rotate-cw", "icon-sm") }}<span class="fsl-label">Restore Original</span>
+  </button>
+  <span class="fsl-status" data-fsl-status role="status" aria-live="polite"></span>
+</div>

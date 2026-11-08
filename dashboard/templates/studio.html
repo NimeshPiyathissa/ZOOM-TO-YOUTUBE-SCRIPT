@@ -94,7 +94,10 @@
         <span class="hint tnum panel-preview-age" id="studio-preview-age"></span>
       </div>
     </div>
-    <p class="hint mt-3 mb-0">Passive thumbnail, refreshed every 3 s. For touch control of the desktop, use the Program monitor on <a href="/remote">/remote</a>.</p>
+    <div class="fsl-row">
+      {% include "_fullscreen_live.html" %}
+    </div>
+    <p class="hint mt-3 mb-0">Passive thumbnail, refreshed every 3 s - framed exactly like the broadcast. For touch control of the desktop, use the Program monitor on <a href="/remote">/remote</a>.</p>
   </section>
 
 
@@ -472,4 +475,5 @@
 <script type="application/json" id="schedule-sources-data">{{ sources | tojson }}</script>
 <script src="{{ static_url('js/schedule.js') }}"></script>
 <script src="{{ static_url('js/studio.js') }}"></script>
+<script src="{{ static_url('js/fullscreen-live.js') }}"></script>
 {% endblock %}

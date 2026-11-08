@@ -261,6 +261,57 @@ build_meeting_only_filter() {
   fi
 }
 
+# "Fullscreen Live" framing (dashboard app/fullscreen_live.py decides the box; its fullscreen_filter() is this
+# function's Python twin, pinned to identical strings by tests/test_fullscreen_live.py). The box is the smallest
+# output-shaped area containing all non-black content, so the filter only ever removes black and scales uniformly.
+# An unusable box falls back to the whole capture - this can never crop content. "" = no filter (native 1:1).
+#   args: capture_w capture_h out_w out_h box(x:y:w:h)  ->  $FULLSCREEN_LIVE_FILTER
+build_fullscreen_live_filter() {
+  local W="$1" H="$2" ow="$3" oh="$4" box="${5:-}" x=0 y=0 w h crop=""
+  FULLSCREEN_LIVE_FILTER=""
+  [[ "$W" =~ ^[0-9]+$ && "$H" =~ ^[0-9]+$ && "$ow" =~ ^[0-9]+$ && "$oh" =~ ^[0-9]+$ ]] || return 0
+  w=$W; h=$H
+  if [[ "$box" =~ ^([0-9]+):([0-9]+):([0-9]+):([0-9]+)$ ]]; then
+    local bx=$((10#${BASH_REMATCH[1]})) by=$((10#${BASH_REMATCH[2]})) bw=$((10#${BASH_REMATCH[3]})) bh=$((10#${BASH_REMATCH[4]}))
+    if (( bw > 0 && bh > 0 && bx + bw <= W && by + bh <= H )); then
+      x=$bx; y=$by; w=$bw; h=$bh
+    fi
+  fi
+  if (( x != 0 || y != 0 || w != W || h != H )); then
+    crop="crop=${w}:${h}:${x}:${y},"
+  elif (( W == ow && H == oh )); then
+    return 0
+  fi
+  local d=$(( w * oh - h * ow )); (( d < 0 )) && d=$(( -d ))
+  if (( d * 1000 <= h * ow )); then                  # same shape to within 0.1% (sub-pixel): one uniform scale
+    FULLSCREEN_LIVE_FILTER="${crop}scale=${ow}:${oh}:flags=lanczos,setsar=1"
+  else
+    FULLSCREEN_LIVE_FILTER="${crop}scale=${ow}:${oh}:force_original_aspect_ratio=decrease:flags=lanczos,pad=${ow}:${oh}:(ow-iw)/2:(oh-ih)/2:black,setsar=1"
+  fi
+}
+
+# Capture size + framing filter for the x11grab capture, shared by stream.sh and test-recording.sh so a local test
+# recording is framed exactly like the broadcast. Reads SOURCE_TYPE and the ZOOM_* framing keys of current-source.env.
+#   args: output_size(WxH)  ->  $CAPTURE_SIZE, $CROP_FILTER ("" = none), $FRAMING_NOTE (for the log)
+build_capture_framing() {
+  local res="${1:-1920x1080}"
+  CAPTURE_SIZE="$res"; CROP_FILTER=""; FRAMING_NOTE=""
+  if [[ "${SOURCE_TYPE:-}" == "zoom" && "${ZOOM_FULLSCREEN_LIVE:-0}" == "1" ]]; then
+    # Fullscreen Live replaces Meeting-only: capture the WHOLE desktop the dashboard measured (a capture smaller than
+    # the screen grabs only its top-left corner), then the smallest 16:9 box around all content, uniform scale, no trims.
+    [[ "${ZOOM_CAPTURE_SIZE:-}" =~ ^[0-9]+x[0-9]+$ ]] && CAPTURE_SIZE="$ZOOM_CAPTURE_SIZE"
+    build_fullscreen_live_filter "${CAPTURE_SIZE%x*}" "${CAPTURE_SIZE#*x}" "${res%x*}" "${res#*x}" "${ZOOM_FRAMING_BOX:-}"
+    CROP_FILTER="$FULLSCREEN_LIVE_FILTER"
+    FRAMING_NOTE="Fullscreen Live (box ${ZOOM_FRAMING_BOX:-whole screen}): ${CROP_FILTER:-no filter, native ${CAPTURE_SIZE}}"
+  elif [[ "${SOURCE_TYPE:-}" == "zoom" && "${ZOOM_MEETING_ONLY:-0}" == "1" ]]; then
+    # "Meeting only": cut Zoom's own top/bottom chrome and fit or fill what is left (build_meeting_only_filter).
+    build_meeting_only_filter "${res%x*}" "${res#*x}" "${ZOOM_MEETING_ONLY_FIT:-fit}" "${ZOOM_MEETING_ONLY_TRIM_TOP:-56}" "${ZOOM_MEETING_ONLY_TRIM_BOTTOM:-96}" "${ZOOM_MEETING_ONLY_REGION:-}"
+    CROP_FILTER="$MEETING_ONLY_FILTER"
+    FRAMING_NOTE="Meeting-only (${ZOOM_MEETING_ONLY_FIT:-fit}${ZOOM_MEETING_ONLY_REGION:+, measured area ${ZOOM_MEETING_ONLY_REGION}}): ${CROP_FILTER}"
+  fi
+  return 0
+}
+
 # ------------------------------------------------------------ broadcast authorization + secret-safe logging
 #
 # The encoder may only start when the dashboard has just written a ONE-TIME permission into current-source.env

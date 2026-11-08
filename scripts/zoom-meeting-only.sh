@@ -22,10 +22,12 @@ set -euo pipefail
 export DISPLAY="${DISPLAY:-:99}"
 ACTION="${1:-}"
 
-if [[ "$ACTION" != "on" && "$ACTION" != "off" && "$ACTION" != "park" ]]; then
-  echo "usage: $(basename "$0") on|off|park" >&2
+if [[ "$ACTION" != "on" && "$ACTION" != "off" && "$ACTION" != "park" && "$ACTION" != "geometry" ]]; then
+  echo "usage: $(basename "$0") on|off|park|geometry" >&2
   exit 2
 fi
+# geometry: READ-ONLY report of the meeting window for Fullscreen Live's mismatch check (dashboard
+# control.zoom_window_geometry): "w=.. h=.. x=.. y=.. fullscreen=0|1 display=WxH". Changes nothing.
 
 # The main window, not a dialog: Zoom 7.x keeps the title "Zoom Workplace"
 # at the home screen and (webinars included) in a meeting, so match on the
@@ -56,6 +58,14 @@ park_pointer() {
 
 if [[ "$ACTION" == "park" ]]; then
   park_pointer
+  exit 0
+fi
+
+if [[ "$ACTION" == "geometry" ]]; then
+  read -r gx gy gw gh < <(wmctrl -lG 2>/dev/null | awk -v id="$WID" '$1 == id {print $3, $4, $5, $6; exit}')
+  fs=0; is_fullscreen && fs=1
+  disp="$(xdotool getdisplaygeometry 2>/dev/null | awk '{print $1 "x" $2}')"
+  echo "w=${gw:-0} h=${gh:-0} x=${gx:-0} y=${gy:-0} fullscreen=$fs display=${disp:-unknown}"
   exit 0
 fi
 

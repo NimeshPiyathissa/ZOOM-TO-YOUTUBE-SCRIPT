@@ -222,6 +222,15 @@ main.page:has(> .vnc-container) { padding-bottom: var(--space-4); }
 .vnc-fit-text.is-warn { color: var(--warning); }
 @container (max-width: 900px) { .vnc-quick-right #vnc-rate-text { display: none; } }
 @container (max-width: 640px) { .vnc-q-label { display: none; } }
+/* Fullscreen Live in the quick bar: its status line yields first, then labels, as the panel narrows. */
+.vnc-quick-bar .fsl { margin-right: var(--space-2); }
+.vnc-quick-bar .fsl-status { max-width: 34ch; }
+@container (max-width: 1180px) { .vnc-quick-bar .fsl-status { display: none; } }
+@container (max-width: 560px) { .vnc-quick-bar .fsl .fsl-label { display: none; } }
+/* Fullscreen Live's broadcast frame drawn over the remote screen (vnc.js) - only when it is smaller than the screen. */
+.vnc-broadcast-frame { position: absolute; pointer-events: none; border: 2px dashed var(--accent); border-radius: 2px; box-shadow: 0 0 0 9999px rgb(0 0 0 / 0.28); z-index: 1; }
+.vnc-broadcast-frame[hidden] { display: none; }
+.vnc-broadcast-frame span { position: absolute; top: 4px; left: 6px; font: var(--weight-semibold) var(--text-2xs)/1 var(--font-mono); color: var(--on-media); background: var(--accent-solid); padding: 2px 6px; border-radius: var(--radius-full); }
 /* Short windows: the description line costs picture height. */
 @media (max-height: 860px) { .vnc-head .page-desc { display: none; } }
 .vnc-head { align-items: center; }

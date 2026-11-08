@@ -20,24 +20,32 @@ OUT="$LOG_DIR/test-$(date +%Y%m%d-%H%M%S).mp4"
 # logic. Always capture mode here (x11grab=0, pulse=1), so the watermark
 # image (if any) would be input index 2.
 build_watermark_filter 2
+# Same capture size + framing (Fullscreen Live / Meeting only) the broadcast would use.
+build_capture_framing "$RESOLUTION"
 
 ENCODE_ARGS=(-c:v libx264 -preset veryfast -pix_fmt yuv420p -c:a aac -b:a "${AUDIO_BITRATE}k" -ar 48000 -ac 2)
 INPUT_ARGS=(
-  -f x11grab -video_size "$RESOLUTION" -framerate "$FPS" -draw_mouse 0 -thread_queue_size 1024 -i "$DISPLAY"
+  -f x11grab -video_size "$CAPTURE_SIZE" -framerate "$FPS" -draw_mouse 0 -thread_queue_size 1024 -i "$DISPLAY"
   -f pulse -thread_queue_size 1024 -i zoom_out.monitor
 )
 if [[ -n "$WATERMARK_FILTER" ]]; then
   INPUT_ARGS+=("${WATERMARK_EXTRA_INPUT_ARGS[@]}")
   if [[ "${WATERMARK_MODE:-text}" == "image" ]]; then
-    ENCODE_ARGS+=(-filter_complex "$WATERMARK_FILTER" -map "[vout]" -map "1:a")
+    FILTER_COMPLEX="$WATERMARK_FILTER"
+    [[ -n "$CROP_FILTER" ]] && FILTER_COMPLEX="[0:v]${CROP_FILTER}[zcrop];${FILTER_COMPLEX//\[0:v\]/[zcrop]}"
+    ENCODE_ARGS+=(-filter_complex "$FILTER_COMPLEX" -map "[vout]" -map "1:a")
   else
-    ENCODE_ARGS+=(-vf "$WATERMARK_FILTER")
+    VF="$WATERMARK_FILTER"
+    [[ -n "$CROP_FILTER" ]] && VF="${CROP_FILTER},${VF}"
+    ENCODE_ARGS+=(-vf "$VF")
   fi
 else
   ENCODE_ARGS+=(-af "aresample=async=1:first_pts=0")
+  [[ -n "$CROP_FILTER" ]] && ENCODE_ARGS+=(-vf "$CROP_FILTER")
 fi
 
-log "Recording ${DURATION}s local test to $OUT (watermark: ${WATERMARK_ENABLED:-0})"
+log "Recording ${DURATION}s local test to $OUT (watermark: ${WATERMARK_ENABLED:-0}, capture ${CAPTURE_SIZE} -> ${RESOLUTION})"
+[[ -n "$FRAMING_NOTE" ]] && log "$FRAMING_NOTE"
 /usr/bin/ffmpeg -hide_banner -loglevel info -stats -y \
   "${INPUT_ARGS[@]}" \
   -t "$DURATION" \

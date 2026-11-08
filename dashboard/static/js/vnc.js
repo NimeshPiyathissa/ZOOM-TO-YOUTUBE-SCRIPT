@@ -308,7 +308,41 @@ function verifyView() {
     fitText.title = msg;
     fitText.classList.toggle("is-warn", warn);
   }
+  drawBroadcastFrame();
   return { msg, warn };
+}
+
+// Fullscreen Live (fullscreen-live.js -> "fsl:state"): outline the part of the screen the broadcast will show, so
+// this view and the YouTube output use visibly the same framing. Hidden when the broadcast is the whole screen.
+let fslBox = null;
+window.addEventListener("fsl:state", (e) => {
+  const d = e.detail || {};
+  const parts = String(d.active ? d.box || "" : "").split(":").map(Number);
+  fslBox = parts.length === 4 && parts.every((n) => Number.isFinite(n) && n >= 0) ? parts : null;
+  drawBroadcastFrame();
+});
+
+function drawBroadcastFrame() {
+  let el = $("vnc-broadcast-frame");
+  const canvas = target.querySelector("canvas");
+  const fb = fbSize();
+  const show = fslBox && canvas && isConnected && viewMode !== "native"
+    && !(fslBox[0] === 0 && fslBox[1] === 0 && fslBox[2] >= fb.w && fslBox[3] >= fb.h);
+  if (!show) { if (el) el.hidden = true; return; }
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "vnc-broadcast-frame";
+    el.className = "vnc-broadcast-frame";
+    el.innerHTML = "<span>Broadcast frame</span>";
+    stage.appendChild(el);
+  }
+  const s = stage.getBoundingClientRect(), c = canvas.getBoundingClientRect();
+  const k = c.width / fb.w;
+  el.style.left = `${c.left - s.left + fslBox[0] * k}px`;
+  el.style.top = `${c.top - s.top + fslBox[1] * k}px`;
+  el.style.width = `${fslBox[2] * k}px`;
+  el.style.height = `${fslBox[3] * k}px`;
+  el.hidden = false;
 }
 
 function applyView({ report = false } = {}) {

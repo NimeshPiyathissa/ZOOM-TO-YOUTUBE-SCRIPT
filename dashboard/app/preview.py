@@ -133,11 +133,18 @@ class PreviewManager:
                 src = {}
             self._mo_cache = (now, src)
         src = self._mo_cache[1]
-        if src.get("SOURCE_TYPE") != "zoom" or src.get("ZOOM_MEETING_ONLY") != "1":
+        if src.get("SOURCE_TYPE") != "zoom":
             return ""
         try:
             w, h = (int(v) for v in video_size.split("x"))
         except ValueError:
+            return ""
+        if src.get("ZOOM_FULLSCREEN_LIVE") == "1":
+            # Same box the encoder crops (lib.sh build_capture_framing); a 16:9 preview of the capture's width shows
+            # exactly the broadcast's framing (the box is exact 16:9 and every RESOLUTION preset is 16:9).
+            from . import fullscreen_live
+            return fullscreen_live.fullscreen_filter((w, h), (w, w * 9 // 16 // 2 * 2), src.get("ZOOM_FRAMING_BOX"))
+        if src.get("ZOOM_MEETING_ONLY") != "1":
             return ""
         fit = "fill" if src.get("ZOOM_MEETING_ONLY_FIT") == "fill" else "fit"
         return meeting_only_filter(w, h, fit, _trim(src.get("ZOOM_MEETING_ONLY_TRIM_TOP"), 56),

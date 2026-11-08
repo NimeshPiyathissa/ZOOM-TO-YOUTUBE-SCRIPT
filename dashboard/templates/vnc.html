@@ -50,6 +50,7 @@
 
       <div class="vnc-quick-bar">
         <div class="vnc-quick-left">
+          {% with fsl_class="fsl-in-bar" %}{% include "_fullscreen_live.html" %}{% endwith %}
           <button class="btn btn-ghost btn-sm" id="vnc-q-zoom" title="Focus Zoom window">{{ icon("focus", "icon-sm") }}<span class="vnc-q-label">Focus Zoom</span></button>
           <button class="btn btn-ghost btn-sm" id="vnc-q-browser" title="Open or focus Chrome browser">{{ icon("globe", "icon-sm") }}<span class="vnc-q-label">Browser</span></button>
           <button class="btn btn-ghost btn-sm" id="vnc-q-cad" title="Send Ctrl+Alt+Del">{{ icon("keyboard", "icon-sm") }}<span class="vnc-q-label">Ctrl+Alt+Del</span></button>
@@ -64,5 +65,6 @@
 </div>
 {% endblock %}
 {% block scripts %}
+<script src="{{ static_url('js/fullscreen-live.js') }}"></script>
 <script type="module" src="{{ static_url('js/vnc.js') }}"></script>
 {% endblock %}

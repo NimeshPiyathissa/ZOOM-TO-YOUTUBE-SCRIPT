@@ -54,6 +54,8 @@ LOG_FILE="$LOG_DIR/ffmpeg.log"
 # ---------------------------------------------------------------- input args
 
 INPUT_ARGS=()
+CROP_FILTER=""
+FRAMING_NOTE=""
 
 if [[ "$SOURCE_TYPE" == "direct" ]]; then
   if [[ -z "${DIRECT_URL:-}" ]]; then
@@ -84,14 +86,17 @@ if [[ "$SOURCE_TYPE" == "direct" ]]; then
 
   log "Starting FFmpeg (direct input, mode=${DIRECT_MODE:-reencode}): $DIRECT_URL"
 else
+  # Capture size + framing filter (Fullscreen Live / Meeting only), shared with test-recording.sh - see lib.sh.
+  # Every other source/mode captures exactly RESOLUTION, unfiltered, as before.
+  build_capture_framing "$RESOLUTION"
   INPUT_ARGS=(
-    -f x11grab -video_size "$RESOLUTION" -framerate "$FPS" -draw_mouse 0 \
+    -f x11grab -video_size "$CAPTURE_SIZE" -framerate "$FPS" -draw_mouse 0 \
       -thread_queue_size 1024 -use_wallclock_as_timestamps 1 -i "$DISPLAY"
     -f pulse -thread_queue_size 1024 -use_wallclock_as_timestamps 1 -i zoom_out.monitor
   )
   WATERMARK_INPUT_IDX=2
   AUDIO_MAP="1:a"
-  log "Starting FFmpeg (capture, source=${SOURCE_TYPE}): ${RESOLUTION}@${FPS} v=${VIDEO_BITRATE}k a=${AUDIO_BITRATE}k preset=${X264_PRESET}"
+  log "Starting FFmpeg (capture, source=${SOURCE_TYPE}): ${CAPTURE_SIZE} -> ${RESOLUTION}@${FPS} v=${VIDEO_BITRATE}k a=${AUDIO_BITRATE}k preset=${X264_PRESET}"
 fi
 
 # Part 4: builds $WATERMARK_FILTER/$WATERMARK_EXTRA_INPUT_ARGS from the
@@ -110,16 +115,10 @@ if [[ -n "$WATERMARK_FILTER" && "$SOURCE_TYPE" == "direct" && "${DIRECT_MODE:-re
   log "Watermark is enabled but DIRECT_MODE=copy can't carry a burned-in filter - re-encoding this run instead"
 fi
 
-# "Meeting only" full-frame mode: cut Zoom's own top/bottom chrome out of
-# the output and fit or fill what is left (see lib.sh's
-# build_meeting_only_filter). Changing it needs an encoder restart, which
-# the dashboard offers when the stream is live.
-CROP_FILTER=""
-if [[ "$SOURCE_TYPE" == "zoom" && "${ZOOM_MEETING_ONLY:-0}" == "1" ]]; then
-  build_meeting_only_filter "${RESOLUTION%x*}" "${RESOLUTION#*x}" "${ZOOM_MEETING_ONLY_FIT:-fit}"     "${ZOOM_MEETING_ONLY_TRIM_TOP:-56}" "${ZOOM_MEETING_ONLY_TRIM_BOTTOM:-96}" "${ZOOM_MEETING_ONLY_REGION:-}"
-  CROP_FILTER="$MEETING_ONLY_FILTER"
-  log "Meeting-only (${ZOOM_MEETING_ONLY_FIT:-fit}${ZOOM_MEETING_ONLY_REGION:+, measured area ${ZOOM_MEETING_ONLY_REGION}}): ${CROP_FILTER}"
-fi
+# Framing - "Fullscreen Live" (lossless 16:9 box) or "Meeting only" (trim Zoom's chrome, fit/fill) - was decided
+# together with the capture size above (lib.sh build_capture_framing). It is baked into ffmpeg's filter graph at
+# process start, so changing it needs an encoder restart, which the dashboard offers when the stream is live.
+[[ -n "$FRAMING_NOTE" ]] && log "$FRAMING_NOTE"
 
 # ---------------------------------------------------------------- encode args
 

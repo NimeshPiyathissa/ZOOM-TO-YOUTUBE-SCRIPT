@@ -314,6 +314,28 @@ def _validate_zoom_options(options: dict, url: str = "") -> dict:
     last_join_method = options.get("last_join_method") or ""
     if last_join_method not in config.ZOOM_JOIN_MODES:
         last_join_method = ""
+    # Fullscreen Live (app/fullscreen_live.py, set only by /api/zoom/fullscreen-live and its watcher).
+    fullscreen_box = str(options.get("fullscreen_box", "") or "").strip()
+    if fullscreen_box and not re.fullmatch(r"\d{1,5}:\d{1,5}:\d{1,5}:\d{1,5}", fullscreen_box):
+        raise ValidationError("fullscreen_box must look like x:y:w:h")
+    fullscreen_capture = str(options.get("fullscreen_capture", "") or "").strip()
+    if fullscreen_capture and not re.fullmatch(r"\d{2,5}x\d{2,5}", fullscreen_capture):
+        raise ValidationError("fullscreen_capture must look like 1920x1080")
+    restore = options.get("fullscreen_restore")
+    if isinstance(restore, dict):
+        clean = {}
+        for k in ("meeting_only", "meeting_only_auto", "window_fullscreen"):
+            if k in restore:
+                clean[k] = bool(restore[k])
+        if restore.get("meeting_only_fit") in config.ZOOM_MEETING_ONLY_FIT_MODES:
+            clean["meeting_only_fit"] = restore["meeting_only_fit"]
+        if re.fullmatch(r"\d{1,5}:\d{1,5}:\d{1,5}:\d{1,5}", str(restore.get("meeting_only_region") or "")):
+            clean["meeting_only_region"] = restore["meeting_only_region"]
+        restore = clean
+    else:
+        restore = None
+    plan = options.get("fullscreen_plan")
+    plan = {k: v for k, v in plan.items() if k in _FSL_PLAN_KEYS and _json_small(v)} if isinstance(plan, dict) else None
     return {
         "passcode": passcode, "bot_name": bot_name, "signin_mode": signin_mode, "join_url": join_url,
         "meeting_kind": meeting_kind,
@@ -331,7 +353,26 @@ def _validate_zoom_options(options: dict, url: str = "") -> dict:
         "meeting_only_fit": meeting_only_fit,
         "meeting_only_auto": bool(options.get("meeting_only_auto", False)),
         "meeting_only_region": meeting_only_region,
+        "fullscreen_live": bool(options.get("fullscreen_live", False)),
+        "fullscreen_box": fullscreen_box,
+        "fullscreen_capture": fullscreen_capture,
+        "fullscreen_restore": restore,
+        "fullscreen_plan": plan,
     }
+
+
+# Fullscreen Live state lives on the Zoom source but is only ever changed by its own API: a normal save of the Zoom
+# form (which doesn't send these keys) carries them forward instead of silently switching Fullscreen Live off.
+FULLSCREEN_OPTION_KEYS = ("fullscreen_live", "fullscreen_box", "fullscreen_capture", "fullscreen_restore", "fullscreen_plan")
+_FSL_PLAN_KEYS = {"state", "box", "capture_size", "output", "content", "content_ratio", "scale", "bars", "limitations",
+                  "issues", "summary", "filter", "at"}
+
+
+def _json_small(v) -> bool:
+    try:
+        return len(json.dumps(v)) <= 4000
+    except (TypeError, ValueError):
+        return False
 
 
 def _validate_webpage_options(options: dict) -> dict:
@@ -481,7 +522,14 @@ def _merge_masked(existing: dict | None, type_: str, url: str, options: dict) ->
 
 def update_source(source_id: int, name: str, type_: str, url: str, options: dict, account_id=None) -> None:
     name = _validate_name(name)
-    url, options = _merge_masked(get_source(source_id), type_, url, options)
+    existing = get_source(source_id)
+    url, options = _merge_masked(existing, type_, url, options)
+    if type_ == "zoom" and existing and existing.get("type") == "zoom":
+        prev = existing.get("options") or {}
+        options = dict(options)
+        for k in FULLSCREEN_OPTION_KEYS:
+            if k not in options and k in prev:
+                options[k] = prev[k]
     url, options = validate_source(type_, url, options)
     account_id = _validate_account_id(account_id)
     with db.get_conn() as conn:
