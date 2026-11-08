@@ -307,10 +307,11 @@ clean_filter_ok() {
 
 # Capture size + framing filter for the x11grab capture, shared by stream.sh and test-recording.sh so a local test
 # recording is framed exactly like the broadcast. Reads SOURCE_TYPE and the ZOOM_* framing keys of current-source.env.
-#   args: output_size(WxH)  ->  $CAPTURE_SIZE, $CROP_FILTER ("" = none), $FRAMING_NOTE (for the log)
+#   args: output_size(WxH)  ->  $CAPTURE_SIZE, $CROP_FILTER ("" = none), $FRAMING_NOTE (for the log),
+#                               $COLOR_TAG_ARGS (encoder colour tags matching the filter's BT.709 conversion, or empty)
 build_capture_framing() {
   local res="${1:-1920x1080}"
-  CAPTURE_SIZE="$res"; CROP_FILTER=""; FRAMING_NOTE=""
+  CAPTURE_SIZE="$res"; CROP_FILTER=""; FRAMING_NOTE=""; COLOR_TAG_ARGS=()
   if [[ "${SOURCE_TYPE:-}" == "zoom" && "${ZOOM_CLEAN_BROADCAST:-0}" == "1" ]]; then
     # Clean Broadcast: capture the whole desktop the dashboard measured and apply ITS filter (Zoom UI cut away, picture
     # fitted with one uniform scale). The same string drives the Live Studio preview. A rejected filter falls back to
@@ -344,6 +345,11 @@ build_capture_framing() {
     build_meeting_only_filter "${res%x*}" "${res#*x}" "${ZOOM_MEETING_ONLY_FIT:-fit}" "${ZOOM_MEETING_ONLY_TRIM_TOP:-56}" "${ZOOM_MEETING_ONLY_TRIM_BOTTOM:-96}" "${ZOOM_MEETING_ONLY_REGION:-}"
     CROP_FILTER="$MEETING_ONLY_FILTER"
     FRAMING_NOTE="Meeting-only (${ZOOM_MEETING_ONLY_FIT:-fit}${ZOOM_MEETING_ONLY_REGION:+, measured area ${ZOOM_MEETING_ONLY_REGION}}): ${CROP_FILTER}"
+  fi
+  # The Clean Broadcast/Output filters end in one explicit BT.709 (limited range) conversion; tag the stream to match so
+  # YouTube shows the colours as captured. Other modes keep ffmpeg's default conversion and no tags, exactly as before.
+  if [[ "$CROP_FILTER" == *"out_color_matrix=bt709"* ]]; then
+    COLOR_TAG_ARGS=(-colorspace bt709 -color_primaries bt709 -color_trc bt709 -color_range tv)
   fi
   return 0
 }

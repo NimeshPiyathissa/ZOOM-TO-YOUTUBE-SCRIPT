@@ -136,6 +136,7 @@ else
       -b:v "${VIDEO_BITRATE}k" -maxrate "${VIDEO_BITRATE}k" -bufsize "${BUFSIZE}k"
     -c:a aac -b:a "${AUDIO_BITRATE}k" -ar 48000 -ac 2
   )
+  ENCODE_ARGS+=(${COLOR_TAG_ARGS[@]+"${COLOR_TAG_ARGS[@]}"})   # BT.709 tags when the framing filter converted to BT.709 (lib.sh)
 fi
 
 if [[ -n "$WATERMARK_FILTER" ]]; then

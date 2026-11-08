@@ -1,0 +1,22 @@
+/* ---------------------------------------------------------------- Output page (templates/output.html) */
+.out-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 460px), 1fr)); gap: var(--space-4); align-items: start; }
+.out-mode, .out-preview { min-width: 0; }
+.out-modes, .out-presets { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: var(--space-2); margin-bottom: var(--space-3); }
+.out-mode-card, .out-preset {
+  display: grid; gap: var(--space-1); text-align: left; padding: var(--space-3); cursor: pointer; min-width: 0;
+  border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-2); color: var(--text);
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.out-mode-card:hover, .out-preset:hover { border-color: var(--border-strong); }
+.out-mode-card:focus-visible, .out-preset:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--accent-ring); }
+.out-mode-card[aria-checked="true"], .out-preset[aria-checked="true"] { border-color: var(--accent-solid); box-shadow: 0 0 0 1px var(--accent-solid), 0 0 0 4px var(--accent-tint); }
+.out-mode-danger[aria-checked="true"] { border-color: var(--danger); box-shadow: 0 0 0 1px var(--danger), 0 0 0 4px var(--danger-tint); }
+.out-mode-name { font-weight: 600; font-size: var(--text-sm); display: inline-flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+.out-mode-desc { font-size: var(--text-xs); color: var(--text-dim); line-height: 1.45; }
+.out-badge { font-size: 10px; font-weight: 600; letter-spacing: .02em; padding: 1px 6px; border-radius: 999px; background: var(--accent-tint); color: var(--accent-solid); }
+.out-badge-danger { background: var(--danger-tint); color: var(--danger); }
+.out-row { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; margin-bottom: var(--space-3); }
+.out-actions { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; margin-bottom: var(--space-2); }
+.out-pill { font-size: var(--text-xs); color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 40ch; }
+.out-grid[data-state="clean"] .out-pill, .out-grid[data-state="composed"] .out-pill { color: var(--success); }
+.out-grid[data-state="unverified"] .out-pill, .out-grid[data-state="cropped"] .out-pill, .out-grid[data-state="fit"] .out-pill { color: var(--warning); }

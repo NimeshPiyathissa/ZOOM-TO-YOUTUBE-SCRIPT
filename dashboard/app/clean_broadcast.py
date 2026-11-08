@@ -21,12 +21,16 @@ from __future__ import annotations
 
 import re
 
-POLICIES = ("preserve", "fill")
+POLICIES = ("preserve", "fill", "fit")          # UI names: Auto, Fill (crops), Fit (whole screen)
 BACKGROUNDS = ("dark", "blur", "black")
 DARK_COLOR = "0x0B0D10"
 SAME_SHAPE = 0.002           # aspect difference below 0.2% = 2 px on 1080p: one uniform scale to the exact output size
 BAR_TOLERANCE = 2            # px of rounding a "no borders" frame may have
 UPSCALE_NOTE = 1.05          # captured picture enlarged more than 5% -> mention it
+NATIVE_MAX = 1.06            # a picture that already fits within 6% of the output is placed 1:1 (no resampling = sharpest)
+# One colour conversion, at the very end: everything before it stays in the capture's RGB; YouTube expects BT.709 HD
+# video in limited range, and lib.sh tags the encoder accordingly whenever this tail is present.
+COLOR_TAIL = "scale=out_color_matrix=bt709:out_range=tv:flags=lanczos,format=yuv420p"
 LOW_SOURCE_X = 1.5           # source enlarged more than this -> visible softness, warn
 SOURCES = {"unknown": None, "360p": (640, 360), "540p": (960, 540), "720p": (1280, 720), "1080p": (1920, 1080)}
 
@@ -60,15 +64,19 @@ def _even(v: float) -> int:
     return max(2, int(round(v / 2)) * 2)
 
 
-def _bg_graph(background: str, crop: str, sw: int, sh: int, ow: int, oh: int, px: int, py: int) -> str:
+def _bg_graph(background: str, crop: str, sw: int, sh: int, ow: int, oh: int, px: int, py: int, resample: bool) -> str:
+    front = f"scale={sw}:{sh}:flags=lanczos" if resample else "null"
     if background == "blur":
-        # Small blurred copy behind (cheap: blur at 384x216, then one upscale), real picture on top, untouched.
+        # Blurred, darkened, extended copy of the picture behind it (cheap: blurred at 384x216, fast bilinear scaling - it
+        # is blurred anyway; ~0.3 vCPU less than bicubic at 1080p30, measured on production); the
+        # real picture sits on top, untouched. Composited in planar RGB so the only colour conversion is COLOR_TAIL.
         return (f"{crop}split=2[cbfg][cbbg];"
-                "[cbbg]scale=384:216:force_original_aspect_ratio=increase,crop=384:216,boxblur=10:2,"
-                f"eq=brightness=-0.16:saturation=0.75,scale={ow}:{oh}[cbback];"
-                f"[cbfg]scale={sw}:{sh}:flags=lanczos[cbfront];[cbback][cbfront]overlay={px}:{py},setsar=1")
+                "[cbbg]scale=384:216:force_original_aspect_ratio=increase:flags=fast_bilinear,crop=384:216,boxblur=10:2,"
+                f"eq=brightness=-0.16:saturation=0.75,scale={ow}:{oh}:flags=fast_bilinear,format=gbrp[cbback];"
+                f"[cbfg]{front},format=gbrp[cbfront];[cbback][cbfront]overlay={px}:{py}:format=gbrp,setsar=1,{COLOR_TAIL}")
     color = "black" if background == "black" else DARK_COLOR
-    return f"{crop}scale={sw}:{sh}:flags=lanczos,pad={ow}:{oh}:{px}:{py}:color={color},setsar=1"
+    lead = f"{front}," if resample else ""
+    return f"{crop}{lead}pad={ow}:{oh}:{px}:{py}:color={color},setsar=1,{COLOR_TAIL}"
 
 
 def build_filter(capture: tuple[int, int], output: tuple[int, int], content: tuple[int, int, int, int],
@@ -90,19 +98,24 @@ def build_filter(capture: tuple[int, int], output: tuple[int, int], content: tup
         lost["lost_pct"] = round(100 - (100 - lost["horizontal_pct"]) * (100 - lost["vertical_pct"]) / 100, 1)
     crop = "" if (x, y, w, h) == (0, 0, W, H) else f"crop={w}:{h}:{x}:{y},"
     scale = min(ow / w, oh / h)
+    resample = True
     if abs(w * oh - h * ow) <= SAME_SHAPE * h * ow:
         sw, sh = ow, oh
+    elif policy != "fill" and w <= ow and h <= oh and scale <= NATIVE_MAX:
+        sw, sh, scale, resample = w, h, 1.0, False             # near-native: 1:1 pixels, centred (no resample blur)
     else:
         sw, sh = min(ow, _even(w * scale)), min(oh, _even(h * scale))
     px, py = (ow - sw) // 2, (oh - sh) // 2
     if (sw, sh) == (ow, oh):
         if (w, h) == (ow, oh):
-            vf = crop.rstrip(",")                               # exact size: pure crop, no resampling at all
+            vf = f"{crop}{COLOR_TAIL}"                          # exact size: pure crop, no resampling at all
         else:
-            vf = f"{crop}scale={ow}:{oh}:flags=lanczos,setsar=1"
+            # one swscale pass does the resize AND the BT.709 conversion
+            vf = f"{crop}scale={ow}:{oh}:flags=lanczos:out_color_matrix=bt709:out_range=tv,format=yuv420p,setsar=1"
     else:
-        vf = _bg_graph(background, crop, sw, sh, ow, oh, px, py)
+        vf = _bg_graph(background, crop, sw, sh, ow, oh, px, py, resample)
     return {"filter": vf, "box": (x, y, w, h), "scaled": (sw, sh), "offset": (px, py), "scale": round(scale, 3),
+            "resampled": resample and (sw, sh) != (w, h),
             "bars": {"left": px, "right": ow - sw - px, "top": py, "bottom": oh - sh - py}, "crop": lost}
 
 
@@ -115,7 +128,15 @@ def plan(display: tuple[int, int], output: tuple[int, int], layout: dict | None,
     background = background if background in BACKGROUNDS else "dark"
     warnings: list[dict] = []
     verified = bool(layout and layout.get("ok") and _size(layout) == (W, H))
-    if verified:
+    if policy == "fit":
+        # Fit: the whole captured screen, nothing removed (the safe fallback). Zoom's UI stays visible if it is there.
+        content = (0, 0, W, H)
+        removed = {k: {"px": 0, "kind": "kept"} for k in ("top", "bottom", "left", "right")}
+        if verified and any(layout["kinds"][k] == "zoom_ui" for k in layout["kinds"]):
+            warnings.append({"code": "fit_shows_ui", "level": "info",
+                             "text": "Fit shows the whole screen, so Zoom's title bar and toolbar are part of the picture. "
+                                     "Auto removes them without cropping the meeting."})
+    elif verified:
         content = tuple(layout["content"])
         removed = {k: {"px": layout["bands"][k], "kind": layout["kinds"][k]} for k in ("top", "bottom", "left", "right")}
     else:
@@ -166,7 +187,10 @@ def plan(display: tuple[int, int], output: tuple[int, int], layout: dict | None,
     if layout and layout.get("panel_suspected"):
         warnings.append({"code": "panel_open", "level": "warn", "text": "A Zoom panel seems to be open - close it."})
 
-    if not verified:
+    if policy == "fit":
+        state = "fit"
+        label = "Fit · whole screen" + ("" if no_bars else f" on {background} background")
+    elif not verified:
         state, label = "unverified", "Not verified · whole screen framed"
     elif g["crop"]["lost_pct"] > 0:
         state, label = "cropped", f"Fill 16:9 · cuts {g['crop']['lost_pct']}%"
@@ -179,6 +203,7 @@ def plan(display: tuple[int, int], output: tuple[int, int], layout: dict | None,
             "verified": verified, "display": f"{W}x{H}", "capture_size": f"{W}x{H}", "output": f"{ow}x{oh}",
             "content": "%d:%d:%d:%d" % content, "content_size": f"{w}x{h}", "content_ratio": ratio_name(w, h),
             "removed": removed, "scale": g["scale"], "scaled": "%dx%d" % g["scaled"], "bars": bars,
+            "resampled": g["resampled"],
             "crop": g["crop"], "magnify": magnify, "warnings": warnings, "filter": g["filter"],
             "broadcast_box": "%d:%d:%d:%d" % g["box"], "layout_reason": (layout or {}).get("reason", "")}
 
@@ -199,6 +224,10 @@ def summary(p: dict) -> str:
     if p["state"] == "composed":
         return (f"Clean: Zoom UI removed; the whole {p['content_ratio']} picture is kept and centred on a {p['background']} "
                 f"background ({max(p['bars'].values())} px bars) - nothing cropped, nothing stretched.")
+    if p["state"] == "fit":
+        return (f"Fit: the whole {p['display']} screen is shown in {p['output']}"
+                + ("" if max(p["bars"].values()) <= BAR_TOLERANCE else f" on a {p['background']} background")
+                + " - nothing cropped, nothing stretched (Zoom's own UI included).")
     if p["state"] == "cropped":
         return f"Fill 16:9: Zoom UI removed, but {p['crop']['lost_pct']}% of the picture is cut to fill the frame."
     return "Not verified: " + (p["warnings"][0]["text"] if p["warnings"] else "the screen could not be measured.")

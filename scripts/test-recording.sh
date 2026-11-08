@@ -23,7 +23,13 @@ build_watermark_filter 2
 # Same capture size + framing (Fullscreen Live / Meeting only) the broadcast would use.
 build_capture_framing "$RESOLUTION"
 
-ENCODE_ARGS=(-c:v libx264 -preset veryfast -pix_fmt yuv420p -c:a aac -b:a "${AUDIO_BITRATE}k" -ar 48000 -ac 2)
+# Same video encoder settings as the broadcast (stream.sh), so a test recording shows the real quality and CPU cost.
+VIDEO_BITRATE="${VIDEO_BITRATE:-6000}"
+X264_PRESET="${X264_PRESET:-veryfast}"
+GOP=$((FPS * 2))
+ENCODE_ARGS=(-c:v libx264 -preset "$X264_PRESET" -pix_fmt yuv420p -g "$GOP" -keyint_min "$GOP" -sc_threshold 0
+             -b:v "${VIDEO_BITRATE}k" -maxrate "${VIDEO_BITRATE}k" -bufsize "$((VIDEO_BITRATE * 2))k"
+             ${COLOR_TAG_ARGS[@]+"${COLOR_TAG_ARGS[@]}"} -c:a aac -b:a "${AUDIO_BITRATE}k" -ar 48000 -ac 2)
 INPUT_ARGS=(
   -f x11grab -video_size "$CAPTURE_SIZE" -framerate "$FPS" -draw_mouse 0 -thread_queue_size 1024 -i "$DISPLAY"
   -f pulse -thread_queue_size 1024 -i zoom_out.monitor

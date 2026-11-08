@@ -376,7 +376,8 @@ CLEAN_OPTION_KEYS = ("clean_broadcast", "clean_filter", "clean_capture", "clean_
                      "clean_policy", "clean_background", "clean_source")
 _CLEAN_PLAN_KEYS = {"state", "label", "policy", "background", "source", "verified", "display", "capture_size", "output",
                     "content", "content_size", "content_ratio", "removed", "scale", "scaled", "bars", "crop", "magnify",
-                    "warnings", "filter", "broadcast_box", "layout_reason", "summary", "layout", "at", "kept_reason"}
+                    "warnings", "filter", "broadcast_box", "layout_reason", "summary", "layout", "at", "kept_reason",
+                    "resampled"}
 _BOX_RE = r"\d{1,5}:\d{1,5}:\d{1,5}:\d{1,5}"
 
 
@@ -418,7 +419,7 @@ def _validate_clean_broadcast(options: dict) -> dict:
         "clean_plan": plan,
         "clean_restore": restore,
         "clean_policy": options.get("clean_policy") if options.get("clean_policy") in cb.POLICIES else "preserve",
-        "clean_background": options.get("clean_background") if options.get("clean_background") in cb.BACKGROUNDS else "dark",
+        "clean_background": options.get("clean_background") if options.get("clean_background") in cb.BACKGROUNDS else "blur",
         "clean_source": options.get("clean_source") if options.get("clean_source") in cb.SOURCES else "unknown",
     }
 

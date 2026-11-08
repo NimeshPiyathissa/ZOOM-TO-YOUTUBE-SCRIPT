@@ -176,6 +176,17 @@ RESOLUTION_PRESETS = {
     "1080p30": {"RESOLUTION": "1920x1080", "FPS": "30", "VIDEO_BITRATE": "6000", "AUDIO_BITRATE": "192"},
     "720p30": {"RESOLUTION": "1280x720", "FPS": "30", "VIDEO_BITRATE": "4000", "AUDIO_BITRATE": "160"},
 }
+# Output page presets (encoder side only; the virtual screen keeps its size - see DISPLAY_SIZE). CPU figures measured on
+# the production c5a.xlarge 2026-11-08 (1080p30 synthetic source, real time, encoder alone): veryfast ~150%, superfast
+# ~118% of one vCPU; Zoom's own renderer needs ~350% during a meeting, so the lighter presets leave it room.
+OUTPUT_PRESETS = {
+    "1080p30-quality": {"label": "1080p30 · sharpest", "RESOLUTION": "1920x1080", "FPS": "30", "VIDEO_BITRATE": "6000",
+                        "X264_PRESET": "veryfast"},
+    "1080p30-balanced": {"label": "1080p30 · balanced CPU", "RESOLUTION": "1920x1080", "FPS": "30",
+                         "VIDEO_BITRATE": "6000", "X264_PRESET": "superfast"},
+    "720p30-light": {"label": "720p30 · light CPU", "RESOLUTION": "1280x720", "FPS": "30", "VIDEO_BITRATE": "4000",
+                     "X264_PRESET": "veryfast"},
+}
 RESOLUTION_RANGE = {"min_w": 640, "max_w": 1920, "min_h": 360, "max_h": 1080}
 FPS_RANGE = (15, 30)
 VIDEO_BITRATE_RANGE_KBPS = (1000, 8000)

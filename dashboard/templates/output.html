@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon %}
+{% block title %}Output – Zoom Stream Dashboard{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{{ static_url('css/rack.css') }}"><link rel="stylesheet" href="{{ static_url('css/output.css') }}">{% endblock %}
+{% block content %}
+{#- Output: framing (Auto / Fit / Fill), background fill, encoder preset, before/after preview and encoder health.
+    Behaviour: static/js/output.js. Nothing here starts, stops or restarts the stream: changes apply at the next Go Live,
+    or through "Restart stream to apply" (the same confirmation + one-time grant as Go Live). -#}
+<header class="page-header">
+  <div>
+    <h1>Output</h1>
+    <p class="page-desc">How the Zoom meeting is framed for YouTube: Zoom's own bars removed, the whole picture kept, always 16:9.</p>
+  </div>
+</header>
+
+<div class="out-grid rack-grid" data-out-root data-state="idle">
+
+  <section class="card out-mode" aria-labelledby="out-mode-h">
+    <h2 id="out-mode-h" class="rack-title">{{ icon("maximize", "icon-sm") }}Framing
+      <span class="rack-title-end"><span class="out-pill" data-out-state>—</span></span></h2>
+
+    <div class="out-modes" role="radiogroup" aria-label="Framing mode">
+      <button type="button" class="out-mode-card" role="radio" aria-checked="true" data-out-mode="preserve">
+        <span class="out-mode-name">Auto <span class="out-badge">recommended</span></span>
+        <span class="out-mode-desc">Removes Zoom's title bar, toolbar and black bars it measures on screen; keeps the whole meeting picture; fills any leftover space.</span>
+      </button>
+      <button type="button" class="out-mode-card" role="radio" aria-checked="false" data-out-mode="fit">
+        <span class="out-mode-name">Fit</span>
+        <span class="out-mode-desc">The whole screen exactly as captured - nothing removed (Zoom's UI stays visible). Safe fallback.</span>
+      </button>
+      <button type="button" class="out-mode-card out-mode-danger" role="radio" aria-checked="false" data-out-mode="fill">
+        <span class="out-mode-name">Fill <span class="out-badge out-badge-danger">crops</span></span>
+        <span class="out-mode-desc">Fills 16:9 edge to edge by cutting the picture's edges. Shows exactly how much is cut before you confirm.</span>
+      </button>
+    </div>
+
+    <div class="out-row">
+      <span class="eyebrow">Background fill</span>
+      <div class="segmented" role="group" aria-label="Background fill">
+        <button type="button" class="seg-btn" data-out-bg="blur">Blurred picture</button>
+        <button type="button" class="seg-btn" data-out-bg="dark">Dark</button>
+        <button type="button" class="seg-btn" data-out-bg="black">Black</button>
+      </div>
+    </div>
+
+    <div class="out-actions">
+      <button type="button" class="btn btn-primary btn-sm" data-out-measure>{{ icon("focus", "icon-sm") }}<span>Measure &amp; apply</span></button>
+      <button type="button" class="btn btn-ghost btn-sm" data-out-restore hidden>{{ icon("rotate-cw", "icon-sm") }}Restore original</button>
+      <button type="button" class="btn btn-danger btn-sm" data-out-restart hidden>{{ icon("refresh-cw", "icon-sm") }}Restart stream to apply</button>
+      <span class="hint m-0" data-out-status role="status" aria-live="polite"></span>
+    </div>
+    <ul class="cb-warnings" data-out-warnings></ul>
+  </section>
+
+  <section class="card out-preview" aria-labelledby="out-preview-h">
+    <h2 id="out-preview-h" class="rack-title">{{ icon("monitor", "icon-sm") }}Before / after
+      <span class="rack-title-end"><button type="button" class="btn btn-ghost btn-sm" data-out-refresh>{{ icon("refresh-cw", "icon-sm") }}Refresh</button></span></h2>
+    <div class="cb-previews">
+      <figure class="cb-fig">
+        <figcaption class="eyebrow">Raw capture <span class="hint" data-out-raw-size></span></figcaption>
+        <div class="cb-shot"><img data-out-raw alt="Raw capture of the virtual screen" hidden><div class="cb-overlay" data-out-overlay aria-hidden="true"></div></div>
+      </figure>
+      <figure class="cb-fig">
+        <figcaption class="eyebrow">Final frame <span class="hint" data-out-final-size></span></figcaption>
+        <div class="cb-shot cb-shot-out"><img data-out-final alt="Final 16:9 frame sent to YouTube" hidden></div>
+      </figure>
+    </div>
+    <p class="hint mb-0">Red hatching = Zoom UI / black bars removed, green outline = the picture that goes to YouTube. The final frame is rendered with the exact filter the encoder uses.</p>
+  </section>
+
+  <section class="card out-quality" aria-labelledby="out-quality-h">
+    <h2 id="out-quality-h" class="rack-title">{{ icon("sliders-horizontal", "icon-sm") }}Quality preset</h2>
+    <div class="out-presets" role="radiogroup" aria-label="Encoder preset">
+      {% for key, p in presets.items() %}
+      <button type="button" class="out-preset" role="radio" aria-checked="false" data-out-preset="{{ key }}">
+        <span class="out-mode-name">{{ p.label }}</span>
+        <span class="hint m-0">{{ p.RESOLUTION }} · {{ p.FPS }} fps · {{ p.VIDEO_BITRATE }} kbps · x264 {{ p.X264_PRESET }}</span>
+      </button>
+      {% endfor %}
+    </div>
+    <p class="hint mb-0">Applies at the next Go Live. The virtual screen keeps its size; only the encoder output changes. Keyframes every 2 s, yuv420p, BT.709.</p>
+  </section>
+
+  <section class="card out-health" aria-labelledby="out-health-h">
+    <h2 id="out-health-h" class="rack-title">{{ icon("activity", "icon-sm") }}Health</h2>
+    <dl class="cb-facts">
+      <div><dt>Encoder</dt><dd data-out-fact="encoder">—</dd></div>
+      <div><dt>Server CPU</dt><dd data-out-fact="cpu">—</dd></div>
+      <div><dt>Encoder fps / speed</dt><dd data-out-fact="fps">—</dd></div>
+      <div><dt>Dropped / duplicated frames</dt><dd data-out-fact="drops">—</dd></div>
+      <div><dt>Output</dt><dd data-out-fact="output">—</dd></div>
+      <div><dt>Virtual screen</dt><dd data-out-fact="display">—</dd></div>
+      <div><dt>Meeting picture</dt><dd data-out-fact="content">—</dd></div>
+      <div><dt>Scaling</dt><dd data-out-fact="scale">—</dd></div>
+    </dl>
+  </section>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ static_url('js/output.js') }}"></script>
+{% endblock %}

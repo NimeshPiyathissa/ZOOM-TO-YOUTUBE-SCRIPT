@@ -144,7 +144,8 @@ def test_clean_broadcast_output_has_no_zoom_ui_keeps_every_corner_and_is_unstret
     assert abs(gw - gh) <= 4, f"stretched: {gw}x{gh}"
     assert a["zoom_bar_rows_top"] == 0 and a["zoom_bar_rows_bottom"] == 0, "Zoom's title bar/toolbar is in the frame"
     if name == "tall_display_native":
-        assert p["state"] == "clean" and p["filter"] == "crop=1920:1080:4:69" and abs(gw - 200) <= 4   # 1:1, no resample
+        assert p["state"] == "clean" and p["filter"].startswith("crop=1920:1080:4:69,scale=out_color_matrix=bt709")
+        assert abs(gw - 200) <= 4                                                                   # 1:1, no resample
     RESULTS[f"{name} / Clean Broadcast"] = {"state": p["state"], "filter": p["filter"], "bars": p["bars"],
                                             "corners_kept": sum(a["red"].values()), "green": a["green"],
                                             "zoom_ui_rows": a["zoom_bar_rows_top"] + a["zoom_bar_rows_bottom"]}

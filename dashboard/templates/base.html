@@ -83,6 +83,7 @@
       <div class="nav-group">
         <div class="nav-group-label">Broadcast</div>
         {{ navitem("/studio", "hg-live-studio", "Live Studio", request.url.path == '/studio') }}
+        {{ navitem("/output", "maximize", "Output", request.url.path == '/output') }}
         {{ navitem("/controls", "hg-controls", "Controls", request.url.path == '/controls') }}
         {{ navitem("/overlay", "hg-text-overlays", "Text Overlays", request.url.path == '/overlay') }}
         {{ navitem("/schedule", "hg-schedule", "Schedule", request.url.path == '/schedule') }}

@@ -30,6 +30,7 @@ def layout(bands=None, size=(1920, 1080), ok=True, kinds=None, reason="Zoom UI f
             "content": (b["left"], b["top"], W - b["left"] - b["right"], H - b["top"] - b["bottom"]), "reason": reason}
 
 
+TAIL = "scale=out_color_matrix=bt709:out_range=tv:flags=lanczos,format=yuv420p"   # the single BT.709 conversion
 NO_UI = layout({"top": 0, "bottom": 0, "left": 0, "right": 0}, kinds={k: "none" for k in KINDS})
 
 
@@ -38,28 +39,31 @@ NO_UI = layout({"top": 0, "bottom": 0, "left": 0, "right": 0}, kinds={k: "none" 
 def test_production_webinar_today_keeps_the_whole_picture_and_says_why_it_is_not_edge_to_edge():
     p = C.plan((1920, 1080), OUT, layout(), source="360p")
     assert p["state"] == "composed" and p["verified"]
-    assert p["filter"] == "crop=1912:935:4:69,scale=1920:938:flags=lanczos,pad=1920:1080:0:71:color=0x0B0D10,setsar=1"
-    assert p["bars"] == {"left": 0, "right": 0, "top": 71, "bottom": 71} and p["crop"]["lost_pct"] == 0
+    p = C.plan((1920, 1080), OUT, layout(), source="360p", background="dark")
+    # near-native picture: placed 1:1 (no resampling), centred, one BT.709 conversion at the end
+    assert p["filter"] == f"crop=1912:935:4:69,pad=1920:1080:4:72:color=0x0B0D10,setsar=1,{TAIL}"
+    assert p["bars"] == {"left": 4, "right": 4, "top": 72, "bottom": 73} and p["crop"]["lost_pct"] == 0
+    assert p["scale"] == 1.0 and p["resampled"] is False
     codes = {w["code"]: w for w in p["warnings"]}
     assert codes["zoom_crops_camera"]["display_for_native"] == "1928x1225" and "13%" in codes["zoom_crops_camera"]["text"]
     assert "aspect" in codes and codes["low_source"]["text"].startswith("Zoom receives the teacher at 640x360")
-    assert p["magnify"] == 3.0 and "no borders" not in p["label"].lower()
+    assert p["magnify"] == 2.99 and "no borders" not in p["label"].lower()        # 640 px shown at 1912 px
 
 
 def test_tall_display_is_a_pure_crop_edge_to_edge_with_no_resampling():
     p = C.plan((1928, 1225), OUT, layout(size=(1928, 1225)))
-    assert p["state"] == "clean" and p["filter"] == "crop=1920:1080:4:69" and p["scale"] == 1.0
+    assert p["state"] == "clean" and p["filter"] == f"crop=1920:1080:4:69,{TAIL}" and p["scale"] == 1.0
     assert p["bars"] == {"left": 0, "right": 0, "top": 0, "bottom": 0} and "edge to edge" in p["label"]
 
 
 def test_camera_filling_the_screen_needs_no_filter():
     p = C.plan((1920, 1080), OUT, NO_UI)
-    assert p["state"] == "clean" and p["filter"] == "" and p["label"] == "Clean · edge to edge"
+    assert p["state"] == "clean" and p["filter"] == TAIL and p["label"] == "Clean · edge to edge"
 
 
 def test_unverified_measurement_never_crops_and_never_claims_clean():
     p = C.plan((1920, 1080), OUT, {"ok": False, "reason": "Zoom UI continues further in on the right side."})
-    assert p["state"] == "unverified" and p["filter"] == "" and p["content"] == "0:0:1920:1080"
+    assert p["state"] == "unverified" and p["filter"] == TAIL and p["content"] == "0:0:1920:1080"
     assert "Clean" not in p["label"] and "toolbars may be visible" in p["warnings"][0]["text"]
     assert C.plan((1920, 1080), OUT, None)["state"] == "unverified"
     # a measurement from a different screen size is not trusted either
@@ -82,8 +86,8 @@ def test_fill_cuts_only_when_asked_and_reports_the_exact_loss():
 def test_blur_background_keeps_the_picture_untouched_on_top():
     p = C.plan((1920, 1080), OUT, layout(), background="blur")
     f = p["filter"]
-    assert f.startswith("crop=1912:935:4:69,split=2[cbfg][cbbg];") and "[cbfg]scale=1920:938:flags=lanczos[cbfront]" in f
-    assert f.endswith("[cbback][cbfront]overlay=0:71,setsar=1") and C.safe_filter(f)
+    assert f.startswith("crop=1912:935:4:69,split=2[cbfg][cbbg];") and "[cbfg]null,format=gbrp[cbfront]" in f
+    assert f.endswith(f"[cbback][cbfront]overlay=4:72:format=gbrp,setsar=1,{TAIL}") and C.safe_filter(f)
 
 
 def test_every_emitted_filter_passes_the_safety_check():
@@ -125,7 +129,7 @@ def test_capture_framing_prefers_clean_broadcast_and_falls_back_safely():
            "ZOOM_MEETING_ONLY": "1", "ZOOM_MEETING_ONLY_FIT": "fill", "PATH": "/usr/bin:/bin"}
     assert _bash(snip, env) == f"1920x1080|{vf}"
     tall = C.plan((1928, 1225), OUT, layout(size=(1928, 1225)))["filter"]
-    assert _bash(snip, {**env, "ZOOM_CLEAN_FILTER": tall, "ZOOM_CLEAN_CAPTURE": "1928x1225"}) == "1928x1225|crop=1920:1080:4:69"
+    assert _bash(snip, {**env, "ZOOM_CLEAN_FILTER": tall, "ZOOM_CLEAN_CAPTURE": "1928x1225"}) == f"1928x1225|crop=1920:1080:4:69,{TAIL}"
     # a tampered filter is refused: the whole desktop is fitted instead (never a crop)
     assert _bash(snip, {**env, "ZOOM_CLEAN_FILTER": "movie=/etc/passwd"}) == "1920x1080|"
     assert _bash(snip, {**env, "ZOOM_CLEAN_FILTER": "crop=1:1", "ZOOM_CLEAN_CAPTURE": "1928x1225"}) .startswith("1928x1225|crop=1:1")
@@ -297,7 +301,7 @@ def test_uncertain_remeasure_keeps_the_last_verified_framing(api):
 def test_first_apply_on_an_unclear_screen_frames_everything_and_says_so(api):
     api.st["layout"] = {"ok": False, "reason": "Could not find where the picture starts."}
     d = post(api, action="apply").json()
-    assert d["state"] == "unverified" and opts(api)["clean_filter"] == "" and "may be visible" in d["message"]
+    assert d["state"] == "unverified" and opts(api)["clean_filter"] == TAIL and "may be visible" in d["message"]
 
 
 def test_restore_puts_back_the_previous_framing(api):
@@ -380,7 +384,7 @@ def test_home_window_on_top_is_never_measured_as_clean(api):
     api.st["layout"] = layout({"top": 0, "bottom": 0, "left": 0, "right": 0}, kinds={k: "none" for k in KINDS})
     api.st["window"].update(meeting=True, top=False)
     d = post(api, action="apply").json()
-    assert d["state"] == "unverified" and "on top of the meeting" in d["message"] and opts(api)["clean_filter"] == ""
+    assert d["state"] == "unverified" and "on top of the meeting" in d["message"] and opts(api)["clean_filter"] == TAIL
 
 
 def test_home_window_only_or_no_window_is_unverified(api):
@@ -437,3 +441,72 @@ def test_geometry_parser_reads_meeting_and_top_flags(monkeypatch):
     out["v"] = b"w=1920 h=1080 x=0 y=0 fullscreen=1 display=1920x1080\n"          # older script: unknown, not False
     g = control.zoom_window_geometry()
     assert g["meeting"] is None and g["top"] is None
+
+
+# ---------------------------------------------------------------- Output modes (fix/output-aspect-quality)
+
+def test_auto_is_the_default_with_a_blurred_background(api):
+    d = post(api, action="apply").json()
+    assert d["prefs"] == {"policy": "preserve", "background": "blur", "source": "unknown"}
+    f = opts(api)["clean_filter"]
+    assert "boxblur" in f and f.endswith(TAIL) and "[cbfg]null" in f              # 1:1 picture over the blurred fill
+
+
+def test_fit_frames_the_whole_screen_and_never_keeps_an_old_plan(api):
+    post(api, action="apply")
+    d = post(api, action="settings", policy="fit").json()
+    assert d["state"] == "fit" and opts(api)["clean_filter"] == TAIL and d["plan"]["content"] == "0:0:1920:1080"
+    assert any(w["code"] == "fit_shows_ui" for w in d["plan"]["warnings"])
+    api.st["layout"] = {"ok": False, "reason": "dark"}
+    d = post(api, action="apply", policy="fit").json()
+    assert d["state"] == "fit" and d["kept"] is False
+
+
+def test_web_client_join_is_measured_without_the_desktop_window_check(api, monkeypatch):
+    monkeypatch.setattr(control, "read_current_source", lambda: {"ZOOM_JOIN_VIA": "web"})
+    main_mod.control.zoom_window_geometry = lambda: None             # no desktop Zoom window at all
+    api.st["layout"] = layout({"top": 0, "bottom": 0, "left": 0, "right": 0}, kinds={k: "none" for k in KINDS})
+    d = post(api, action="apply").json()
+    assert d["state"] == "clean" and d["plan"]["verified"]
+
+
+def test_watcher_reasserts_fullscreen_when_the_meeting_window_lost_it(api):
+    post(api, action="apply")
+    api.st["window_calls"].clear()
+    main_mod._cb_reassert["at"] = 0
+    api.st["window"].update(meeting=True, top=False, fullscreen=False)
+    asyncio.new_event_loop().run_until_complete(main_mod._framing_watch_tick())
+    assert api.st["window_calls"] == [True] and api.st["unit_calls"] == []
+    asyncio.new_event_loop().run_until_complete(main_mod._framing_watch_tick())
+    assert api.st["window_calls"] == [True]                                          # at most once a minute
+    main_mod._cb_reassert["at"] = 0
+    api.st["window"].update(meeting=False, top=True, fullscreen=False)              # home window only: leave it alone
+    api.st["window_calls"].clear()
+    asyncio.new_event_loop().run_until_complete(main_mod._framing_watch_tick())
+    assert api.st["window_calls"] == []
+
+
+def test_output_page_renders_with_modes_presets_previews_and_health(api):
+    html = api.get("/output").text
+    for marker in ('data-out-mode="preserve"', 'data-out-mode="fit"', 'data-out-mode="fill"', 'data-out-bg="blur"',
+                   'data-out-preset="1080p30-quality"', 'data-out-preset="720p30-light"', "data-out-raw", "data-out-final",
+                   "data-out-overlay", 'data-out-fact="drops"', 'data-out-fact="cpu"', "Restart stream to apply", "output.js"):
+        assert marker in html, marker
+    assert 'href="/output"' in api.get("/studio").text                            # in the sidebar
+    st = api.get("/api/zoom/clean-broadcast").json()
+    assert set(st["settings"]) == {"RESOLUTION", "FPS", "VIDEO_BITRATE", "X264_PRESET", "DISPLAY_SIZE"} and "output_presets" in st
+    src = (REPO / "dashboard" / "static" / "js" / "output.js").read_text(encoding="utf-8")
+    assert "/api/stream" not in src and "go_live" not in src and "restartEncoder()" in src   # restart only via the grant flow
+
+
+def test_output_preset_changes_only_the_encoder_and_pins_the_screen_size(api, monkeypatch):
+    written = []
+    monkeypatch.setattr(env_store, "read_parsed", lambda: {"RESOLUTION": "1920x1080", "DISPLAY_SIZE": ""})
+    monkeypatch.setattr(env_store, "write_updates", lambda u: written.append(dict(u)) or [])
+    post(api, action="apply")
+    r = api.post("/api/output/preset", json={"preset": "720p30-light"}, headers=api.csrf).json()
+    assert written == [{"RESOLUTION": "1280x720", "FPS": "30", "VIDEO_BITRATE": "4000", "X264_PRESET": "veryfast",
+                        "DISPLAY_SIZE": "1920x1080"}]
+    assert r["ok"] and api.st["unit_calls"] == []
+    assert api.post("/api/output/preset", json={"preset": "8k"}, headers=api.csrf).status_code == 400
+    assert api.post("/api/output/preset", json={"preset": "720p30-light"}).status_code == 403

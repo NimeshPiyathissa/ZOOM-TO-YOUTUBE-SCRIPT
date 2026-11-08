@@ -425,6 +425,65 @@ async def settings_alias_page(request: Request):
     return await config_page(request)
 
 
+@app.get("/output", response_class=HTMLResponse)
+async def output_page(request: Request):
+    """Output: how the Zoom meeting is framed for YouTube (Auto / Fit / Fill), background fill, encoder preset, a live
+    before/after preview and encoder health. Framing/preset changes never start or restart the stream."""
+    session = _require_page(request)
+    if isinstance(session, RedirectResponse):
+        return session
+    return templates.TemplateResponse("output.html", {
+        "request": request, "csrf_token": session["csrf_token"], "username": session["username"],
+        "presets": config.OUTPUT_PRESETS,
+    })
+
+
+@app.post("/api/output/preset")
+async def api_output_preset(request: Request):
+    """{preset: <key of config.OUTPUT_PRESETS>}: encoder resolution/fps/bitrate/x264 preset for the NEXT encoder start.
+    The virtual screen keeps its size (DISPLAY_SIZE is pinned to it when the output resolution differs), the Clean
+    Broadcast plan is re-made for the new output size, and nothing is started or restarted."""
+    session = deps.require_session_api(request)
+    deps.require_csrf(request, session)
+    deps.require_rate_limit(session, "output_preset", max_calls=6, window_seconds=30)
+    body = await request.json()
+    key = str(body.get("preset", ""))
+    if key not in config.OUTPUT_PRESETS:
+        raise HTTPException(status_code=400, detail="unknown preset")
+    preset = config.OUTPUT_PRESETS[key]
+    updates = {k: preset[k] for k in ("RESOLUTION", "FPS", "VIDEO_BITRATE", "X264_PRESET")}
+    current = await run_in_threadpool(env_store.read_parsed)
+    display = await preview._display_size()
+    if not (current.get("DISPLAY_SIZE") or "").strip() and display and display != updates["RESOLUTION"]:
+        updates["DISPLAY_SIZE"] = display              # the screen stays as it is; only the encoder output changes
+    try:
+        await run_in_threadpool(env_store.write_updates, updates)
+    except (env_store.ValidationError, control.ControlError) as exc:
+        return _api_error(exc)
+    control.note_encoder_filter_changed()
+    replanned = False
+    active = sources_mod.get_active_source()
+    if active and active["type"] == "zoom":
+        source = sources_mod.get_source(active["id"])
+        options = dict(source.get("options") or {})
+        layout = (options.get("clean_plan") or {}).get("layout")
+        if options.get("clean_broadcast") and layout:
+            disp = fullscreen_live.parse_size(display) or (1920, 1080)
+            p = _cb_plan(disp, layout, _cb_prefs(options))
+            if p["crop"]["lost_pct"] == 0 or options.get("clean_policy") == "fill":
+                options.update(clean_filter=p["filter"], clean_capture=p["capture_size"], clean_plan=p)
+                await run_in_threadpool(sources_mod.update_source, active["id"], source["name"], "zoom", source["url"],
+                                        options, source.get("account_id"))
+                await run_in_threadpool(control.write_current_source, sources_mod.get_source(active["id"]))
+                replanned = True
+    pending = await run_in_threadpool(control.encoder_filter_stale)
+    db.audit(session["username"], "output_preset", f"{key} {updates} replanned={replanned} pending_restart={pending}",
+             deps.client_ip(request))
+    return {"ok": True, "preset": key, "applied": updates, "replanned": replanned, "pending_restart": pending,
+            "message": ("Saved. The live stream keeps its current settings until an authorized restart."
+                        if pending else "Saved: the next Go Live uses these settings.")}
+
+
 @app.get("/config", response_class=HTMLResponse)
 async def config_page(request: Request):
     session = _require_page(request)
@@ -1307,7 +1366,9 @@ _CB_SETTLE_SECONDS = 1.5
 _CB_FRAMES = 3
 # Explicit "off" values (sources.update_source carries absent keys forward).
 _CB_CLEARED = {"clean_broadcast": False, "clean_filter": "", "clean_capture": "", "clean_plan": None, "clean_restore": None}
-_CB_DEFAULTS = {"clean_policy": "preserve", "clean_background": "dark", "clean_source": "unknown"}
+_CB_DEFAULTS = {"clean_policy": "preserve", "clean_background": "blur", "clean_source": "unknown"}
+_CB_REASSERT_SECONDS = 60          # the watcher re-applies fullscreen + raises the meeting window at most this often
+_cb_reassert = {"at": 0.0}
 
 
 def _cb_prefs(options: dict, body: dict | None = None) -> dict:
@@ -1355,9 +1416,20 @@ def _cb_window_problem(win: dict | None) -> str:
     return ""
 
 
+def _cb_joined_via_web() -> bool:
+    try:
+        return control.read_current_source().get("ZOOM_JOIN_VIA") == "web"
+    except Exception:
+        return False
+
+
 async def _cb_measure_meeting(display: tuple[int, int]) -> dict:
-    """Measure, then confirm the meeting window was what the screen showed; otherwise the measurement is not trusted."""
+    """Measure, then confirm the meeting window was what the screen showed; otherwise the measurement is not trusted.
+    A meeting joined in Zoom's WEB client runs in the kiosk browser (no desktop Zoom window to check): the frame
+    measurement alone decides, and the plan says so."""
     layout = await _cb_measure(display)
+    if await run_in_threadpool(_cb_joined_via_web):
+        return {**layout, "web_client": True}
     problem = _cb_window_problem(await run_in_threadpool(control.zoom_window_geometry))
     return {"ok": False, "reason": problem, "window_problem": True} if problem else layout
 
@@ -1398,7 +1470,25 @@ async def api_zoom_clean_broadcast_state(request: Request):
     return {"zoom_source": zoom, **_cb_status(options), "encoder_phase": await _encoder_phase(),
             "pending_restart": await run_in_threadpool(control.encoder_filter_stale),
             "cpu_percent": psutil.cpu_percent(interval=None), "display": await preview._display_size(),
-            "output": "%dx%d" % _fsl_output_size()}
+            "output": "%dx%d" % _fsl_output_size(), **(await _output_runtime())}
+
+
+_OUTPUT_ENV_KEYS = ("RESOLUTION", "FPS", "VIDEO_BITRATE", "X264_PRESET", "DISPLAY_SIZE")
+
+
+async def _output_runtime() -> dict:
+    """Encoder settings + live encoder health for the Output page (no secrets: only the non-secret .env keys)."""
+    try:
+        env = await run_in_threadpool(env_store.read_parsed)
+    except Exception:
+        env = {}
+    try:
+        show = await run_in_threadpool(control.unit_show, "ffmpeg-stream")
+        progress = stats.ffmpeg_progress(show)
+    except Exception:
+        progress = None
+    return {"settings": {k: env.get(k, "") for k in _OUTPUT_ENV_KEYS}, "encoder": progress,
+            "output_presets": config.OUTPUT_PRESETS}
 
 
 @app.post("/api/zoom/clean-broadcast")
@@ -1474,7 +1564,7 @@ async def api_zoom_clean_broadcast(request: Request):
 
     kept = False
     old = options.get("clean_plan") or {}
-    if (not p["verified"] and options.get("clean_broadcast") and old.get("verified")
+    if (p["policy"] != "fit" and not p["verified"] and options.get("clean_broadcast") and old.get("verified")
             and old.get("display") == p["display"]):
         # Unsure right now (a panel open, a dark screen) but a verified framing exists: keep it rather than fall back.
         kept = True
@@ -1545,6 +1635,24 @@ async def api_zoom_clean_broadcast_preview(request: Request, view: str = "output
 _cb_pending: dict = {"content": None, "count": 0}
 
 
+async def _cb_reassert_window() -> None:
+    """Keep Zoom's meeting window fullscreen and on top while Clean Broadcast is on: after a rejoin, a view change or a
+    screen share starting/stopping Zoom may un-fullscreen it or put another window over it. At most once a minute,
+    desktop client only, never touches the encoder."""
+    if time.time() - _cb_reassert["at"] < _CB_REASSERT_SECONDS or await run_in_threadpool(_cb_joined_via_web):
+        return
+    win = await run_in_threadpool(control.zoom_window_geometry)
+    if not win or win.get("meeting") is not True or (win.get("fullscreen") and win.get("top") is not False):
+        return
+    _cb_reassert["at"] = time.time()
+    try:
+        r = await run_in_threadpool(control.zoom_set_meeting_only, True)
+    except control.ControlError as exc:
+        r = {"applied": False, "note": str(exc)}
+    db.audit(None, "zoom_clean_broadcast_reassert",
+             f"fullscreen={win.get('fullscreen')} top={win.get('top')} applied={r.get('applied')}")
+
+
 async def _cb_watch_tick(active: dict, options: dict) -> None:
     """Clean Broadcast: when Zoom's layout really changed (a confident measurement, seen twice in a row, differing by more
     than 16 px - e.g. a panel was closed), re-plan for the NEXT encoder start. Uncertain measurements change nothing.
@@ -1552,6 +1660,7 @@ async def _cb_watch_tick(active: dict, options: dict) -> None:
     display = fullscreen_live.parse_size(await preview._display_size())
     if not display:
         return
+    await _cb_reassert_window()
     layout = await _cb_measure_meeting(display)
     if not layout.get("ok"):
         _cb_pending.update(content=None, count=0)
