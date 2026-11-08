@@ -370,3 +370,70 @@ def test_controls_are_on_remote_gui_and_live_studio_and_never_go_live(api):
     src = (REPO / "dashboard" / "static" / "js" / "clean-broadcast.js").read_text(encoding="utf-8")
     for forbidden in ("/api/stream", "/api/broadcast", "go_live", "goLive", "grant"):
         assert forbidden not in src
+
+
+# ---------------------------------------------------------------- Step A.1: only the MEETING window is measured
+
+def test_home_window_on_top_is_never_measured_as_clean(api):
+    """Production 2026-11-08 16:28: Zoom's home window covered the webinar and the screen was saved as "clean, edge to
+    edge". If the meeting window is not on top, the measurement is not trusted."""
+    api.st["layout"] = layout({"top": 0, "bottom": 0, "left": 0, "right": 0}, kinds={k: "none" for k in KINDS})
+    api.st["window"].update(meeting=True, top=False)
+    d = post(api, action="apply").json()
+    assert d["state"] == "unverified" and "on top of the meeting" in d["message"] and opts(api)["clean_filter"] == ""
+
+
+def test_home_window_only_or_no_window_is_unverified(api):
+    api.st["window"].update(meeting=False, top=True)
+    assert post(api, action="apply").json()["state"] == "unverified"
+    main_mod.control.zoom_window_geometry = lambda: None
+    d = post(api, action="restore") and post(api, action="apply").json()
+    assert d["state"] == "unverified" and "No Zoom meeting window" in d["message"]
+
+
+def test_meeting_window_on_top_measures_normally(api):
+    api.st["window"].update(meeting=True, top=True)
+    d = post(api, action="apply").json()
+    assert d["state"] == "composed" and d["plan"]["verified"]
+
+
+def test_a_covered_meeting_keeps_the_last_verified_framing(api):
+    post(api, action="apply")
+    good = opts(api)["clean_filter"]
+    api.st["window"].update(meeting=True, top=False)
+    d = post(api, action="apply").json()
+    assert d["kept"] is True and opts(api)["clean_filter"] == good
+
+
+def test_watcher_ignores_frames_while_another_window_covers_the_meeting(api):
+    post(api, action="apply")
+    api.st["window"].update(meeting=True, top=False)
+    api.st["layout"] = layout({"top": 0, "bottom": 0, "left": 0, "right": 0}, kinds={k: "none" for k in KINDS})
+    run = asyncio.new_event_loop().run_until_complete
+    run(main_mod._framing_watch_tick()); run(main_mod._framing_watch_tick())
+    assert opts(api)["clean_plan"]["content"] == "4:69:1912:935"
+
+
+def test_fullscreen_live_is_not_native_when_the_home_window_is_on_top(api):
+    api.st["layout"] = layout({"top": 0, "bottom": 0, "left": 0, "right": 0}, kinds={k: "none" for k in KINDS})
+    api.st["window"].update(meeting=True, top=False)
+
+    async def meas(*a, **k):
+        return {"ok": True, "region": None, "margins": {}}
+    main_mod.framing.measure, saved = meas, main_mod.framing.measure
+    try:
+        d = api.post("/api/zoom/fullscreen-live", json={"action": "apply"}, headers=api.csrf).json()
+    finally:
+        main_mod.framing.measure = saved
+    assert d["state"] == "limited" and "on top of the meeting" in d["message"]
+
+
+def test_geometry_parser_reads_meeting_and_top_flags(monkeypatch):
+    import subprocess as sp
+    out = {"v": b"w=1920 h=1080 x=0 y=0 fullscreen=1 display=1920x1080 meeting=1 top=0\n"}
+    monkeypatch.setattr(control, "run_as_zoombot", lambda argv, **k: sp.CompletedProcess(argv, 0, out["v"], b""))
+    g = control.zoom_window_geometry()
+    assert g["meeting"] is True and g["top"] is False and g["fullscreen"] is True
+    out["v"] = b"w=1920 h=1080 x=0 y=0 fullscreen=1 display=1920x1080\n"          # older script: unknown, not False
+    g = control.zoom_window_geometry()
+    assert g["meeting"] is None and g["top"] is None

@@ -1234,8 +1234,10 @@ def zoom_window_geometry() -> dict | None:
     out = proc.stdout.decode(errors="replace").strip().splitlines()
     vals = dict(part.split("=", 1) for part in (out[-1].split() if out else []) if "=" in part)
     try:
+        flag = lambda k: (vals[k] == "1") if k in vals else None      # None = an older script that doesn't report it
         return {"w": int(vals["w"]), "h": int(vals["h"]), "x": int(vals["x"]), "y": int(vals["y"]),
-                "fullscreen": vals.get("fullscreen") == "1", "display": vals.get("display", "")}
+                "fullscreen": vals.get("fullscreen") == "1", "display": vals.get("display", ""),
+                "meeting": flag("meeting"), "top": flag("top")}
     except (KeyError, ValueError):
         return None
 

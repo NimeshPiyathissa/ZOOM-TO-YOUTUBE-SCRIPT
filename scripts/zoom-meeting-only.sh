@@ -26,20 +26,34 @@ if [[ "$ACTION" != "on" && "$ACTION" != "off" && "$ACTION" != "park" && "$ACTION
   echo "usage: $(basename "$0") on|off|park|geometry" >&2
   exit 2
 fi
-# geometry: READ-ONLY report of the meeting window for Fullscreen Live's mismatch check (dashboard
-# control.zoom_window_geometry): "w=.. h=.. x=.. y=.. fullscreen=0|1 display=WxH". Changes nothing.
+# geometry: READ-ONLY report of the meeting window for Fullscreen Live / Clean Broadcast (dashboard
+# control.zoom_window_geometry): "w=.. h=.. x=.. y=.. fullscreen=0|1 display=WxH meeting=0|1 top=0|1" - meeting=1 when a
+# real meeting window was found, top=1 when it is the topmost large Zoom window (what x11grab sees). Changes nothing.
 
-# The main window, not a dialog: Zoom 7.x keeps the title "Zoom Workplace"
-# at the home screen and (webinars included) in a meeting, so match on the
-# window class and take the largest one big enough to be the main window,
-# preferring an explicit "Zoom Meeting"/"Zoom Webinar" title if one exists.
-WID="$(wmctrl -lGx 2>/dev/null | awk '
+# Which window is the MEETING. Zoom 7.x keeps its home window ("Zoom Workplace - <account>") open next to the meeting
+# window, both full-size; the meeting window is titled "Webinar", "Meeting", "Zoom Meeting"/"Zoom Webinar", the meeting
+# topic, or (older 7.x) a bare "Zoom Workplace". Picking the home window was a real bug (2026-11-08): fullscreening it
+# raised it over the webinar and Clean Broadcast measured Zoom's home screen. Ranking, among zoom.* windows >= 800x500:
+#   3 = explicit meeting/webinar title, 1 = any other title (topic / bare "Zoom Workplace"), 0 = home window;
+#   Settings/Chat/Participants/Q&A/Polls/Whiteboard/... pop-outs are never picked. Ties: larger, then higher in the stack.
+# MEETING=0 means only the home window exists (no meeting): callers may still act on it, but must not trust it as one.
+STACK="$(xprop -root _NET_CLIENT_LIST_STACKING 2>/dev/null | sed 's/.*#//; s/,/ /g')"
+read -r WID MEETING TOPID < <(wmctrl -lGx 2>/dev/null | awk -v stack="$STACK" '
+  function norm(id) { id = tolower(id); sub(/^0x0*/, "0x", id); return id }
+  BEGIN { n = split(stack, s, " "); for (i = 1; i <= n; i++) order[norm(s[i])] = i }
   tolower($7) ~ /^zoom\./ && $5 >= 800 && $6 >= 500 {
-    area = $5 * $6
-    if ($0 ~ /Zoom (Meeting|Webinar)/) area += 1e9
-    if (area > best) { best = area; id = $1 }
+    title = $9; for (i = 10; i <= NF; i++) title = title " " $i
+    t = tolower(title); id = norm($1); o = (id in order) ? order[id] : 0
+    if (o >= topo) { topo = o; top = $1 }
+    if (t ~ /^(settings|chat|participants|q&a|polls?|breakout rooms|whiteboards?|share screen|annotation|reactions)( |$)/) next
+    score = 1
+    if (t ~ /^zoom workplace - /) score = 0
+    if (t ~ /^(zoom )?(meeting|webinar)$/) score = 3
+    key = score * 1e12 + $5 * $6 * 100 + o
+    if (key > best) { best = key; pick = $1; sc = score }
   }
-  END { if (id != "") print id }')"
+  END { if (pick != "") print pick, (sc > 0 ? 1 : 0), top }') || true   # no window: read hits EOF
+WID="${WID:-}"; MEETING="${MEETING:-0}"; TOPID="${TOPID:-}"
 if [[ -z "$WID" ]]; then
   echo "Zoom meeting window not found - is zoom.service running and joined?" >&2
   exit 1
@@ -65,7 +79,8 @@ if [[ "$ACTION" == "geometry" ]]; then
   read -r gx gy gw gh < <(wmctrl -lG 2>/dev/null | awk -v id="$WID" '$1 == id {print $3, $4, $5, $6; exit}')
   fs=0; is_fullscreen && fs=1
   disp="$(xdotool getdisplaygeometry 2>/dev/null | awk '{print $1 "x" $2}')"
-  echo "w=${gw:-0} h=${gh:-0} x=${gx:-0} y=${gy:-0} fullscreen=$fs display=${disp:-unknown}"
+  top=0; [[ "$WID" == "$TOPID" ]] && top=1
+  echo "w=${gw:-0} h=${gh:-0} x=${gx:-0} y=${gy:-0} fullscreen=$fs display=${disp:-unknown} meeting=$MEETING top=$top"
   exit 0
 fi
 
@@ -81,6 +96,10 @@ if [[ "$ACTION" == "on" ]]; then
       echo "sent fullscreen request, but window manager did not confirm _NET_WM_STATE_FULLSCREEN" >&2
       exit 1
     fi
+  fi
+  if [[ "$MEETING" == 1 ]]; then
+    # Raise + focus the meeting window: fullscreening (or the home window) may have left something else on top.
+    wmctrl -i -a "$WID" 2>/dev/null && echo "meeting window raised" || echo "could not raise the meeting window" >&2
   fi
   park_pointer
 else

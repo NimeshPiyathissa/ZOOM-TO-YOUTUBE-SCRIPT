@@ -1264,7 +1264,7 @@ async def api_zoom_fullscreen_live(request: Request):
     display = fullscreen_live.parse_size(await preview._display_size()) or (1920, 1080)
     output = await run_in_threadpool(_fsl_output_size)
     measured = await framing.measure(f"{display[0]}x{display[1]}", 0, 0)
-    chrome = await _cb_measure(display)                # Zoom's own bars are not black: check for them separately
+    chrome = await _cb_measure_meeting(display)        # Zoom's own bars are not black: check for them separately
     p = fullscreen_live.plan(display, output, output, window_after, measured, chrome=chrome)
     p["summary"] = fullscreen_live.summary(p)
     if not options.get("fullscreen_live"):
@@ -1340,6 +1340,26 @@ def _cb_status(options: dict) -> dict:
 async def _cb_measure(display: tuple[int, int]) -> dict:
     frames, w, h = await zoom_layout.grab_frames(f"{display[0]}x{display[1]}", _CB_FRAMES)
     return await asyncio.to_thread(zoom_layout.detect_frames, frames, w, h)
+
+
+def _cb_window_problem(win: dict | None) -> str:
+    """Why the measured screen cannot be trusted as the MEETING (Step A.1, 2026-11-08: Zoom's home window was raised over
+    a webinar and measured as "clean"). "" = fine. Flags an older script does not report (None) are not held against it."""
+    if win is None:
+        return "No Zoom meeting window was found - join the meeting first."
+    if win.get("meeting") is False:
+        return "Only Zoom's home window is open - no meeting window to frame."
+    if win.get("top") is False:
+        return ("Another Zoom window (e.g. the home window) is on top of the meeting, so the screen does not show the "
+                "meeting. Press Clean Broadcast again.")
+    return ""
+
+
+async def _cb_measure_meeting(display: tuple[int, int]) -> dict:
+    """Measure, then confirm the meeting window was what the screen showed; otherwise the measurement is not trusted."""
+    layout = await _cb_measure(display)
+    problem = _cb_window_problem(await run_in_threadpool(control.zoom_window_geometry))
+    return {"ok": False, "reason": problem, "window_problem": True} if problem else layout
 
 
 async def _cb_context():
@@ -1448,7 +1468,7 @@ async def api_zoom_clean_broadcast(request: Request):
             window = {"applied": False, "note": str(exc)}
         if window.get("applied"):
             await asyncio.sleep(_CB_SETTLE_SECONDS)
-        layout = await _cb_measure(display)
+        layout = await _cb_measure_meeting(display)
         window = {"before": window_before, "result": window}
     p = _cb_plan(display, layout, prefs)
 
@@ -1532,7 +1552,7 @@ async def _cb_watch_tick(active: dict, options: dict) -> None:
     display = fullscreen_live.parse_size(await preview._display_size())
     if not display:
         return
-    layout = await _cb_measure(display)
+    layout = await _cb_measure_meeting(display)
     if not layout.get("ok"):
         _cb_pending.update(content=None, count=0)
         return
