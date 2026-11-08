@@ -252,8 +252,12 @@ async def set_theme(request: Request):
     preference to, so it only ever sets the cookie in that case. CSRF is
     only checked once a session exists (same rule /login itself follows:
     nothing to check against before one exists)."""
-    body = await request.json()
-    theme = str(body.get("theme", "")).strip().lower()
+    try:
+        body = await request.json()
+    except Exception:
+        body = None
+    # Reachable without a session (login page), so malformed input is a 400, never a 500.
+    theme = str(body.get("theme", "")).strip().lower() if isinstance(body, dict) else ""
     if theme not in _VALID_THEMES:
         raise HTTPException(status_code=400, detail="Invalid theme")
     session = deps.get_session(request)
@@ -1318,6 +1322,9 @@ async def api_reboot(request: Request):
     return {"ok": True}
 
 
+_restart_all_lock = threading.Lock()
+
+
 @app.get("/api/system/readiness")
 async def api_system_readiness(request: Request):
     deps.require_session_api(request)
@@ -1330,22 +1337,40 @@ async def api_system_restart_all(request: Request):
     session = deps.require_session_api(request)
     deps.require_csrf(request, session)
     deps.require_rate_limit(session, "system_restart_all", max_calls=2, window_seconds=60)
-    if control.restart_progress()["running"]:
+    # Non-blocking acquire rather than reading the progress flag, so two
+    # requests landing together can't both start a full restart. Held until
+    # the worker thread finishes (or released right here if we bail out).
+    if not _restart_all_lock.acquire(blocking=False):
         raise HTTPException(status_code=409, detail="A restart is already in progress")
+    started = False
     try:
-        body = await request.json()
-    except Exception:
-        body = {}
-    stream_info = await run_in_threadpool(control.unit_show, "ffmpeg-stream")
-    if stream_info["phase"] == control.PHASE_LIVE and not body.get("confirm_live"):
-        raise HTTPException(status_code=409, detail="Stream is live - confirm to restart anyway")
-    db.audit(session["username"], "system_restart_all", ip=deps.client_ip(request))
-    # Fire-and-forget: full_restart() ends by restarting dashboard.service
-    # itself, which tears this process down - there is no response to wait
-    # for by that point, so the frontend polls /api/system/restart-progress
-    # and then /api/state instead of awaiting this request's own body.
-    threading.Thread(target=control.full_restart, daemon=True).start()
-    return {"ok": True, "started": True}
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        if not isinstance(body, dict):
+            body = {}
+        stream_info = await run_in_threadpool(control.unit_show, "ffmpeg-stream")
+        if stream_info["phase"] == control.PHASE_LIVE and not body.get("confirm_live"):
+            raise HTTPException(status_code=409, detail="Stream is live - confirm to restart anyway")
+        db.audit(session["username"], "system_restart_all", ip=deps.client_ip(request))
+
+        def _run() -> None:
+            try:
+                control.full_restart()
+            finally:
+                _restart_all_lock.release()
+
+        # Fire-and-forget: full_restart() ends by restarting dashboard.service
+        # itself, which tears this process down - there is no response to wait
+        # for by that point, so the frontend polls /api/system/restart-progress
+        # and then /api/state instead of awaiting this request's own body.
+        threading.Thread(target=_run, daemon=True).start()
+        started = True
+        return {"ok": True, "started": True}
+    finally:
+        if not started:
+            _restart_all_lock.release()
 
 
 @app.get("/api/system/restart-progress")
