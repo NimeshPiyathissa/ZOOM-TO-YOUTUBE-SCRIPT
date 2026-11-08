@@ -72,10 +72,15 @@ if (switchBtn) {
   switchBtn.onclick = async () => {
     if (!quickSource.value) { toast("Pick a source first", "err"); return; }
     const label = quickSource.options[quickSource.selectedIndex].text;
-    if (!(await confirmDialog(`Switch to "${label}"? The encoder restarts briefly (a few seconds of buffering on YouTube's side).`))) return;
+    let preview = {};
+    try { preview = await apiFetch(`/api/sources/${quickSource.value}/switch-preview`); } catch (err) { /* generic confirm below */ }
+    const msg = preview.rtmp_would_drop ? `Switch to "${label}" while LIVE? The encoder restarts (a few seconds of buffering for viewers).`
+      : preview.ffmpeg_up ? `Switch to "${label}" while LIVE? The stream stays connected; viewers see a brief slate.`
+      : `Switch to "${label}"? It is prepared only - nothing goes on air until you press Go Live.`;
+    if (!(await confirmDialog(msg, { danger: !!preview.rtmp_would_drop }))) return;
     await withLoading(switchBtn, async () => {
       try {
-        await apiFetch(`/api/sources/${quickSource.value}/switch`, { method: "POST" });
+        await apiFetch(`/api/sources/${quickSource.value}/switch`, { method: "POST", body: JSON.stringify({ confirm_on_air: !!preview.ffmpeg_up }) });
         toast(`Switched to ${label}`);
       } catch (err) { toast(err.message, "err"); }
     });

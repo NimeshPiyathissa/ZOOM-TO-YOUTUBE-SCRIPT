@@ -162,10 +162,10 @@ elif [[ -n "$CROP_FILTER" ]]; then
   ENCODE_ARGS+=(-vf "$CROP_FILTER")
 fi
 
-# Plain redirection (not a pipe) so this process image IS ffmpeg after exec -
-# systemd's SIGTERM on stop reaches ffmpeg directly for a clean shutdown,
-# and Restart=always in ffmpeg-stream.service handles reconnecting if the
-# RTMP connection to YouTube drops.
+# exec so this process image IS ffmpeg - systemd's SIGTERM on stop reaches
+# ffmpeg directly for a clean shutdown. stderr goes through the key-redacting
+# filter in lib.sh. V2: nothing restarts the encoder after a drop or crash;
+# the next broadcast needs a fresh Go Live (see broadcast_gate).
 # The key must not stay in this process's environment (ffmpeg inherits it) - RTMP_URL below is a plain shell variable.
 unset YT_STREAM_KEY VNC_PASSWORD ZOOM_LINK ZOOM_PASSCODE TELEGRAM_BOT_TOKEN 2>/dev/null || true
 exec /usr/bin/ffmpeg -hide_banner -loglevel info -stats \

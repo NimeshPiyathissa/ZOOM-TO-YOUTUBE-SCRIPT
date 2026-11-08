@@ -97,6 +97,26 @@ def drop_percent(dropped: int, frames: int) -> float:
     return round(100.0 * dropped / total, 2) if total > 0 and dropped > 0 else 0.0
 
 
+# Recent (pid, time, frame, drop) samples, so a burst of drops late in a long stream is not averaged away by the
+# cumulative percentage. Shared by every poller; samples older than the window are pruned.
+DROP_WINDOW_SECONDS = 30.0
+_drop_samples: list[tuple] = []
+
+
+def recent_drop(pid, frame: int, drop: int, now: float | None = None) -> dict:
+    """Drop rate over roughly the last DROP_WINDOW_SECONDS. Resets on a new encoder process or a counter going backwards."""
+    now = time.time() if now is None else now
+    if _drop_samples and (_drop_samples[-1][0] != pid or frame < _drop_samples[-1][2] or drop < _drop_samples[-1][3]):
+        _drop_samples.clear()
+    if not _drop_samples or now - _drop_samples[-1][1] >= 1.0:
+        _drop_samples.append((pid, now, frame, drop))
+    while len(_drop_samples) > 2 and now - _drop_samples[1][1] >= DROP_WINDOW_SECONDS:
+        del _drop_samples[0]
+    _, t0, f0, d0 = _drop_samples[0]
+    df, dd = frame - f0, drop - d0
+    return {"drop_recent": dd, "drop_recent_pct": drop_percent(dd, df), "drop_window_seconds": round(now - t0, 1)}
+
+
 def ffmpeg_progress(show: dict) -> dict | None:
     """Returns live FFmpeg progress, or None if there's no reason to
     trust the log file as current: the unit must actually be LIVE (real
@@ -127,7 +147,9 @@ def ffmpeg_progress(show: dict) -> dict | None:
             speed = float(m.group(4))
             _recent_speeds.append(speed)
             del _recent_speeds[:-_SPEED_HISTORY_MAX]
+            n_drop = int(drop.group(1)) if drop else 0
             return {
+                **recent_drop(show.get("main_pid"), int(m.group(1)), n_drop),
                 "frame": int(m.group(1)),
                 "fps": float(m.group(2)),
                 "bitrate_kbps": float(m.group(3)),

@@ -8,8 +8,9 @@
 #
 # --apply rewrites each affected file in place (same owner/permissions, via a temp file in the same directory and an atomic
 # rename) with the key replaced by <redacted>. NO backup copy is made on purpose: a backup would keep the very secret this
-# removes. Run it while the encoder is stopped, or accept that lines appended during the rewrite are kept (it re-checks
-# size and aborts that file if it changed under it).
+# removes. --apply REFUSES while any ffmpeg process runs (a running encoder keeps writing to the old, renamed-away file, so its
+# progress would vanish from the dashboard until the next start); it also re-checks size and skips a file that changed.
+# gzip-rotated copies (ffmpeg.log.N.gz) are counted with zcat and, with --apply, rewritten as gzip again.
 #
 # Default targets: $LOG_DIR/ffmpeg.log and rotated siblings (ffmpeg.log.*), where LOG_DIR is <APP_DIR>/logs, plus any FILEs.
 # Exit status: 0 = nothing (left) to scrub, 1 = keys found (dry run) , 2 = usage/error.
@@ -23,7 +24,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --apply) APPLY=1 ;;
     --dir) shift; DIR="${1:-}" ;;
-    -h|--help) sed -n '2,17p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,18p' "$0"; exit 0 ;;
     -*) echo "unknown option: $1" >&2; exit 2 ;;
     *) FILES+=("$1") ;;
   esac
@@ -44,12 +45,22 @@ fi
 PATTERN='s#(rtmps?://[^/[:space:]'"'"'"]+/[^/[:space:]'"'"'"]+/)[^[:space:]'"'"'"]+#\1<redacted>#g'
 KEYED='rtmps?://[^/[:space:]]+/[^/[:space:]]+/[^<[:space:]]'
 
+if [ "$APPLY" -eq 1 ] && pgrep -x ffmpeg >/dev/null 2>&1; then
+  echo "REFUSED: an ffmpeg process is running (encoder or recording). Stop the stream first; nothing was changed." >&2
+  exit 2
+fi
+
 total=0
 for f in "${FILES[@]}"; do
   [ -f "$f" ] || { echo "skip (not a file): $f"; continue; }
-  case "$f" in *.gz|*.xz|*.zst|*.bz2) echo "skip (compressed, scrub after decompressing): $f"; continue ;; esac
+  gz=0
+  case "$f" in
+    *.gz) gz=1; command -v zcat >/dev/null || { echo "skip (zcat missing): $f"; continue; } ;;
+    *.xz|*.zst|*.bz2) echo "UNCHECKED (compressed with an unsupported tool - decompress and re-run): $f"; continue ;;
+  esac
   # a URL whose key part is already <redacted> does not count
-  hits=$(grep -E -c "$KEYED" "$f" || true)
+  if [ "$gz" -eq 1 ]; then hits=$(zcat -- "$f" 2>/dev/null | grep -E -c "$KEYED" || true)
+  else hits=$(grep -E -c "$KEYED" "$f" || true); fi
   if [ "${hits:-0}" -eq 0 ]; then
     echo "clean : $f"
     continue
@@ -61,7 +72,8 @@ for f in "${FILES[@]}"; do
   fi
   size_before=$(wc -c <"$f")
   tmp="$(mktemp "$(dirname "$f")/.scrub.XXXXXX")" || { echo "cannot create temp file next to $f" >&2; exit 2; }
-  sed -E "$PATTERN" "$f" >"$tmp"
+  if [ "$gz" -eq 1 ]; then zcat -- "$f" | sed -E "$PATTERN" | gzip -c >"$tmp"
+  else sed -E "$PATTERN" "$f" >"$tmp"; fi
   size_now=$(wc -c <"$f")
   if [ "$size_now" != "$size_before" ]; then
     rm -f "$tmp"; echo "ABORTED $f: it changed while being scrubbed (is the encoder running?) - run again" >&2; continue
@@ -69,7 +81,8 @@ for f in "${FILES[@]}"; do
   chmod --reference="$f" "$tmp" 2>/dev/null || true
   chown --reference="$f" "$tmp" 2>/dev/null || true
   mv -f "$tmp" "$f"
-  remaining=$(grep -E -c "$KEYED" "$f" || true)
+  if [ "$gz" -eq 1 ]; then remaining=$(zcat -- "$f" | grep -E -c "$KEYED" || true)
+  else remaining=$(grep -E -c "$KEYED" "$f" || true); fi
   echo "scrubbed: $f  ($hits line(s) changed, $remaining still containing a key)"
 done
 

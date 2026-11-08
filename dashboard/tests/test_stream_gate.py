@@ -154,3 +154,25 @@ def test_destination_urls_are_masked_in_every_common_shape(line):
 def test_other_lines_pass_through_untouched():
     text = "frame= 100 fps= 30 q=20.0 bitrate=6000kbits/s\nStream mapping:\n  Stream #0:0 -> #0:0 (rawvideo -> h264)\n"
     assert redact(text) == text
+
+
+def test_progress_lines_ending_in_cr_reach_the_log_while_ffmpeg_is_still_running(tmp_path):
+    """ffmpeg ends its live progress line with CR. A line-based filter (the first V2 version used sed -u) held every update
+    until the encoder exited, so ffmpeg.log looked frozen during a healthy stream. Timed entirely inside bash, like
+    stream.sh: the first update must be in the file while the producer is still paused."""
+    out = _posix(tmp_path / "ffmpeg.log")
+    script = (f'source "{_posix(SCRIPTS / "lib.sh")}"; '
+              f'( printf "frame=1 fps=30 speed=1x \\r"; sleep 6; printf "frame=2 fps=30 speed=1x \\r" ) | redact_stream_secrets > "{out}" & '
+              f'sleep 3; wc -c < "{out}"; wait')
+    env = dict(os.environ, APP_DIR=_posix(pathlib.Path.cwd()), ZOOMBOT_RUNTIME_ENV_FILE=_posix(_env_file()))
+    r = subprocess.run([BASH, "-c", script], capture_output=True, text=True, env=env, timeout=60)
+    assert int(r.stdout.split()[0]) == len("frame=1 fps=30 speed=1x \r"), r.stdout + r.stderr
+    assert (tmp_path / "ffmpeg.log").read_bytes() == b"frame=1 fps=30 speed=1x \rframe=2 fps=30 speed=1x \r"
+
+
+def test_cr_records_are_redacted_byte_for_byte():
+    text = f"Output #0, flv, to 'rtmps://a.rtmps.youtube.com:443/live2/{KEY}':\n  Stream #0:0\nframe=1 speed=1x \rframe=2 speed=1x \r"
+    script = f'source "{_posix(SCRIPTS / "lib.sh")}"; redact_stream_secrets'
+    env = dict(os.environ, APP_DIR=_posix(pathlib.Path.cwd()), ZOOMBOT_RUNTIME_ENV_FILE=_posix(_env_file()))
+    out = subprocess.run([BASH, "-c", script], input=text.encode(), capture_output=True, env=env, timeout=30).stdout  # bytes, so CR survives
+    assert out == text.replace(KEY, "<redacted>").encode()

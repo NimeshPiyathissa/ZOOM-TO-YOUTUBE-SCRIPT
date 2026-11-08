@@ -36,3 +36,18 @@ you may have already copied.
 * The previous `base.js` showed the Go Live confirmation twice (production has this bug); replaced by the single grant flow.
 * `scripts/zoom-atspi.py` and `zoom_classify.py` contained raw backspace bytes where `\b` was meant (a webinar-detection regex never matched). Fixed.
 * The Zoom clean-feed extension used a subtree `MutationObserver` and un-scoped CSS that hid parts of the pre-join page and made state detection report CONNECTING in a live meeting. Rewritten and scoped to `html[data-zs-cleanfeed="on"]`.
+
+## 4. Second review (2026-11-08)
+
+| Finding | Fix on this branch |
+|---------|--------------------|
+| The V2 key-redaction filter (`sed -u`) is line-based, but ffmpeg ends live progress lines with `\r`: every progress update was held until the next newline (often until ffmpeg exited), so `ffmpeg.log` looked frozen and the dashboard lost fps/bitrate/dropped-frame metrics during a healthy stream. Reproduced: 0 bytes in the log after 3 s. | `redact_stream_secrets` now uses perl with `\r` as the record separator (perl-base is on every Ubuntu install; confirmed present on production), output byte-identical apart from the masked key; `tr`+`sed` fallback. Regression test times it inside bash. |
+| A one-off scheduled Zoom join (`join_at`) ran while LIVE and swapped the on-air picture with nobody there to confirm. | Skipped while the encoder is up; the timestamp is cleared, an alert is sent, an audit row is written. |
+| "Switching changes what viewers see" was confirmed only in the browser; the Controls quick-switch had no live check at all. | `POST /api/sources/{id}/switch` returns 409 `confirm_on_air` while live unless the body carries `confirm_on_air: true`; every UI caller confirms first. |
+| `scrub-ffmpeg-log.sh --apply` could run while ffmpeg was writing: the atomic rename leaves the encoder writing to the unlinked file (metrics vanish until the next start). gzip-rotated logs were skipped. | `--apply` refuses while any ffmpeg runs; `.gz` logs are counted and rewritten as gzip. |
+| `scripts/create_youtube_broadcast.py` (manual helper) created broadcasts with `enableAutoStart: true`, i.e. YouTube goes public as soon as data arrives. | Set to `false`. |
+| Deploy scripts: live check only at preflight; `install -o` left zoombot files group-owned by root; restore used a recursive `chown` over whole trees. | Live guard at preflight, before install and before restart; per-file owner/group/mode kept and restored; post-install SHA-256 of every file; pre-rollback snapshot. |
+
+Residual (not fixable in the application): the key is still in `/proc/<pid>/cmdline` while ffmpeg runs (FFmpeg 6.1 cannot
+read its output URL from a file); `harden-proc-visibility.sh` is the prepared mitigation. On Ubuntu, `hidepid=2` can affect
+tools that inspect other users' processes (polkit, some monitoring); test it with `--apply` then `--revert` in a quiet window.

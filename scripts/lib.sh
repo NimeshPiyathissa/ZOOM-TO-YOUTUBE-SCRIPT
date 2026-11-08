@@ -299,7 +299,16 @@ broadcast_gate() {
 }
 
 # Filter for ffmpeg's log output: masks the secret path part of any rtmp(s):// destination (the YouTube stream key).
-# Unbuffered so progress lines keep flowing. Never prints or stores the real value.
+# Never prints or stores the real value.
+# ffmpeg ends its live progress line with \r, not \n, so a line-based filter (sed -u) would hold every progress update
+# until the next newline - often until the encoder exits - and ffmpeg.log would look frozen while the stream is healthy
+# (no fps/bitrate/dropped-frame metrics on the dashboard). perl (perl-base is part of every Ubuntu install) splits on \r
+# instead: each progress update, and any \n lines before it, is written out as soon as it arrives, otherwise unchanged.
 redact_stream_secrets() {
-  sed -u -E "s#(rtmps?://[^/[:space:]'\"]+/[^/[:space:]'\"]+/)[^[:space:]'\"]+#\1<redacted>#g"
+  if command -v perl >/dev/null 2>&1; then
+    perl -e '$| = 1; $/ = "\r"; while (<STDIN>) { s#(rtmps?://[^/\s\x27"]+/[^/\s\x27"]+/)[^\s\x27"]+#${1}<redacted>#g; print }'
+  else
+    # fallback: turn \r into \n so sed sees whole lines (progress then lands one per line; the dashboard parses both)
+    stdbuf -o0 tr '\r' '\n' | sed -u -E "s#(rtmps?://[^/[:space:]'\"]+/[^/[:space:]'\"]+/)[^[:space:]'\"]+#\1<redacted>#g"
+  fi
 }

@@ -203,7 +203,11 @@ function renderHeroChips(ff, hasData) {
   const dropped = document.getElementById("hero-chip-dropped");
   if (bitrate) bitrate.textContent = Math.round(ff.bitrate_kbps) + " kbps";
   if (fps) fps.textContent = ff.fps + " fps";
-  if (dropped) dropped.textContent = ff.drop + " dropped" + (ff.drop_pct ? ` (${ff.drop_pct}%)` : "") + (ff.fresh === false ? " · stale" : "");
+  if (dropped) {
+    dropped.textContent = ff.drop + " dropped" + (ff.drop_pct ? ` (${ff.drop_pct}%)` : "") +
+      (ff.drop_recent ? ` · ${ff.drop_recent} in last ${Math.round(ff.drop_window_seconds)}s` : "") + (ff.fresh === false ? " · stale" : "");
+    dropped.title = "Cumulative since Go Live; the second number is the recent window (a current problem shows there first).";
+  }
 }
 
 function renderFfmpeg(ff, phase, sourceType, sourceHealth) {
@@ -296,7 +300,11 @@ document.addEventListener("click", async (e) => {
   catch (err) { toast(err.message, "err"); }
 });
 
+let _stateInFlight = false;
 async function pollState() {
+  // Hidden tab: skip (each poll costs several systemctl calls on the server). Never stack polls behind a slow one.
+  if (document.hidden || _stateInFlight) return;
+  _stateInFlight = true;
   try {
     const data = await apiFetch("/api/state");
     renderState(data.stream);
@@ -307,7 +315,9 @@ async function pollState() {
     renderFfmpeg(data.ffmpeg, data.stream.phase, data.active_source && data.active_source.type, data.source_health);
     renderSystem(data.system);
   } catch (err) { /* transient errors are fine on a poll loop */ }
+  finally { _stateInFlight = false; }
 }
+document.addEventListener("visibilitychange", () => { if (!document.hidden) { pollState(); pollPreview(); } });
 
 async function pollPreview() {
   if (document.hidden) return;
@@ -345,8 +355,12 @@ const overviewRecTimer = document.getElementById("overview-rec-timer");
 
 let isRecordingOverview = false;
 
-async function pollOverviewRecording() {
+let _recInFlight = false, _recLastPoll = 0;
+async function pollOverviewRecording(force = false) {
   if (!btnOverviewRecord) return;
+  // Each poll runs record-stream.sh on the server: skip while hidden, never overlap, and only every 6 s when idle.
+  if (force !== true && (document.hidden || _recInFlight || (!isRecordingOverview && Date.now() - _recLastPoll < 6000))) return;
+  _recInFlight = true; _recLastPoll = Date.now();
   try {
     const data = await apiFetch("/api/record");
     isRecordingOverview = !!data.recording;
@@ -371,7 +385,7 @@ async function pollOverviewRecording() {
     }
   } catch (err) {
     // Ignore polling errors
-  }
+  } finally { _recInFlight = false; }
 }
 
 if (btnOverviewRecord) {
@@ -383,7 +397,7 @@ if (btnOverviewRecord) {
           method: "POST",
           body: JSON.stringify({ action }),
         });
-        await pollOverviewRecording();
+        await pollOverviewRecording(true);
         toast(action === "start" ? "Recording started" : "Recording stopped", "ok");
       } catch (err) {
         toast(`Recording ${action} failed: ${err.message}`, "err");
@@ -392,6 +406,6 @@ if (btnOverviewRecord) {
   });
 }
 
-pollOverviewRecording();
+pollOverviewRecording(true);
 setInterval(pollOverviewRecording, 2000);
 

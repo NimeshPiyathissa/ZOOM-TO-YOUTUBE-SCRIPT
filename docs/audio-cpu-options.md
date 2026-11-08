@@ -66,3 +66,54 @@ Anything touching `stream.sh`'s encoder arguments or Chrome flags changes the li
 Record 5 minutes of a representative source with `scripts/test-recording.sh`/`record-stream.sh` style capture on a development
 machine, then re-encode it with each variant while sampling `scripts/measure-cpu.sh 60 5` in a second terminal, so comparisons
 use the same input. Repeat each variant 3 times and compare the medians; a single run is not evidence (see the noise above).
+
+## Production measurements (read-only audit, 2026-11-05)
+
+| Process | Share of one core | Note |
+|---------|-------------------|------|
+| ffmpeg encoder (1080p30 `veryfast`) | ~1.1-1.8 | while live; ~0.75-1.0 in the earlier synthetic benchmark |
+| Chrome kiosk (browser-source) | ~0.6 | `--disable-gpu`: `VizCompositorThread` alone ~33% of a core (software compositing of every frame) |
+| PSI `cpu some avg300` | 15% | some contention, no I/O pressure, no D-state processes |
+
+The box has 4 vCPU, so the measured total (~2-2.5 cores at worst) leaves headroom, but Chrome's compositor and the encoder do
+compete: when both peak, Chrome's audio thread is the most likely thing to be late (see below).
+
+## Audio crackling and A/V sync: what the chain does
+
+```
+Chrome / Zoom  ->  PulseAudio null sink zoom_out (48 kHz, float32, 2ch; Chrome's sink-input is mono 48k, upmixed by Pulse)
+               ->  ffmpeg -f pulse -use_wallclock_as_timestamps 1 -i zoom_out.monitor
+               ->  -af aresample=async=1:first_pts=0  ->  AAC 48 kHz stereo
+```
+
+* Production `ffmpeg.log` had **zero** audio warnings, underruns or "non-monotonous" timestamps during the audited stream, and
+  no sample-rate conversion happens on the live path (everything is already 48 kHz). There is no evidence of crackling in the
+  logs; if it is heard, the following are the likely mechanisms, in order:
+  1. **Wall-clock timestamps + `async=1`.** Each audio packet is stamped with the time it *arrived*. When Chrome or ffmpeg is
+     briefly starved, packets arrive in a burst; `aresample=async=1` only does *hard* compensation (inserts silence or drops
+     samples once the error passes `min_hard_comp`, 0.1 s by default). A hard correction is an audible click.
+  2. **Chrome's audio thread starved** by its own software compositor (above) - the Pulse sink then plays a gap.
+  3. Upmix mono -> stereo is lossless duplication; not a crackle source.
+* Sync: video (x11grab) and audio (pulse) are both stamped with wall-clock time at capture, so they stay aligned with each other;
+  any lip-sync offset seen is Zoom's own (its audio and video arrive separately).
+
+## Prepared audio options (none applied; each needs a local A/B and your approval)
+
+| # | Change in `stream.sh` | Effect | Risk |
+|---|------------------------|--------|------|
+| A1 | `aresample=async=1000:min_hard_comp=0.100:first_pts=0` | Small timing errors are absorbed by *stretching* (up to ~2%), hard insert/drop only for >100 ms gaps: removes most clicks | Barely audible pitch wobble during heavy jitter |
+| A2 | Drop `-use_wallclock_as_timestamps 1` on the **pulse** input only (keep `-wallclock` default) | Timestamps follow the sample count, so bursty arrival no longer looks like a gap | Long-run drift vs. video possible; must be checked over a 2 h test |
+| A3 | Give the audio server priority (`rtkit`/`nice -5` for pipewire/pulse) | Fewer gaps under CPU load | Unit/config change on the box |
+
+Verify with a recording, not by ear: `ffmpeg -i rec.mp4 -af astats=metadata=1:reset=1,ametadata=print:key=lavfi.astats.Overall.Number_of_NaNs -f null -`
+plus `silencedetect=n=-60dB:d=0.02` to count the micro-gaps before/after, at the same CPU load (`measure-cpu.sh`).
+
+## Prepared Chrome kiosk options (none applied)
+
+| # | Option | Expected effect | Risk |
+|---|--------|-----------------|------|
+| C1 | Zoom web client: gallery limited / HD video off (per-meeting settings) | Less decoding and compositing | Lower picture detail of participants |
+| C2 | Smaller kiosk window / device scale factor 1 (already 1) | Compositor work scales with pixels | Output resolution |
+| C3 | Keep `--disable-gpu` | There is no GPU on c5a; removing it makes Chrome fall back to SwiftShader, which is **not** cheaper | - |
+
+The production encoder settings, Chrome flags and audio chain are unchanged by the V2 bundle.

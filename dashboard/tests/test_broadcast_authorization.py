@@ -448,6 +448,39 @@ def test_source_selection_and_zoom_join_endpoints_never_start_the_encoder(client
     assert client.starts == []
 
 
+def test_switching_while_live_needs_a_server_side_on_air_confirmation(client, monkeypatch):
+    import app.main as m
+    monkeypatch.setattr(m, "_schedule_zoom_followup", lambda *a, **k: None)
+    switched = []
+    monkeypatch.setattr(control, "start_source", lambda s, encoder_grant=None: switched.append(s["id"]) or
+                        {"results": [], "rtmp_dropped": False, "hot_swapped": False, "failed": [], "encoder_started": False})
+    sid = sources.create_source("Meeting D", "zoom", "https://us06web.zoom.us/j/81288888888?pwd=dd", {})
+    client.encoder["phase"] = "LIVE"
+    for body in (None, {}, {"confirm_on_air": False}):
+        r = client.post(f"/api/sources/{sid}/switch", json=body, headers=client.csrf)
+        assert r.status_code == 409 and r.json()["code"] == "confirm_on_air"
+    assert switched == []                                                            # nothing touched on air
+    assert client.post(f"/api/sources/{sid}/switch", json={"confirm_on_air": True}, headers=client.csrf).status_code == 200
+    assert switched == [sid] and client.starts == []
+    client.encoder["phase"] = "STOPPED"                                              # offline: no confirmation needed
+    assert client.post(f"/api/sources/{sid}/switch", headers=client.csrf).status_code == 200
+
+
+def test_a_scheduled_join_is_skipped_while_live_and_never_fires_again(tmp_db, monkeypatch):
+    import asyncio
+    sid = sources.create_source("Meeting E", "zoom", "https://us06web.zoom.us/j/81299999999?pwd=ee", {"join_at": int(time.time()) + 3600})
+    called, alerts = [], []
+    monkeypatch.setattr(control, "start_source", lambda s, encoder_grant=None: called.append(s["id"]))
+    monkeypatch.setattr(control, "_ffmpeg_is_up", lambda: True)
+
+    async def alert(msg):
+        alerts.append(msg)
+    monkeypatch.setattr(scheduler, "_send_alert", alert)
+    asyncio.run(scheduler._run_join_at(sid))
+    assert called == [] and alerts and "skipped" in alerts[0]
+    assert (sources.get_source(sid)["options"] or {}).get("join_at") is None
+
+
 def test_a_crash_shows_error_in_the_api_and_does_not_restart(client):
     a = authorize(client).json()["grant"]
     client.post("/api/stream/go-live", json={"grant": a}, headers=client.csrf)

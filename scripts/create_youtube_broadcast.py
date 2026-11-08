@@ -71,7 +71,7 @@ def main():
                 "selfDeclaredMadeForKids": False,
             },
             "contentDetails": {
-                "enableAutoStart": True,
+                "enableAutoStart": False,   # never go public just because data arrives - Go Live is manual
                 "enableAutoStop": True,
                 "latencyPreference": "normal",
             },

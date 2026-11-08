@@ -126,11 +126,11 @@ document.querySelectorAll(".switch-source").forEach(btn => btn.addEventListener(
   const msg = preview.rtmp_would_drop
     ? "Switch to this source? This kind of switch restarts the encoder (a few seconds of buffering for viewers)."
     : preview.ffmpeg_up ? "Switch to this source while live? The stream stays connected; viewers see a brief slate."
-    : "Switch to this source and go live with it?";
+    : "Switch to this source? It is prepared only - nothing goes on air until you press Go Live.";
   if (!(await confirmDialog(msg, { danger: !!preview.rtmp_would_drop }))) return;
   await withLoading(btn, async () => {
     try {
-      const r = await apiFetch(`/api/sources/${btn.dataset.id}/switch`, { method: "POST" });
+      const r = await apiFetch(`/api/sources/${btn.dataset.id}/switch`, { method: "POST", body: JSON.stringify({ confirm_on_air: !!preview.ffmpeg_up }) });
       toast(r.hot_swapped ? "Switched in place" : r.rtmp_dropped ? "Switched - encoder restarted" : "Switched - stream stayed connected");
       location.reload();
     } catch (err) { toast(err.message, "err"); }

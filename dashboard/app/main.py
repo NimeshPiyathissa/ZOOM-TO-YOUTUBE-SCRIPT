@@ -2032,6 +2032,17 @@ async def api_sources_switch(source_id: int, request: Request):
     if not s:
         raise HTTPException(status_code=404, detail="source not found")
     try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    body = body if isinstance(body, dict) else {}
+    # While LIVE a switch changes what viewers see. The UI confirms first; this makes that confirmation server-enforced
+    # so a stale tab, a script or a mis-tap can't swap the on-air picture without it.
+    if not body.get("confirm_on_air") and await run_in_threadpool(control._ffmpeg_is_up):
+        return JSONResponse({"ok": False, "code": "confirm_on_air",
+                             "error": "The stream is live - switching changes what viewers see. Confirm the switch to continue."},
+                            status_code=409)
+    try:
         outcome = await run_in_threadpool(control.start_source, s)             # prepares the source; never starts the encoder
     except control.ControlError as exc:
         return _api_error(exc)

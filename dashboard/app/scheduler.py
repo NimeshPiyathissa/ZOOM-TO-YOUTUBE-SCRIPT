@@ -147,12 +147,19 @@ async def _watchdog() -> None:
 
 async def _run_join_at(source_id: int) -> None:
     """One-off scheduled join from the Zoom page: switch to the meeting
-    (same path as tapping its tile - keeps RTMP up where possible, and
-    starts the encoder if it isn't running), then clear the timestamp so
-    it never fires twice."""
+    (same path as tapping its tile - prepares and joins, never starts the
+    encoder), then clear the timestamp so it never fires twice. Skipped
+    while a stream is live: nobody is there to confirm swapping the
+    on-air picture."""
     try:
         s = sources_mod.get_source(source_id)
         if not s or s["type"] != "zoom":
+            return
+        if await asyncio.get_event_loop().run_in_executor(None, control._ffmpeg_is_up):
+            opts = dict(s.get("options") or {}); opts["join_at"] = None
+            sources_mod.update_source(source_id, s["name"], s["type"], s["url"], opts, s.get("account_id"))
+            db.audit(None, "scheduled_join_skipped_live", f"source_id={source_id}")
+            await _send_alert(f"Scheduled join of \"{s['name']}\" skipped: a stream is live. Switch to it yourself if needed.")
             return
         await asyncio.get_event_loop().run_in_executor(None, control.start_source, s)
         sources_mod.set_active_source_id(source_id)

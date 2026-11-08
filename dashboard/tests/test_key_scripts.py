@@ -69,3 +69,20 @@ def test_hardening_script_parses_and_is_report_only_by_default():
         assert cmd not in head, f"{cmd!r} appears before the report-only exit"
     assert re.search(r"must run as root", tail)
     assert "ffmpeg" not in re.sub(r"#.*", "", text).replace("ffmpeg's", "")      # never touches the encoder
+
+
+def test_gzip_rotated_logs_are_counted_and_scrubbed_as_gzip(logs):
+    import gzip
+    with gzip.open(logs / "ffmpeg.log.2.gz", "wt") as f:
+        f.write(f"Output #0, flv, to 'rtmps://a.rtmps.youtube.com:443/live2/{KEY}':\nframe=9\n")
+    rc, out = scrub("--dir", _posix(logs))
+    assert rc == 1 and "ffmpeg.log.2.gz" in out and KEY not in out
+    rc, out = scrub("--apply", "--dir", _posix(logs))
+    assert rc == 0
+    text = gzip.open(logs / "ffmpeg.log.2.gz", "rt").read()                         # still a valid gzip file
+    assert KEY not in text and "live2/<redacted>" in text and "frame=9" in text
+
+
+def test_apply_refuses_while_ffmpeg_runs_by_static_check():
+    src = SCRUB.read_text(encoding="utf-8")
+    assert re.search(r'APPLY" -eq 1 \] && pgrep -x ffmpeg', src) and "REFUSED" in src

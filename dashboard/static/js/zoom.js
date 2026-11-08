@@ -621,14 +621,15 @@ async function switchTo(id) {
   const m = meetings.find((x) => x.id === id); if (!m) return;
   let preview = null; try { preview = await apiFetch(`/api/sources/${id}/switch-preview`); } catch (err) { /* generic confirm below */ }
   if (preview && preview.missing && preview.missing.length) { toast("Can't join yet - missing " + preview.missing.join("; "), "err"); return; }
-  if (isLive()) {
+  const live = isLive() || !!(preview && preview.ffmpeg_up);
+  if (live) {
     const msg = preview && preview.rtmp_would_drop
       ? `Switch to "${m.name}" while LIVE? This restarts the encoder, so RTMP drops for a few seconds.`
       : `Switch to "${m.name}" while LIVE? The stream stays connected; viewers see the slate while Zoom joins.`;
     if (!(await confirmDialog(msg, { confirmText: "Switch and join" }))) return;
   }
   try {
-    const r = await post(`/api/sources/${id}/switch`);          // prepares and joins; NEVER starts the encoder (server-enforced)
+    const r = await post(`/api/sources/${id}/switch`, { confirm_on_air: live });          // prepares and joins; NEVER starts the encoder (server-enforced)
     if (r.failed && r.failed.length) toast(`Joining "${m.name}" - but ${r.failed.map((f) => `${f.unit} ${f.verb} failed: ${f.error}`).join("; ")}`, "err");
     else toast(isLive() ? `Switching to "${m.name}" - the live stream stays connected` : `Joining "${m.name}" - not on air. Press Go Live when you are ready.`);
     await refreshSources(true); setTimeout(pollStatus, 1500); setTimeout(pollJoinOptions, 6000);

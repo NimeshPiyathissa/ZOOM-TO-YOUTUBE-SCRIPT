@@ -37,6 +37,10 @@ TITLES = {
     "ffmpeg-stream": "Encoder to YouTube",
 }
 
+# What the kiosk browser is doing for each source type that uses it (shown in its status reason).
+_BROWSER_ROLE = {"zoom": " (Zoom web client for the active meeting)", "webpage": " (showing the active web page)",
+                 "edumix": " (EduMix class page - view only, capture disabled)"}
+
 # Units every source needs; if one of these is down something really is wrong.
 ALWAYS_NEEDED = {"xvfb", "openbox", "audio-setup", "x11vnc", "novnc-proxy"}
 
@@ -64,6 +68,11 @@ def classify_unit(show: dict, producer_unit: str | None, source_type: str | None
             return _result("on_air", "The encoder is streaming to YouTube.")
         if active == "active" and sub == "exited":
             return _result("active", "One-shot setup finished successfully; nothing keeps running by design.")
+        if unit == "browser-source":
+            what = _BROWSER_ROLE.get(source_type if producer_unit == "browser-source" else "", "")
+            return _result("active", f"Browser source is running{what}. Running is not the same as on air - only Go Live broadcasts.")
+        if unit == "zoom" and producer_unit == "zoom":
+            return _result("active", "The Zoom desktop client is running. See the Zoom meeting row for whether it is in the meeting.")
         return _result("active", f"{TITLES.get(unit, unit)} is running.")
 
     # inactive / dead from here on
@@ -71,12 +80,17 @@ def classify_unit(show: dict, producer_unit: str | None, source_type: str | None
         return _result("off_air", "Not broadcasting. This is normal until you press Go Live.")
     if unit == "browser-source":
         if producer_unit == "browser-source":
-            return _result("stopped", "The active source needs the browser, but it is not running.")
+            what = _BROWSER_ROLE.get(source_type or "", "")
+            return _result("stopped", f"The active source needs the browser{what}, but it is not running. Press Join / Start "
+                                      "on the source; nothing goes on air until Go Live.")
         why = "no source is selected" if producer_unit is None and not source_type else "the active source does not use it"
         return _result("idle", f"Not needed: {why}.")
     if unit == "zoom":
         if producer_unit == "zoom":
-            return _result("stopped", "The active source is a Zoom meeting but the Zoom client is not running.")
+            return _result("stopped", "The active source is a Zoom meeting but the Zoom desktop client is not running "
+                                      "(not joined, left, or it exited). Press Join to start it; joining never goes on air.")
+        if source_type == "zoom" and producer_unit == "browser-source":
+            return _result("idle", "Not needed: this Zoom meeting is joined in the browser (web client), not the desktop app.")
         return _result("idle", "Not needed: Zoom is not the active source.")
     if unit in ALWAYS_NEEDED:
         return _result("stopped", f"{TITLES.get(unit, unit)} is required by every source but is not running.")
@@ -157,12 +171,17 @@ def pipeline_indicators(broadcast_state: dict | None, now: float | None = None) 
     err = b.get("last_error") or {}
     if st == "ERROR":
         ys = _result("failed", "The broadcast stopped unexpectedly and was NOT restarted: %s" % (err.get("reason") or "see Logs"))
-    elif st in ("LIVE",):
+    elif st == "LIVE" and b.get("adopted"):
+        ys = _result("on_air", "Streaming to YouTube, but this encoder was started before Go Live authorization existed "
+                               "(no session record). Stop it and press Go Live to bring it under authorization.")
+    elif st == "LIVE":
         ys = _result("on_air", "Streaming to YouTube; started by an authorized Go Live.")
     elif st in ("STARTING", "STOPPING"):
         ys = _result("starting", f"Broadcast is {st.lower()}.")
     elif st in ("READY", "OFFLINE"):
-        ys = _result("off_air", "Not broadcasting. Nothing goes on air until you press Go Live.")
+        ready = "The source is ready. " if st == "READY" else "No source is ready yet. "
+        pending = " A Go Live confirmation is open (it expires after 60 s if not confirmed)." if b.get("grants_outstanding") else ""
+        ys = _result("off_air", f"Not broadcasting. {ready}Nothing goes on air until you press Go Live and confirm.{pending}")
     else:
         ys = _result("unknown", "Broadcast state unavailable.")
     rows.append({"unit": "youtube-broadcast", "title": "YouTube broadcast", "systemd": "", "scope": "derived", "status": ys})

@@ -123,7 +123,7 @@ function renderRail(d) {
     setTile("rail-speed", ff.speed + "x", ff.speed < 0.95 ? "bad" : ff.speed < 1 ? "warn" : "");
     setTile("rail-fps", String(ff.fps), "");
     setTile("rail-bitrate", Math.round(ff.bitrate_kbps) + "k", "");
-    setTile("rail-drop", String(ff.drop), ff.drop > 200 ? "warn" : "");
+    setTile("rail-drop", String(ff.drop) + (ff.drop_recent ? ` (+${ff.drop_recent})` : ""), (ff.drop_recent_pct || 0) > 1 || (ff.drop_pct || 0) > 1 ? "warn" : "");
   } else { ["rail-speed", "rail-fps", "rail-bitrate", "rail-drop"].forEach((id) => setTile(id, "—", "")); }
   setTile("rail-cpu", sys.cpu_avg != null ? sys.cpu_avg + "%" : "—", sys.cpu_avg > 85 ? "bad" : sys.cpu_avg > 70 ? "warn" : "");
   setTile("rail-ram", sys.mem_percent != null ? Math.round(sys.mem_percent) + "%" : "—", sys.mem_percent > 90 ? "bad" : "");
@@ -263,7 +263,7 @@ document.getElementById("source-tiles").addEventListener("click", async (e) => {
   activeSourceId = id; paintTiles();               // optimistic
   await withLoading(tile, async () => {
     try {
-      const r = await post(`/api/sources/${id}/switch`);
+      const r = await post(`/api/sources/${id}/switch`, { confirm_on_air: !!preview.ffmpeg_up });
       toast(r.hot_swapped ? "Switched - page navigated in place, stream untouched"
           : r.rtmp_dropped ? "Switched - encoder restarted" : "Switched - stream stayed connected");
       announce(`Source switched to ${s.name}`);
@@ -794,6 +794,13 @@ async function applyMeetingOnlyRemote(enabled, fit, restart = false, grant = nul
     }
     moPending.hidden = !r.restart_needed;
     toast(bits.join(" · "), win.applied === false || (r.window && r.window.restart_error) ? "err" : "ok");
+    if (enabled && r.fit === "fill") {
+      // Same measured warning as the Zoom page: Fill covers 16:9, so a 4:3 slide or a narrow window loses its edges.
+      apiFetch("/api/zoom/framing").then((f) => {
+        const c = f.fill_crop;
+        if (f.fill_warn && c) toast(`Fill crops about ${c.lost_pct}% of the meeting area - slides or the teacher may be cut. Use Fit to keep everything.`, "warn");
+      }).catch(() => {});
+    }
     await syncSources();
   } catch (err) { toast(err.message, "err"); }
 }

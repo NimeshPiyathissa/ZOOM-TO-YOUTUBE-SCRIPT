@@ -72,3 +72,37 @@ def test_drop_percent():
     from app import stats
     assert stats.drop_percent(0, 1000) == 0.0 and stats.drop_percent(0, 0) == 0.0
     assert stats.drop_percent(10, 990) == 1.0
+
+
+def test_service_reasons_explain_stopped_zoom_and_browser_activity():
+    def show(unit, phase="STOPPED", active="inactive", sub="dead"):
+        return {"unit": unit, "phase": phase, "active_state": active, "sub_state": sub, "result": "success"}
+    web_zoom = status.classify_unit(show("zoom"), "browser-source", "zoom")
+    assert web_zoom["kind"] == "idle" and "web client" in web_zoom["reason"]
+    needed = status.classify_unit(show("zoom"), "zoom", "zoom")
+    assert needed["kind"] == "stopped" and "Join" in needed["reason"] and "never goes on air" in needed["reason"]
+    running = status.classify_unit(show("browser-source", "LIVE", "active", "running"), "browser-source", "zoom")
+    assert running["kind"] == "active" and "Zoom web client" in running["reason"] and "not the same as on air" in running["reason"]
+    em = status.classify_unit(show("browser-source", "LIVE", "active", "running"), "browser-source", "edumix")
+    assert "capture disabled" in em["reason"]
+
+
+def test_broadcast_row_explains_authorization_state():
+    row = lambda b: {r["unit"]: r for r in status.pipeline_indicators(b)}["youtube-broadcast"]["status"]
+    assert "No source is ready" in row({"state": "OFFLINE"})["reason"]
+    assert "source is ready" in row({"state": "READY"})["reason"]
+    assert "confirmation is open" in row({"state": "READY", "grants_outstanding": 1})["reason"]
+    adopted = row({"state": "LIVE", "adopted": True})
+    assert adopted["kind"] == "on_air" and "before Go Live authorization" in adopted["reason"]
+
+
+def test_recent_drop_rate_reflects_a_late_burst_and_resets_per_process():
+    from app import stats
+    stats._drop_samples.clear()
+    t = 1000.0
+    stats.recent_drop(7, 100000, 10, now=t)                         # long stream, few drops so far
+    r = stats.recent_drop(7, 100900, 110, now=t + 30)               # 100 drops in the last 30 s
+    assert r["drop_recent"] == 100 and r["drop_recent_pct"] == 10.0
+    assert stats.drop_percent(110, 100900) < 0.2                    # the cumulative figure would hide it
+    r = stats.recent_drop(8, 50, 0, now=t + 31)                     # new encoder process: no carry-over
+    assert r["drop_recent"] == 0 and r["drop_window_seconds"] == 0.0
